@@ -1,0 +1,389 @@
+{
+  "versao": "1.0",
+  "atualizado": "2026-06-03",
+  "fontes": [
+    "Manual de Registro de Sociedade Anônima - DREI",
+    "Manual de Registro de Ltda - IN 81/2020 alterada pela IN 55/2021"
+  ],
+
+  "tipos_de_ato": {
+    "SA": {
+      "AGO": {
+        "nome_completo": "Assembleia Geral Ordinária",
+        "frequencia": "Uma vez ao ano",
+        "prazo_legal": "4 meses após encerramento do exercício social",
+        "materias_obrigatorias": [
+          "Apreciação das contas dos administradores",
+          "Exame e votação das demonstrações financeiras",
+          "Deliberação sobre destinação do lucro líquido e distribuição de dividendos",
+          "Eleição de administradores e conselho fiscal se for o caso"
+        ],
+        "quorum": {
+          "instalacao_1a_convocacao": "1/4 do capital com direito a voto",
+          "instalacao_2a_convocacao": "Qualquer número",
+          "deliberacao": "Maioria absoluta dos presentes"
+        },
+        "documentos_base": [
+          "Certidão ou cópia da ata autenticada pelo presidente e secretário da assembleia",
+          "Cópia autenticada da identidade dos diretores quando houver ingresso",
+          "Folhas do Diário Oficial e jornal de grande circulação com aviso de disponibilidade de documentos (dispensado se ata consignar dados da publicação ou se presentes todos os acionistas)",
+          "Folhas do Diário Oficial e jornal com edital de convocação (dispensado se presentes todos os acionistas)",
+          "Folhas com relatório da administração, demonstrações financeiras e parecer dos auditores"
+        ],
+        "excecao_companhia_fechada": "Companhia fechada com menos de 20 acionistas e PL inferior a R$1.000.000 pode convocar por anúncio entregue contra recibo e deixar de publicar documentos"
+      },
+      "AGE": {
+        "nome_completo": "Assembleia Geral Extraordinária",
+        "frequencia": "Quando necessário — pode ocorrer mais de uma vez ao ano",
+        "quorum": {
+          "instalacao_1a_convocacao": "1/4 do capital com direito a voto",
+          "instalacao_2a_convocacao": "Qualquer número",
+          "deliberacao": "Maioria absoluta dos presentes",
+          "reforma_estatuto_1a_convocacao": "2/3 do capital com direito a voto",
+          "reforma_estatuto_2a_convocacao": "Qualquer número"
+        },
+        "documentos_base": [
+          "Certidão ou cópia da ata autenticada pelo presidente e secretário da assembleia",
+          "Cópia autenticada da identidade dos novos administradores quando houver eleição",
+          "Folhas do Diário Oficial e jornal com edital de convocação (dispensado se presentes todos os acionistas ou se ata consignar dados da publicação)"
+        ],
+        "documentos_adicionais_aumento_capital": [
+          "Relação completa dos subscritores qualificados",
+          "Certidão ou cópia da ata de eleição de peritos se aumento com bens",
+          "Laudo de avaliação se aumento com bens"
+        ],
+        "observacao_reforma_estatuto": "Sempre que houver alteração estatutária recomenda-se registrar o estatuto consolidado"
+      },
+      "AGOE": {
+        "nome_completo": "Assembleia Geral Ordinária e Extraordinária",
+        "frequencia": "Uma vez ao ano",
+        "observacao": "AGO e AGE convocadas e realizadas no mesmo local, data e hora, instrumentadas em ata única. Requisitos de convocação, instalação, ordem do dia e quorum devem ser observados de forma individualizada para cada assembleia. Documentação segue especificação de cada tipo."
+      },
+      "RCA": {
+        "nome_completo": "Reunião do Conselho de Administração",
+        "frequencia": "Quando necessário",
+        "quando_obrigatorio": "Empresas com Conselho de Administração — obrigatório em companhias abertas, capital autorizado e economia mista",
+        "competencias_exclusivas": [
+          "Eleição de diretores quando há CA",
+          "Aumento de capital em sociedade de capital autorizado se previsto no estatuto",
+          "Substituição de membro do CA em caso de vacância"
+        ],
+        "documentos_base": [
+          "Certidão ou cópia autêntica da ata contendo CNPJ, nomes dos presentes e assinaturas do presidente e demais membros que desejarem assinar"
+        ],
+        "qualificacao_eleitos": [
+          "Nome civil por extenso",
+          "Nacionalidade",
+          "Estado civil",
+          "Profissão",
+          "Número de identidade e órgão expedidor",
+          "CPF",
+          "Residência com endereço completo"
+        ]
+      },
+      "REUNIAO_DIRETORIA": {
+        "nome_completo": "Reunião de Diretoria",
+        "frequencia": "Quando necessário",
+        "documentos_base": [
+          "Certidão ou cópia autêntica da ata contendo Nome Empresarial, NIRE, CNPJ e assinaturas dos diretores presentes"
+        ]
+      },
+      "ASSEMBLEIA_ESPECIAL": {
+        "nome_completo": "Assembleia Especial",
+        "quando_necessaria": [
+          "Criação de ações preferenciais ou aumento de classe sem guardar proporção com as demais salvo se previsto no estatuto",
+          "Alterações nas preferências, vantagens e condições de resgate ou amortização de ações preferenciais",
+          "Criação de nova classe mais favorecida"
+        ],
+        "quorum": {
+          "instalacao": "Mais da metade da classe de ações preferenciais interessadas",
+          "deliberacao": "Mais da metade da classe de ações preferenciais interessadas"
+        },
+        "documentos_base": [
+          "Certidão ou cópia autêntica da ata contendo CNPJ, texto da ata, nome dos presentes e assinaturas do presidente e secretário"
+        ]
+      },
+      "CONSTITUICAO": {
+        "nome_completo": "Constituição de Sociedade Anônima",
+        "documentos_base": [
+          "Certidão ou cópia da ata da assembleia de constituição autenticada pelos administradores ou presidente e secretário",
+          "Estatuto social salvo se transcrito na ata",
+          "Relação completa dos subscritores do capital social",
+          "Comprovante de depósito bancário mínimo de 10% do capital subscrito em dinheiro",
+          "Visto de advogado com nome e número OAB obrigatório"
+        ],
+        "documentos_adicionais_bens": [
+          "Certidão ou cópia da ata de eleição de peritos",
+          "Laudo de avaliação dos bens"
+        ]
+      },
+      "DISSOLUCAO_LIQUIDACAO": {
+        "nome_completo": "Dissolução e Liquidação",
+        "quorum": {
+          "instalacao_deliberacao": "Mínimo de metade das ações com direito de voto"
+        },
+        "documentos_base": [
+          "Certidão ou cópia da ata da AGE que deliberou a dissolução autenticada pelo presidente e secretário",
+          "Aprovação prévia do órgão governamental competente quando for o caso"
+        ],
+        "conteudo_obrigatorio_ata": [
+          "Nomeação do liquidante com qualificação completa",
+          "Eleição do conselho fiscal se requerida",
+          "Acréscimo à denominação da expressão Em Liquidação"
+        ]
+      },
+      "EXTINCAO": {
+        "nome_completo": "Extinção de Sociedade Anônima",
+        "documentos_base": [
+          "Certidão ou cópia da ata da AGE aprovando encerramento da liquidação",
+          "Prestação de contas do liquidante aprovada"
+        ]
+      },
+      "ABERTURA_FILIAL": {
+        "nome_completo": "Abertura Alteração e Extinção de Filiais",
+        "documentos_base": [
+          "Ata de assembleia ou RCA ou ato de diretor conforme estatuto",
+          "FCN para cada ato de filial"
+        ],
+        "dados_obrigatorios": [
+          "Endereço completo da filial: logradouro, número, complemento, bairro, município, UF e CEP",
+          "CNPJ da filial nos casos de alteração, transferência ou extinção"
+        ],
+        "filial_outra_uf": "Arquivamento promovido exclusivamente na Junta Comercial da UF sede. Após deferimento os dados são encaminhados eletronicamente para a Junta da outra UF. Recomendável pesquisa de nome empresarial na Junta de destino antes."
+      },
+      "ESCRITURA_DEBENTURES": {
+        "nome_completo": "Escritura de Debêntures",
+        "documentos_base": [
+          "Certidão ou cópia da ata da AGE ou RCA que deliberou a emissão",
+          "Escritura de emissão"
+        ],
+        "observacao": "Para emissão de debêntures é necessário registro na Junta Comercial da sede. A escritura pode ser arquivada como anexo à ata em processo separado."
+      }
+    },
+
+    "LTDA": {
+      "ALTERACAO_CONTRATUAL": {
+        "nome_completo": "Alteração Contratual",
+        "frequencia": "Quando necessário",
+        "documentos_base": [
+          "Instrumento de alteração contratual assinado pelos sócios ou procuradores",
+          "FCN quando houver alteração de dados cadastrais",
+          "DBE quando houver alteração de dados na Receita Federal"
+        ]
+      },
+      "ARS": {
+        "nome_completo": "Ata de Reunião de Sócios",
+        "frequencia": "Quando necessário",
+        "documentos_base": [
+          "Certidão ou cópia da ata autenticada",
+          "FCN quando houver alteração de dados cadastrais",
+          "DBE quando houver alteração de dados na Receita Federal"
+        ]
+      },
+      "CONSTITUICAO": {
+        "nome_completo": "Constituição de Ltda",
+        "documentos_base": [
+          "Contrato social assinado pelos sócios ou procuradores com firma reconhecida",
+          "Visto de advogado obrigatório",
+          "FCN",
+          "DBE",
+          "Viabilidade deferida"
+        ]
+      },
+      "DISSOLUCAO": {
+        "nome_completo": "Dissolução de Ltda",
+        "documentos_base": [
+          "Ata de reunião de sócios ou alteração contratual deliberando a dissolução",
+          "Nomeação do liquidante com qualificação completa"
+        ]
+      },
+      "EXTINCAO": {
+        "nome_completo": "Extinção de Ltda",
+        "documentos_base": [
+          "Ata de reunião de sócios aprovando as contas do liquidante e declarando encerramento"
+        ]
+      },
+      "ABERTURA_FILIAL": {
+        "nome_completo": "Abertura Alteração e Extinção de Filiais Ltda",
+        "documentos_base": [
+          "Alteração contratual ou ata de reunião de sócios",
+          "FCN individualizada para cada filial"
+        ],
+        "dados_obrigatorios": [
+          "Endereço completo da filial",
+          "CNPJ da filial nos casos de alteração, transferência ou extinção"
+        ]
+      }
+    }
+  },
+
+  "eventos_e_exigencias": {
+    "alteracao_endereco_sede": {
+      "nome": "Alteração de Endereço da Sede",
+      "tipo_sociedade": ["SA", "LTDA"],
+      "requer_cpl": true,
+      "requer_viabilidade": true,
+      "requer_dbe": true,
+      "fluxo": [
+        "1. Verificar se há alteração de objeto social concomitante",
+        "2. Transmitir CPL na Prefeitura",
+        "3. Aguardar aprovação da CPL",
+        "4. Transmitir Viabilidade",
+        "5. Transmitir DBE",
+        "6. Protocolar na Junta Comercial"
+      ],
+      "observacao": "No Rio de Janeiro requer Consulta Prévia de Local na Prefeitura antes da Viabilidade e DBE"
+    },
+    "alteracao_objeto_social": {
+      "nome": "Alteração de Objeto Social",
+      "tipo_sociedade": ["SA", "LTDA"],
+      "requer_cpl": true,
+      "requer_viabilidade": true,
+      "requer_dbe": true,
+      "fluxo": [
+        "1. Transmitir CPL na Prefeitura",
+        "2. Aguardar aprovação da CPL",
+        "3. Transmitir Viabilidade",
+        "4. Transmitir DBE",
+        "5. Protocolar na Junta Comercial"
+      ]
+    },
+    "alteracao_capital_social": {
+      "nome": "Alteração de Capital Social",
+      "tipo_sociedade": ["SA", "LTDA"],
+      "requer_cpl": false,
+      "requer_viabilidade": false,
+      "requer_dbe": true,
+      "aumento": {
+        "limite_realizacao": "Somente após realizados 3/4 do capital social",
+        "formas": ["Moeda nacional", "Bens móveis", "Bens imóveis", "Títulos", "Reservas"],
+        "realizacao_com_bens": "Exige avaliação por 3 peritos ou empresa especializada nomeados em assembleia",
+        "direito_preferencia": "Prazo mínimo de 30 dias para exercício pelos acionistas"
+      },
+      "reducao": {
+        "motivos": ["Perda até o montante dos prejuízos acumulados", "Capital julgado excessivo"],
+        "oposicao_credores": "Certidão só arquivada após 60 dias da publicação sem oposição de credores quirografários"
+      }
+    },
+    "alteracao_diretores_conselho": {
+      "nome": "Alteração no Quadro de Diretores e/ou Conselho",
+      "tipo_sociedade": ["SA", "LTDA"],
+      "requer_cpl": false,
+      "requer_viabilidade": false,
+      "requer_dbe": true,
+      "qualificacao_obrigatoria": [
+        "Nome civil por extenso",
+        "Nacionalidade",
+        "Estado civil",
+        "Profissão",
+        "Número de identidade e órgão expedidor",
+        "CPF",
+        "Residência com endereço completo",
+        "Prazo de gestão"
+      ],
+      "observacoes": [
+        "Qualificação completa obrigatória mesmo em caso de reeleição",
+        "Diretores devem residir no Brasil",
+        "Posse de conselheiro residente no exterior condicionada à constituição de representante residente no País com procuração válida por mínimo 3 anos após término do mandato",
+        "Cópia autenticada de identidade obrigatória quando houver ingresso de novos administradores"
+      ]
+    },
+    "transferencia_sede_outra_uf": {
+      "nome": "Transferência de Sede para Outra UF",
+      "tipo_sociedade": ["SA", "LTDA"],
+      "requer_cpl": true,
+      "requer_viabilidade": true,
+      "requer_dbe": true,
+      "fluxo": [
+        "1. Verificar colidência de nome empresarial na Junta de destino",
+        "2. Arquivar Proteção do Nome Empresarial na Junta de destino se necessário",
+        "3. Protocolar ato consolidado na Junta da UF de origem",
+        "4. Junta de destino recepciona os dados eletronicamente",
+        "5. Prontuário é remetido para Junta da nova sede mediante solicitação"
+      ],
+      "observacao": "A ata da AGE ou AGOE que deliberar sobre mudança de sede deverá consolidar o estatuto social"
+    },
+    "emissao_debentures": {
+      "nome": "Emissão de Debêntures",
+      "tipo_sociedade": ["SA"],
+      "requer_cpl": false,
+      "requer_viabilidade": false,
+      "requer_dbe": false,
+      "documentos": [
+        "Certidão ou cópia da ata da AGE ou RCA que deliberou a emissão",
+        "Escritura de emissão"
+      ]
+    },
+    "abertura_filial": {
+      "nome": "Abertura de Filial",
+      "tipo_sociedade": ["SA", "LTDA"],
+      "requer_cpl": true,
+      "requer_viabilidade": true,
+      "requer_dbe": true,
+      "observacao": "Para filial em outra UF o arquivamento é feito na Junta da sede e os dados são encaminhados eletronicamente"
+    }
+  },
+
+  "documentacao_comum_todos_atos": {
+    "SA": [
+      "Requerimento assinado pelo administrador, acionista ou procurador (dispensado no registro digital)",
+      "Instrumento ou ato a ser arquivado",
+      "Procuração com firma reconhecida quando requerimento assinado por procurador",
+      "FCN (dispensada se Junta usar sistema de integração)",
+      "Viabilidade deferida ou Pesquisa de Nome Empresarial quando aplicável",
+      "DBE (dispensado se Junta usar sistema de integração)",
+      "Comprovante de pagamento da Guia de Recolhimento da Junta Comercial"
+    ],
+    "LTDA": [
+      "Requerimento assinado pelo administrador ou sócio ou procurador",
+      "Instrumento ou ato a ser arquivado",
+      "Procuração quando aplicável",
+      "FCN quando houver alteração de dados cadastrais",
+      "DBE quando houver alteração de dados na Receita Federal",
+      "Comprovante de pagamento da Guia de Recolhimento da Junta Comercial"
+    ]
+  },
+
+  "impedimentos_administradores": [
+    "Condenado por crime falimentar, prevaricação, peita, suborno, concussão, peculato, contra economia popular, fé pública ou propriedade",
+    "Magistrado",
+    "Membro do Ministério Público",
+    "Falido não reabilitado",
+    "Menor de 16 anos",
+    "Pessoa jurídica",
+    "Pessoa natural não residente no Brasil para cargo de diretor ou membro do Conselho Fiscal",
+    "Servidores públicos civis da ativa federais",
+    "Servidores militares da ativa"
+  ],
+
+  "prazos_junta_comercial_rj": {
+    "prazo_medio_deferimento": "2 a 3 dias úteis após protocolo",
+    "consulta_protocolo": "Digital — sistema da JUCERJ",
+    "observacao": "O sistema deve consultar automaticamente o status do protocolo"
+  },
+
+  "fluxo_padrao_sem_cpl": [
+    "1. Receber ata",
+    "2. Identificar tipo de ato e eventos",
+    "3. Gerar checklist de documentos",
+    "4. Transmitir DBE se necessário",
+    "5. Protocolar na Junta Comercial",
+    "6. Acompanhar protocolo",
+    "7. Registrar deferimento",
+    "8. Emitir cobrança"
+  ],
+
+  "fluxo_com_cpl": [
+    "1. Receber ata",
+    "2. Identificar tipo de ato e eventos",
+    "3. Gerar checklist de documentos",
+    "4. Transmitir CPL na Prefeitura",
+    "5. Aguardar aprovação da CPL",
+    "6. Transmitir Viabilidade",
+    "7. Transmitir DBE",
+    "8. Protocolar na Junta Comercial",
+    "9. Acompanhar protocolo",
+    "10. Registrar deferimento",
+    "11. Emitir cobrança"
+  ]
+}

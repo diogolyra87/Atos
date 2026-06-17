@@ -1,0 +1,57 @@
+﻿# Segredos - NUNCA subir
+.env
+*.env
+
+# Banco de dados (dados de teste/locais)
+*.db
+mane.db
+
+# Python
+__pycache__/
+*.pyc
+venv/
+.venv/
+
+# Node / Frontend
+node_modules/
+frontend/node_modules/
+frontend/build/
+
+# Uploads de teste
+backend/uploads/
+uploads/
+
+# Scripts avulsos (nao vao pro servidor)
+app/planilhar.py
+app/planilhar_atas.py
+app/planilhar_final.py
+app/organizar_pasta.py
+app/criar_planilha_enel.py
+
+# Tokens/credenciais Google
+token.json
+credentials.json
+
+# Sistema
+.DS_Store
+Thumbs.db
+
+# Scripts temporarios de edicao (uso unico - nao vao pro servidor)
+add_*.py
+ajusta_*.py
+aplica_*.py
+corrige_*.py
+centraliza_*.py
+reescreve_*.py
+remove_*.py
+gera_requirements.py
+check.py
+app/completar_planilha.py
+app/filtrar_estatuto.py
+app/reordenar.py
+backend/limpar_dados.py
+
+# Arquivos de teste
+teste_*.pdf
+teste_*.xlsx
+teste_*.docx

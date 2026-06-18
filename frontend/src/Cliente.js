@@ -2,7 +2,7 @@ import { useState, useEffect } from "react";
 import { useSearchParams } from "react-router-dom";
 import axios from "axios";
 
-const API = "http://localhost:8000";
+const API = "";
 
 const STATUS_CONFIG = {
   recebido: { label: "Aberto", bg: "#eceae2", color: "#6b6c66" },

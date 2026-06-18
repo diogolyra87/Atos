@@ -135,21 +135,22 @@ def login(dados: dict, db: Session = Depends(get_db)):
     usuario.token = token
     db.commit()
     grupo = db.query(Grupo).filter(Grupo.id == usuario.grupo_id).first()
-    return {"token": token, "login": usuario.login, "grupo_id": usuario.grupo_id, "grupo": grupo.nome if grupo else None}
+    return {"token": token, "login": usuario.login, "grupo_id": usuario.grupo_id, "grupo": grupo.nome if grupo else None, "is_admin": bool(usuario.is_admin)}
 
 
 @app.get("/download/{processo_id}/{tipo}")
 def download(processo_id: str, tipo: str, x_token: str = Header(None), db: Session = Depends(get_db)):
     from fastapi.responses import FileResponse
+    if not x_token:
+        raise HTTPException(status_code=401, detail="Token necessario")
+    usuario = db.query(Usuario).filter(Usuario.token == x_token).first()
+    if not usuario:
+        raise HTTPException(status_code=401, detail="Token invalido ou sessao expirada")
     p = db.query(Processo).filter(Processo.id == processo_id).first()
     if not p:
         raise HTTPException(status_code=404, detail="Processo nao encontrado")
-    if x_token:
-        usuario = db.query(Usuario).filter(Usuario.token == x_token).first()
-        if not usuario:
-            raise HTTPException(status_code=401, detail="Token invalido ou sessao expirada")
-        if p.grupo_id != usuario.grupo_id:
-            raise HTTPException(status_code=403, detail="Acesso negado a este processo")
+    if not usuario.is_admin and p.grupo_id != usuario.grupo_id:
+        raise HTTPException(status_code=403, detail="Acesso negado a este processo")
     campo_map = {"ata": p.arquivo_ata, "protocolo": p.arquivo_protocolo, "registro": p.arquivo_registro, "nd": p.arquivo_nd, "nf": p.arquivo_nf, "exigencia": p.arquivo_exigencia}
     if tipo not in campo_map:
         raise HTTPException(status_code=400, detail="Tipo invalido")
@@ -163,29 +164,43 @@ def download(processo_id: str, tipo: str, x_token: str = Header(None), db: Sessi
 
 @app.get("/processos")
 def listar_processos(codigo_grupo: str = None, x_token: str = Header(None), db: Session = Depends(get_db)):
+    if not x_token:
+        raise HTTPException(status_code=401, detail="Token necessario")
+    usuario = db.query(Usuario).filter(Usuario.token == x_token).first()
+    if not usuario:
+        raise HTTPException(status_code=401, detail="Token invalido ou sessao expirada")
     query = db.query(Processo)
-    if x_token:
-        usuario = db.query(Usuario).filter(Usuario.token == x_token).first()
-        if not usuario:
-            raise HTTPException(status_code=401, detail="Token invalido ou sessao expirada")
+    if usuario.is_admin:
+        if codigo_grupo:
+            grupo = db.query(Grupo).filter(Grupo.codigo == codigo_grupo).first()
+            if grupo:
+                query = query.filter(Processo.grupo_id == grupo.id)
+    else:
         query = query.filter(Processo.grupo_id == usuario.grupo_id)
-    elif codigo_grupo:
-        grupo = db.query(Grupo).filter(Grupo.codigo == codigo_grupo).first()
-        if not grupo:
-            raise HTTPException(status_code=400, detail="Grupo nao encontrado")
-        query = query.filter(Processo.grupo_id == grupo.id)
     processos = query.order_by(Processo.criado_em.desc()).all()
     return processos
 
 @app.get("/processos/{processo_id}")
-def obter_processo(processo_id: str, db: Session = Depends(get_db)):
+def obter_processo(processo_id: str, x_token: str = Header(None), db: Session = Depends(get_db)):
+    if not x_token:
+        raise HTTPException(status_code=401, detail="Token necessario")
+    usuario = db.query(Usuario).filter(Usuario.token == x_token).first()
+    if not usuario:
+        raise HTTPException(status_code=401, detail="Token invalido ou sessao expirada")
     p = db.query(Processo).filter(Processo.id == processo_id).first()
+    if p and not usuario.is_admin and p.grupo_id != usuario.grupo_id:
+        raise HTTPException(status_code=403, detail="Sem permissao para este processo")
     if not p:
         raise HTTPException(status_code=404, detail="Processo não encontrado")
     return p
 
 @app.post("/processos/analisar")
-async def analisar_documento(arquivo: UploadFile = File(...)):
+async def analisar_documento(arquivo: UploadFile = File(...), x_token: str = Header(None), db: Session = Depends(get_db)):
+    if not x_token:
+        raise HTTPException(status_code=401, detail="Token necessario")
+    usuario = db.query(Usuario).filter(Usuario.token == x_token).first()
+    if not usuario:
+        raise HTTPException(status_code=401, detail="Token invalido ou sessao expirada")
     import fitz
     import docx as docx_lib
 
@@ -227,18 +242,21 @@ async def criar_processo(
     info = json.loads(dados)
     processo_id = f"MN-{datetime.now().strftime('%Y%m%d%H%M%S')}-{str(uuid.uuid4())[:4].upper()}"
 
+    if not x_token:
+        raise HTTPException(status_code=401, detail="Token necessario")
+    usuario_tok = db.query(Usuario).filter(Usuario.token == x_token).first()
+    if not usuario_tok:
+        raise HTTPException(status_code=401, detail="Token invalido ou sessao expirada")
     grupo_id = None
-    if x_token:
-        usuario_tok = db.query(Usuario).filter(Usuario.token == x_token).first()
-        if not usuario_tok:
-            raise HTTPException(status_code=401, detail="Token invalido ou sessao expirada")
+    if usuario_tok.is_admin:
+        codigo_grupo = info.get("codigo_grupo", "").strip()
+        if codigo_grupo:
+            grupo = db.query(Grupo).filter(Grupo.codigo == codigo_grupo).first()
+            if not grupo:
+                raise HTTPException(status_code=400, detail=f"Grupo com codigo '{codigo_grupo}' nao encontrado")
+            grupo_id = grupo.id
+    else:
         grupo_id = usuario_tok.grupo_id
-    codigo_grupo = info.get("codigo_grupo", "").strip()
-    if codigo_grupo and not grupo_id:
-        grupo = db.query(Grupo).filter(Grupo.codigo == codigo_grupo).first()
-        if not grupo:
-            raise HTTPException(status_code=400, detail=f"Grupo com codigo '{codigo_grupo}' nao encontrado")
-        grupo_id = grupo.id
 
     arquivo_ata = None
     if arquivo:
@@ -284,8 +302,15 @@ def recalcular_status(p):
 
 
 @app.patch("/processos/{processo_id}")
-def atualizar_processo(processo_id: str, dados: dict, db: Session = Depends(get_db)):
+def atualizar_processo(processo_id: str, dados: dict, x_token: str = Header(None), db: Session = Depends(get_db)):
+    if not x_token:
+        raise HTTPException(status_code=401, detail="Token necessario")
+    usuario = db.query(Usuario).filter(Usuario.token == x_token).first()
+    if not usuario:
+        raise HTTPException(status_code=401, detail="Token invalido ou sessao expirada")
     p = db.query(Processo).filter(Processo.id == processo_id).first()
+    if p and not usuario.is_admin and p.grupo_id != usuario.grupo_id:
+        raise HTTPException(status_code=403, detail="Sem permissao para este processo")
     if not p:
         raise HTTPException(status_code=404, detail="Processo não encontrado")
     for campo, valor in dados.items():
@@ -304,9 +329,17 @@ async def upload_arquivo(
     processo_id: str,
     tipo: str,
     arquivo: UploadFile = File(...),
+    x_token: str = Header(None),
     db: Session = Depends(get_db)
 ):
+    if not x_token:
+        raise HTTPException(status_code=401, detail="Token necessario")
+    usuario = db.query(Usuario).filter(Usuario.token == x_token).first()
+    if not usuario:
+        raise HTTPException(status_code=401, detail="Token invalido ou sessao expirada")
     p = db.query(Processo).filter(Processo.id == processo_id).first()
+    if p and not usuario.is_admin and p.grupo_id != usuario.grupo_id:
+        raise HTTPException(status_code=403, detail="Sem permissao para este processo")
     if not p:
         raise HTTPException(status_code=404, detail="Processo não encontrado")
 
@@ -337,9 +370,17 @@ async def registrar_exigencia(
     processo_id: str,
     texto: str = Form(""),
     arquivo: UploadFile = File(None),
+    x_token: str = Header(None),
     db: Session = Depends(get_db)
 ):
+    if not x_token:
+        raise HTTPException(status_code=401, detail="Token necessario")
+    usuario = db.query(Usuario).filter(Usuario.token == x_token).first()
+    if not usuario:
+        raise HTTPException(status_code=401, detail="Token invalido ou sessao expirada")
     p = db.query(Processo).filter(Processo.id == processo_id).first()
+    if p and not usuario.is_admin and p.grupo_id != usuario.grupo_id:
+        raise HTTPException(status_code=403, detail="Sem permissao para este processo")
     if not p:
         raise HTTPException(status_code=404, detail="Processo nao encontrado")
     p.texto_exigencia = texto
@@ -358,8 +399,15 @@ async def registrar_exigencia(
 
 
 @app.post("/processos/{processo_id}/exigencia/cumprida")
-def exigencia_cumprida(processo_id: str, db: Session = Depends(get_db)):
+def exigencia_cumprida(processo_id: str, x_token: str = Header(None), db: Session = Depends(get_db)):
+    if not x_token:
+        raise HTTPException(status_code=401, detail="Token necessario")
+    usuario = db.query(Usuario).filter(Usuario.token == x_token).first()
+    if not usuario:
+        raise HTTPException(status_code=401, detail="Token invalido ou sessao expirada")
     p = db.query(Processo).filter(Processo.id == processo_id).first()
+    if p and not usuario.is_admin and p.grupo_id != usuario.grupo_id:
+        raise HTTPException(status_code=403, detail="Sem permissao para este processo")
     if not p:
         raise HTTPException(status_code=404, detail="Processo nao encontrado")
     p.exigencia_ativa = False
@@ -370,7 +418,12 @@ def exigencia_cumprida(processo_id: str, db: Session = Depends(get_db)):
 
 
 @app.get("/grupos")
-def listar_grupos(db: Session = Depends(get_db)):
+def listar_grupos(x_token: str = Header(None), db: Session = Depends(get_db)):
+    if not x_token:
+        raise HTTPException(status_code=401, detail="Token necessario")
+    usuario = db.query(Usuario).filter(Usuario.token == x_token).first()
+    if not usuario or not usuario.is_admin:
+        raise HTTPException(status_code=403, detail="Acesso restrito ao administrador")
     grupos = db.query(Grupo).order_by(Grupo.nome).all()
     return [{"id": g.id, "nome": g.nome, "codigo": g.codigo} for g in grupos]
 
@@ -420,12 +473,20 @@ def gerar_relatorio(status: str = "todos", x_token: str = Header(None), db: Sess
 
 
 @app.get("/metricas")
-def metricas(db: Session = Depends(get_db)):
-    total = db.query(Processo).count()
-    tramitacao = db.query(Processo).filter(Processo.status == "tramitacao").count()
-    exigencia = db.query(Processo).filter(Processo.status == "exigencia").count()
-    aprovado = db.query(Processo).filter(Processo.status == "aprovado").count()
-    cobranca_pendente = db.query(Processo).filter(
+def metricas(x_token: str = Header(None), db: Session = Depends(get_db)):
+    if not x_token:
+        raise HTTPException(status_code=401, detail="Token necessario")
+    usuario = db.query(Usuario).filter(Usuario.token == x_token).first()
+    if not usuario:
+        raise HTTPException(status_code=401, detail="Token invalido ou sessao expirada")
+    base = db.query(Processo)
+    if not usuario.is_admin:
+        base = base.filter(Processo.grupo_id == usuario.grupo_id)
+    total = base.count()
+    tramitacao = base.filter(Processo.status == "tramitacao").count()
+    exigencia = base.filter(Processo.status == "exigencia").count()
+    aprovado = base.filter(Processo.status == "aprovado").count()
+    cobranca_pendente = base.filter(
         Processo.status == "aprovado",
         Processo.nf_enviada == False
     ).count()

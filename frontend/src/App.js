@@ -39,7 +39,7 @@ function abreviarAto(texto, data) {
   return curto;
 }
 
-export default function App() {
+function AppPainel({ onSair }) {
   const [processos, setProcessos] = useState([]);
   const [metricas, setMetricas] = useState({});
   const [tela, setTela] = useState("processos");
@@ -415,6 +415,9 @@ export default function App() {
               {icon} {label}
             </button>
           ))}
+          <div style={{ marginTop: "auto", padding: "12px 16px" }}>
+            <button onClick={onSair} style={{ width: "100%", background: "transparent", border: "0.5px solid rgba(255,255,255,0.25)", color: "#aecaca", borderRadius: 8, padding: "9px 10px", fontSize: 13, cursor: "pointer" }}>Sair</button>
+          </div>
         </div>
 
         <div style={s.main}>
@@ -614,5 +617,74 @@ export default function App() {
         </div>
       )}
     </>
+  );
+}
+
+
+// ===== Portao de login do administrador =====
+function getSessaoAdmin() {
+  try {
+    const s = localStorage.getItem("atos_admin");
+    return s ? JSON.parse(s) : null;
+  } catch (e) { return null; }
+}
+
+const _sa = getSessaoAdmin();
+if (_sa && _sa.token) {
+  axios.defaults.headers.common["x-token"] = _sa.token;
+}
+
+export default function App() {
+  const [sessao, setSessao] = useState(getSessaoAdmin());
+  const [login, setLogin] = useState("");
+  const [senha, setSenha] = useState("");
+  const [erro, setErro] = useState("");
+  const [carregando, setCarregando] = useState(false);
+
+  async function entrar() {
+    setErro("");
+    if (!login || !senha) { setErro("Preencha login e senha."); return; }
+    setCarregando(true);
+    try {
+      const r = await axios.post(`${API}/login`, { login, senha });
+      if (!r.data.is_admin) {
+        setErro("Este acesso e restrito a administradores.");
+        setCarregando(false);
+        return;
+      }
+      axios.defaults.headers.common["x-token"] = r.data.token;
+      localStorage.setItem("atos_admin", JSON.stringify(r.data));
+      setSessao(r.data);
+    } catch (e) {
+      if (e.response && e.response.status === 401) setErro("Login ou senha invalidos.");
+      else setErro("Erro ao conectar.");
+    }
+    setCarregando(false);
+  }
+
+  function sair() {
+    localStorage.removeItem("atos_admin");
+    delete axios.defaults.headers.common["x-token"];
+    setSessao(null);
+    setSenha("");
+  }
+
+  if (sessao && sessao.token) {
+    return <AppPainel onSair={sair} />;
+  }
+
+  return (
+    <div style={{ minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", background: "#23282a", fontFamily: "Inter, sans-serif" }}>
+      <div style={{ background: "#fff", borderRadius: 12, padding: 36, width: 340, boxShadow: "0 10px 40px rgba(0,0,0,0.3)" }}>
+        <div style={{ fontSize: 30, fontWeight: 800, color: "#16151a", letterSpacing: -1.5, textAlign: "center" }}>atos<span style={{ color: "#d85a30" }}>.</span></div>
+        <div style={{ textAlign: "center", fontSize: 13, color: "#64748b", marginBottom: 24 }}>Acesso do administrador</div>
+        {erro && <div style={{ background: "#fee2e2", color: "#991b1b", borderRadius: 8, padding: "8px 12px", fontSize: 13, marginBottom: 14 }}>{erro}</div>}
+        <label style={{ fontSize: 12, color: "#64748b", marginBottom: 4, display: "block" }}>Login</label>
+        <input style={{ width: "100%", padding: "10px 12px", border: "0.5px solid #cbd5e1", borderRadius: 8, fontSize: 14, outline: "none", marginBottom: 14, boxSizing: "border-box" }} value={login} onChange={e => setLogin(e.target.value)} onKeyDown={e => e.key === "Enter" && entrar()} />
+        <label style={{ fontSize: 12, color: "#64748b", marginBottom: 4, display: "block" }}>Senha</label>
+        <input style={{ width: "100%", padding: "10px 12px", border: "0.5px solid #cbd5e1", borderRadius: 8, fontSize: 14, outline: "none", marginBottom: 14, boxSizing: "border-box" }} type="password" value={senha} onChange={e => setSenha(e.target.value)} onKeyDown={e => e.key === "Enter" && entrar()} />
+        <button style={{ width: "100%", background: "#1f4d52", color: "#fff", border: "none", padding: "11px", borderRadius: 8, fontSize: 14, cursor: "pointer", marginTop: 4 }} onClick={entrar} disabled={carregando}>{carregando ? "Aguarde..." : "Entrar"}</button>
+      </div>
+    </div>
   );
 }

@@ -26,6 +26,7 @@ class Usuario(Base):
     senha_hash = Column(String, nullable=False)
     grupo_id = Column(String, nullable=False)
     token = Column(String, nullable=True)
+    is_admin = Column(Boolean, default=False)
     criado_em = Column(DateTime, default=datetime.now)
 
 class EmailGrupo(Base):

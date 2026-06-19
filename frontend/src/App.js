@@ -79,8 +79,8 @@ function TelaGrupos() {
 
   return (
     <>
-      <div style={s.topbar}>
-        <h1 style={s.h1}>Grupos empresariais</h1>
+      <div style={{ marginBottom: 24 }}>
+        <h1 style={{ fontSize: 22, fontWeight: 800, color: "#16151a", margin: 0 }}>Grupos empresariais</h1>
       </div>
       <div style={{ maxWidth: 560, background: "#fff", borderRadius: 12, padding: 28, border: "0.5px solid #e2e8f0" }}>
         <div style={{ fontSize: 15, fontWeight: 700, color: "#16151a", marginBottom: 4 }}>Criar novo grupo</div>

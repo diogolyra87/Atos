@@ -1,4 +1,4 @@
-from fastapi import FastAPI, Depends, UploadFile, File, Form, HTTPException, Header
+from fastapi import FastAPI, Depends, UploadFile, File, Form, HTTPException, Header, BackgroundTasks
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from sqlalchemy.orm import Session
@@ -37,6 +37,18 @@ def enviar_email(destinatario, assunto, corpo):
     except Exception as e:
         print(f"Erro ao enviar email para {destinatario}: {e}")
         return False
+
+def _disparar_convites(nome, link, emails):
+    corpo = (
+        "Ola!\n\n"
+        "Voce foi cadastrado para acessar o sistema Atos - Gestao Societaria, no grupo " + nome + ".\n\n"
+        "Para criar seu usuario e senha de acesso, clique no link abaixo:\n"
+        + link + "\n\n"
+        "Apos criar seu acesso, voce podera acompanhar seus processos pelo endereco " + BASE_URL_SISTEMA + ".\n\n"
+        "Atenciosamente,\nEquipe Atos"
+    )
+    for email in emails:
+        enviar_email(email, "Acesso ao sistema Atos - " + nome, corpo)
 
 
 app = FastAPI(title="Mané API")
@@ -456,7 +468,7 @@ def listar_grupos(x_token: str = Header(None), db: Session = Depends(get_db)):
     return [{"id": g.id, "nome": g.nome, "codigo": g.codigo} for g in grupos]
 
 @app.post("/grupos/criar")
-def criar_grupo(dados: dict, x_token: str = Header(None), db: Session = Depends(get_db)):
+def criar_grupo(dados: dict, background: BackgroundTasks, x_token: str = Header(None), db: Session = Depends(get_db)):
     if not x_token:
         raise HTTPException(status_code=401, detail="Token necessario")
     usuario = db.query(Usuario).filter(Usuario.token == x_token).first()
@@ -483,23 +495,14 @@ def criar_grupo(dados: dict, x_token: str = Header(None), db: Session = Depends(
     db.commit()
 
     link = f"{BASE_URL_SISTEMA}/cliente?grupo={codigo}"
-    enviados = []
-    falharam = []
     for email in emails:
         ja = db.query(EmailGrupo).filter(EmailGrupo.email == email, EmailGrupo.grupo_id == grupo.id).first()
         if not ja:
             db.add(EmailGrupo(id=str(uuid.uuid4()), email=email, grupo_id=grupo.id))
             db.commit()
-        corpo = (
-            f"Ola!\n\n"
-            f"Voce foi cadastrado para acessar o sistema Atos - Gestao Societaria, no grupo {nome}.\n\n"
-            f"Para criar seu usuario e senha de acesso, clique no link abaixo:\n"
-            f"{link}\n\n"
-            f"Apos criar seu acesso, voce podera acompanhar seus processos pelo endereco {BASE_URL_SISTEMA}.\n\n"
-            f"Atenciosamente,\nEquipe Atos"
-        )
-        ok = enviar_email(email, f"Acesso ao sistema Atos - {nome}", corpo)
-        (enviados if ok else falharam).append(email)
+    background.add_task(_disparar_convites, nome, link, emails)
+    enviados = emails
+    falharam = []
 
     return {
         "mensagem": "Grupo criado com sucesso",

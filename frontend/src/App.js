@@ -40,6 +40,89 @@ function abreviarAto(texto, data) {
   return curto;
 }
 
+function TelaGrupos() {
+  const [nome, setNome] = useState("");
+  const [emails, setEmails] = useState([""]);
+  const [criando, setCriando] = useState(false);
+  const [resultado, setResultado] = useState(null);
+  const [erro, setErro] = useState("");
+
+  function mudarEmail(i, valor) {
+    const novos = [...emails];
+    novos[i] = valor;
+    setEmails(novos);
+  }
+  function adicionarEmail() {
+    setEmails([...emails, ""]);
+  }
+  function removerEmail(i) {
+    if (emails.length === 1) return;
+    setEmails(emails.filter((_, idx) => idx !== i));
+  }
+
+  async function criar() {
+    setErro(""); setResultado(null);
+    const nomeT = nome.trim();
+    const emailsT = emails.map(e => e.trim()).filter(e => e);
+    if (!nomeT) { setErro("Informe o nome do grupo."); return; }
+    if (emailsT.length === 0) { setErro("Informe ao menos um email."); return; }
+    setCriando(true);
+    try {
+      const r = await axios.post(`${API}/grupos/criar`, { nome: nomeT, emails: emailsT });
+      setResultado(r.data);
+      setNome(""); setEmails([""]);
+    } catch (e) {
+      setErro(e.response && e.response.data && e.response.data.detail ? e.response.data.detail : "Erro ao criar grupo.");
+    }
+    setCriando(false);
+  }
+
+  return (
+    <>
+      <div style={s.topbar}>
+        <h1 style={s.h1}>Grupos empresariais</h1>
+      </div>
+      <div style={{ maxWidth: 560, background: "#fff", borderRadius: 12, padding: 28, border: "0.5px solid #e2e8f0" }}>
+        <div style={{ fontSize: 15, fontWeight: 700, color: "#16151a", marginBottom: 4 }}>Criar novo grupo</div>
+        <div style={{ fontSize: 13, color: "#64748b", marginBottom: 20 }}>O sistema enviara automaticamente o convite de acesso para os emails cadastrados.</div>
+
+        {erro && <div style={{ background: "#fee2e2", color: "#991b1b", borderRadius: 8, padding: "8px 12px", fontSize: 13, marginBottom: 14 }}>{erro}</div>}
+
+        {resultado && (
+          <div style={{ background: "#dcfce7", color: "#166534", borderRadius: 8, padding: "12px 14px", fontSize: 13, marginBottom: 14 }}>
+            <div><b>Grupo "{resultado.grupo}" criado!</b></div>
+            <div style={{ marginTop: 4 }}>Codigo: {resultado.codigo}</div>
+            {resultado.emails_enviados && resultado.emails_enviados.length > 0 && (
+              <div style={{ marginTop: 6 }}>Convite enviado para: {resultado.emails_enviados.join(", ")}</div>
+            )}
+            {resultado.emails_falharam && resultado.emails_falharam.length > 0 && (
+              <div style={{ marginTop: 6, color: "#991b1b" }}>Falhou o envio para: {resultado.emails_falharam.join(", ")}</div>
+            )}
+          </div>
+        )}
+
+        <label style={{ fontSize: 12, color: "#64748b", marginBottom: 4, display: "block" }}>Nome do grupo</label>
+        <input style={{ width: "100%", padding: "10px 12px", border: "0.5px solid #cbd5e1", borderRadius: 8, fontSize: 14, outline: "none", marginBottom: 18, boxSizing: "border-box" }} value={nome} onChange={e => setNome(e.target.value)} placeholder="Ex: Enel Green Power" />
+
+        <label style={{ fontSize: 12, color: "#64748b", marginBottom: 4, display: "block" }}>Emails do grupo</label>
+        {emails.map((em, i) => (
+          <div key={i} style={{ display: "flex", gap: 8, marginBottom: 8 }}>
+            <input style={{ flex: 1, padding: "10px 12px", border: "0.5px solid #cbd5e1", borderRadius: 8, fontSize: 14, outline: "none", boxSizing: "border-box" }} type="email" value={em} onChange={e => mudarEmail(i, e.target.value)} placeholder="email@empresa.com" />
+            {emails.length > 1 && (
+              <button onClick={() => removerEmail(i)} style={{ background: "#f1f5f9", border: "0.5px solid #cbd5e1", borderRadius: 8, padding: "0 12px", cursor: "pointer", color: "#64748b", fontSize: 16 }}>−</button>
+            )}
+          </div>
+        ))}
+        <button onClick={adicionarEmail} style={{ background: "transparent", border: "0.5px dashed #94a3b8", borderRadius: 8, padding: "8px 12px", cursor: "pointer", color: "#475569", fontSize: 13, marginBottom: 20 }}>+ Adicionar outro email</button>
+
+        <div>
+          <button onClick={criar} disabled={criando} style={{ background: "#1f4d52", color: "#fff", border: "none", padding: "11px 22px", borderRadius: 8, fontSize: 14, cursor: "pointer" }}>{criando ? "Criando e enviando..." : "Criar grupo"}</button>
+        </div>
+      </div>
+    </>
+  );
+}
+
 function AppPainel({ onSair }) {
   const [processos, setProcessos] = useState([]);
   const [metricas, setMetricas] = useState({});
@@ -411,6 +494,7 @@ function AppPainel({ onSair }) {
             { key: "atas", icon: "⊡", label: "Atas recebidas" },
             { key: "cobrancas", icon: "◈", label: "Cobranças" },
             { key: "relatorios", icon: "▦", label: "Relatórios" },
+            { key: "grupos", icon: "◉", label: "Grupos" },
           ].map(({ key, icon, label }) => (
             <button key={key} style={s.nav(tela === key)} onClick={() => { setTela(key); setProcessoSelecionado(null); }}>
               {icon} {label}
@@ -422,7 +506,9 @@ function AppPainel({ onSair }) {
         </div>
 
         <div style={s.main}>
-          {processoSelecionado ? (
+          {tela === "grupos" ? (
+            <TelaGrupos />
+          ) : processoSelecionado ? (
             <DetalheProcesso p={processoSelecionado} />
           ) : (
             <>

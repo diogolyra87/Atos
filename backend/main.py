@@ -2,7 +2,7 @@ from fastapi import FastAPI, Depends, UploadFile, File, Form, HTTPException, Hea
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from sqlalchemy.orm import Session
-from database import get_db, Processo, Grupo, Usuario, criar_banco
+from database import get_db, Processo, Grupo, Usuario, EmailGrupo, criar_banco
 from datetime import datetime
 from openai import OpenAI
 import json, os, uuid, shutil, bcrypt
@@ -10,6 +10,34 @@ import json, os, uuid, shutil, bcrypt
 from dotenv import load_dotenv
 import os
 load_dotenv()
+
+import smtplib
+from email.mime.multipart import MIMEMultipart
+from email.mime.text import MIMEText
+
+EMAIL_USER = os.getenv("EMAIL_USER")
+EMAIL_PASS = os.getenv("EMAIL_PASS")
+EMAIL_HOST = os.getenv("EMAIL_HOST", "smtp.gmail.com")
+EMAIL_PORT_SMTP = int(os.getenv("EMAIL_PORT_SMTP", "587"))
+BASE_URL_SISTEMA = os.getenv("BASE_URL_SISTEMA", "https://atos.net.br")
+
+def enviar_email(destinatario, assunto, corpo):
+    try:
+        msg = MIMEMultipart()
+        msg["From"] = EMAIL_USER
+        msg["To"] = destinatario
+        msg["Subject"] = assunto
+        msg.attach(MIMEText(corpo, "plain"))
+        server = smtplib.SMTP(EMAIL_HOST, EMAIL_PORT_SMTP)
+        server.starttls()
+        server.login(EMAIL_USER, EMAIL_PASS)
+        server.send_message(msg)
+        server.quit()
+        return True
+    except Exception as e:
+        print(f"Erro ao enviar email para {destinatario}: {e}")
+        return False
+
 
 app = FastAPI(title="Mané API")
 
@@ -426,6 +454,61 @@ def listar_grupos(x_token: str = Header(None), db: Session = Depends(get_db)):
         raise HTTPException(status_code=403, detail="Acesso restrito ao administrador")
     grupos = db.query(Grupo).order_by(Grupo.nome).all()
     return [{"id": g.id, "nome": g.nome, "codigo": g.codigo} for g in grupos]
+
+@app.post("/grupos/criar")
+def criar_grupo(dados: dict, x_token: str = Header(None), db: Session = Depends(get_db)):
+    if not x_token:
+        raise HTTPException(status_code=401, detail="Token necessario")
+    usuario = db.query(Usuario).filter(Usuario.token == x_token).first()
+    if not usuario or not usuario.is_admin:
+        raise HTTPException(status_code=403, detail="Acesso restrito ao administrador")
+
+    nome = (dados.get("nome") or "").strip()
+    emails = dados.get("emails") or []
+    emails = [e.strip() for e in emails if e and e.strip()]
+
+    if not nome:
+        raise HTTPException(status_code=400, detail="Informe o nome do grupo")
+    if not emails:
+        raise HTTPException(status_code=400, detail="Informe ao menos um email")
+
+    existente = db.query(Grupo).filter(Grupo.nome == nome).first()
+    if existente:
+        raise HTTPException(status_code=400, detail=f"Ja existe um grupo chamado '{nome}'")
+
+    base = "".join(ch for ch in nome.upper() if ch.isalnum())[:8] or "GRUPO"
+    codigo = f"{base}-{uuid.uuid4().hex[:4].upper()}"
+    grupo = Grupo(id=str(uuid.uuid4()), nome=nome, codigo=codigo)
+    db.add(grupo)
+    db.commit()
+
+    link = f"{BASE_URL_SISTEMA}/cliente?grupo={codigo}"
+    enviados = []
+    falharam = []
+    for email in emails:
+        ja = db.query(EmailGrupo).filter(EmailGrupo.email == email, EmailGrupo.grupo_id == grupo.id).first()
+        if not ja:
+            db.add(EmailGrupo(id=str(uuid.uuid4()), email=email, grupo_id=grupo.id))
+            db.commit()
+        corpo = (
+            f"Ola!\n\n"
+            f"Voce foi cadastrado para acessar o sistema Atos - Gestao Societaria, no grupo {nome}.\n\n"
+            f"Para criar seu usuario e senha de acesso, clique no link abaixo:\n"
+            f"{link}\n\n"
+            f"Apos criar seu acesso, voce podera acompanhar seus processos pelo endereco {BASE_URL_SISTEMA}.\n\n"
+            f"Atenciosamente,\nEquipe Atos"
+        )
+        ok = enviar_email(email, f"Acesso ao sistema Atos - {nome}", corpo)
+        (enviados if ok else falharam).append(email)
+
+    return {
+        "mensagem": "Grupo criado com sucesso",
+        "grupo": nome,
+        "codigo": codigo,
+        "emails_enviados": enviados,
+        "emails_falharam": falharam,
+        "link": link
+    }
 
 
 @app.get("/relatorio")

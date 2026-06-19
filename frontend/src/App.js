@@ -1,5 +1,6 @@
 import { useState, useEffect } from "react";
 import axios from "axios";
+import { Painel as PainelCliente } from "./Cliente";
 
 const API = "";
 
@@ -647,11 +648,6 @@ export default function App() {
     setCarregando(true);
     try {
       const r = await axios.post(`${API}/login`, { login, senha });
-      if (!r.data.is_admin) {
-        setErro("Este acesso e restrito a administradores.");
-        setCarregando(false);
-        return;
-      }
       axios.defaults.headers.common["x-token"] = r.data.token;
       localStorage.setItem("atos_admin", JSON.stringify(r.data));
       setSessao(r.data);
@@ -670,14 +666,15 @@ export default function App() {
   }
 
   if (sessao && sessao.token) {
-    return <AppPainel onSair={sair} />;
+    if (sessao.is_admin) return <AppPainel onSair={sair} />;
+    return <PainelCliente sessao={sessao} onSair={sair} />;
   }
 
   return (
     <div style={{ minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", background: "#23282a", fontFamily: "Inter, sans-serif" }}>
       <div style={{ background: "#fff", borderRadius: 12, padding: 36, width: 340, boxShadow: "0 10px 40px rgba(0,0,0,0.3)" }}>
         <div style={{ fontSize: 30, fontWeight: 800, color: "#16151a", letterSpacing: -1.5, textAlign: "center" }}>atos<span style={{ color: "#d85a30" }}>.</span></div>
-        <div style={{ textAlign: "center", fontSize: 13, color: "#64748b", marginBottom: 24 }}>Acesso do administrador</div>
+        <div style={{ textAlign: "center", fontSize: 13, color: "#64748b", marginBottom: 24 }}>Acesso ao sistema</div>
         {erro && <div style={{ background: "#fee2e2", color: "#991b1b", borderRadius: 8, padding: "8px 12px", fontSize: 13, marginBottom: 14 }}>{erro}</div>}
         <label style={{ fontSize: 12, color: "#64748b", marginBottom: 4, display: "block" }}>Login</label>
         <input style={{ width: "100%", padding: "10px 12px", border: "0.5px solid #cbd5e1", borderRadius: 8, fontSize: 14, outline: "none", marginBottom: 14, boxSizing: "border-box" }} value={login} onChange={e => setLogin(e.target.value)} onKeyDown={e => e.key === "Enter" && entrar()} />

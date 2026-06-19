@@ -103,7 +103,7 @@ export default function Cliente() {
   );
 }
 
-function Painel({ sessao, onSair }) {
+export function Painel({ sessao, onSair }) {
   const [processos, setProcessos] = useState([]);
   const [carregando, setCarregando] = useState(true);
   const [erro, setErro] = useState("");

@@ -375,9 +375,9 @@ function AppPainel({ onSair }) {
 
         <div style={{ fontSize: 13, color: "#64748b", marginBottom: 12 }}>Alterar status:</div>
         <div style={s.statusRow}>
-          {Object.entries(STATUS_CONFIG).map(([key, val]) => (
+          {["aberto","tramitacao","exigencia","deferido","finalizado"].map((key) => (
             <button key={key} style={s.btnStatus(p.status === key)} onClick={() => atualizarStatus(p.id, key)}>
-              {val.label}
+              {STATUS_CONFIG[key].label}
             </button>
           ))}
         </div>

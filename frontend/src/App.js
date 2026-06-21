@@ -340,7 +340,8 @@ function AppPainel({ onSair }) {
       } catch (e) {
         alert("Erro ao marcar exigência como cumprida.");
       }
-    async function exigenciaAguardandoCliente() {
+}
+        async function exigenciaAguardandoCliente() {
       try {
         await axios.post(`${API}/processos/${p.id}/exigencia/aguardando-cliente`);
         alert("Marcado como aguardando o cliente. Alertas passam a ser a cada 7 dias.");

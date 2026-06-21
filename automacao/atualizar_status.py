@@ -115,7 +115,7 @@ def processar():
                 p.exigencia_ativa = False
                 p.ultimo_alerta_em = agora
                 db.commit()
-                enviar_email(EMAIL_ADMIN, "[Atos] Deferido - " + str(p.empresa), corpo_admin(p, "Deferido"))
+                enviar_email(EMAIL_ADMIN, "[Atos] Deferido - " + str(p.empresa), corpo_admin(p, "Deferido") + "\n\nAguardando a Junta Comercial disponibilizar o Registro.")
                 if not p.avisado_deferido:
                     for em in emails_do_grupo(db, p.grupo_id):
                         enviar_email(em, "Atualizacao do seu processo - " + str(p.empresa), "Documento Deferido, aguardando liberacao do Registro.")

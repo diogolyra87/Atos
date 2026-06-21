@@ -353,7 +353,6 @@ function AppPainel({ onSair }) {
         alert("Erro ao marcar como aguardando cliente.");
       }
     }
-    }
     async function salvarProtocolo() {
       setSalvandoProt(true);
       try {

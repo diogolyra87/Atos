@@ -340,6 +340,19 @@ function AppPainel({ onSair }) {
       } catch (e) {
         alert("Erro ao marcar exigência como cumprida.");
       }
+    async function exigenciaAguardandoCliente() {
+      try {
+        await axios.post(`${API}/processos/${p.id}/exigencia/aguardando-cliente`);
+        alert("Marcado como aguardando o cliente. Alertas passam a ser a cada 7 dias.");
+        carregar();
+        if (processoSelecionado?.id === p.id) {
+          const res = await axios.get(`${API}/processos/${p.id}`);
+          setProcessoSelecionado(res.data);
+        }
+      } catch (e) {
+        alert("Erro ao marcar como aguardando cliente.");
+      }
+    }
     }
     async function salvarProtocolo() {
       setSalvandoProt(true);
@@ -431,6 +444,9 @@ function AppPainel({ onSair }) {
             {p.exigencia_ativa && (
               <button style={{ ...s.btnSecondary, borderColor: "#86efac", color: "#166534" }} onClick={exigenciaCumprida}>
                 ✓ Exigência cumprida
+              </button>
+              <button style={{ ...s.btnSecondary, borderColor: "#fbbf24", color: "#92400e" }} onClick={exigenciaAguardandoCliente}>
+                Exigência Aguardando Cliente
               </button>
             )}
           </div>

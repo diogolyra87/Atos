@@ -535,6 +535,21 @@ def exigencia_cumprida(processo_id: str, x_token: str = Header(None), db: Sessio
     db.commit()
     return {"mensagem": "Exigencia marcada como cumprida", "status": p.status}
 
+@app.post("/processos/{processo_id}/exigencia/aguardando-cliente")
+def exigencia_aguardando_cliente(processo_id: str, x_token: str = Header(None), db: Session = Depends(get_db)):
+    if not x_token:
+        raise HTTPException(status_code=401, detail="Token necessario")
+    usuario = db.query(Usuario).filter(Usuario.token == x_token).first()
+    if not usuario or not usuario.is_admin:
+        raise HTTPException(status_code=403, detail="Acesso restrito ao administrador")
+    p = db.query(Processo).filter(Processo.id == processo_id).first()
+    if not p:
+        raise HTTPException(status_code=404, detail="Processo nao encontrado")
+    p.aguardando_cliente = True
+    p.atualizado_em = datetime.now()
+    db.commit()
+    return {"mensagem": "Marcado como aguardando cliente", "aguardando_cliente": True}
+
 
 @app.get("/grupos")
 def listar_grupos(x_token: str = Header(None), db: Session = Depends(get_db)):

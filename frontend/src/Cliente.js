@@ -86,8 +86,8 @@ export default function Cliente() {
     <>
       <div style={s.wrap}>
         <div style={s.card}>
-          <div style={s.logo}>Mané</div>
-          <div style={s.sub}>{ehCadastro ? "Criar acesso" : "Área do cliente"}</div>
+          <div style={s.logo}>atos<span style={{ color: "#d85a30" }}>.</span></div>
+          <div style={s.sub}>Gestão Societária — {ehCadastro ? "Criar acesso" : "Área do cliente"}</div>
           {erro && <div style={s.erro}>{erro}</div>}
           {aviso && <div style={s.aviso}>{aviso}</div>}
           {ehCadastro && codigoGrupo && <div style={s.grupoBox}>Cadastro para o grupo: <strong>{codigoGrupo}</strong></div>}

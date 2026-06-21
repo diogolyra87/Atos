@@ -38,6 +38,49 @@ def enviar_email(destinatario, assunto, corpo):
         print(f"Erro ao enviar email para {destinatario}: {e}")
         return False
 
+def enviar_email_anexo(destinatario, assunto, corpo, caminho_anexo=None, nome_anexo=None):
+    try:
+        from email.mime.application import MIMEApplication
+        msg = MIMEMultipart()
+        msg["From"] = EMAIL_USER
+        msg["To"] = destinatario
+        msg["Subject"] = assunto
+        msg.attach(MIMEText(corpo, "plain"))
+        if caminho_anexo and os.path.exists(caminho_anexo):
+            with open(caminho_anexo, "rb") as fa:
+                part = MIMEApplication(fa.read(), Name=(nome_anexo or os.path.basename(caminho_anexo)))
+            part["Content-Disposition"] = 'attachment; filename="%s"' % (nome_anexo or os.path.basename(caminho_anexo))
+            msg.attach(part)
+        server = smtplib.SMTP(EMAIL_HOST, EMAIL_PORT_SMTP)
+        server.starttls()
+        server.login(EMAIL_USER, EMAIL_PASS)
+        server.send_message(msg)
+        server.quit()
+        return True
+    except Exception as e:
+        print(f"Erro ao enviar email (anexo) para {destinatario}: {e}")
+        return False
+
+def emails_do_grupo(db, grupo_id):
+    if not grupo_id:
+        return []
+    regs = db.query(EmailGrupo).filter(EmailGrupo.grupo_id == grupo_id).all()
+    return [r.email for r in regs if r.email]
+
+def corpo_status_cliente(p, status_label, frase_final):
+    ato = p.identificador_ato or p.tipo_ato or ""
+    linhas = []
+    linhas.append("Empresa: " + (p.empresa or ""))
+    linhas.append("Ato: " + ato)
+    linhas.append("Status: " + status_label)
+    if p.numero_protocolo:
+        linhas.append("")
+        linhas.append("Protocolo: " + p.numero_protocolo)
+    if frase_final:
+        linhas.append("")
+        linhas.append(frase_final)
+    return "\n".join(linhas)
+
 def _disparar_convites(nome, link, emails):
     corpo = (
         "Ola!\n\n"
@@ -322,12 +365,18 @@ async def criar_processo(
         checklist=json.dumps(info.get("checklist", []), ensure_ascii=False),
         requer_cpl=info.get("requer_cpl", False),
         observacoes=info.get("observacoes", ""),
-        status="recebido",
+        status="aberto",
         arquivo_ata=arquivo_ata,
         grupo_id=grupo_id
     )
     db.add(p)
     db.commit()
+    try:
+        corpo = "Processo Inserido no Atos:\n\n" + corpo_status_cliente(p, "Aberto", "")
+        for em in emails_do_grupo(db, grupo_id):
+            enviar_email(em, "Processo inserido no Atos - " + (p.empresa or ""), corpo)
+    except Exception as e:
+        print("Erro ao notificar abertura:", e)
     return {"id": processo_id, "mensagem": "Processo criado com sucesso"}
 
 def recalcular_status(p):
@@ -361,9 +410,17 @@ def atualizar_processo(processo_id: str, dados: dict, x_token: str = Header(None
     # Reinserir/atualizar protocolo cumpre a exigencia ativa
     if ("numero_protocolo" in dados or "arquivo_protocolo" in dados) and getattr(p, "exigencia_ativa", False):
         p.exigencia_ativa = False
+    status_antes_patch = (p.status or "").lower()
     p.status = recalcular_status(p)
     p.atualizado_em = datetime.now()
     db.commit()
+    if status_antes_patch != "tramitacao" and (p.status or "").lower() == "tramitacao":
+        try:
+            corpo = corpo_status_cliente(p, "Tramitacao", "Aguardando analise da Junta Comercial.")
+            for em in emails_do_grupo(db, p.grupo_id):
+                enviar_email(em, "Atualizacao do seu processo - " + (p.empresa or ""), corpo)
+        except Exception as e:
+            print("Erro ao notificar tramitacao:", e)
     return {"mensagem": "Atualizado com sucesso"}
 
 @app.post("/processos/{processo_id}/upload/{tipo}")
@@ -398,12 +455,25 @@ async def upload_arquivo(
         "nf": "arquivo_nf"
     }
     if tipo in campo_map:
+        status_antes_up = (p.status or "").lower()
         setattr(p, campo_map[tipo], nome_arquivo)
         if tipo == "protocolo" and getattr(p, "exigencia_ativa", False):
             p.exigencia_ativa = False
         p.status = recalcular_status(p)
         p.atualizado_em = datetime.now()
         db.commit()
+        try:
+            novo_status = (p.status or "").lower()
+            if tipo == "registro" and novo_status == "finalizado":
+                corpo = corpo_status_cliente(p, "Finalizado", "Seu Processo foi Finalizado, em Anexo o Registro.")
+                for em in emails_do_grupo(db, p.grupo_id):
+                    enviar_email_anexo(em, "Processo Finalizado - " + (p.empresa or ""), corpo, caminho, nome_arquivo)
+            elif tipo == "protocolo" and status_antes_up != "tramitacao" and novo_status == "tramitacao":
+                corpo = corpo_status_cliente(p, "Tramitacao", "Aguardando analise da Junta Comercial.")
+                for em in emails_do_grupo(db, p.grupo_id):
+                    enviar_email(em, "Atualizacao do seu processo - " + (p.empresa or ""), corpo)
+        except Exception as e:
+            print("Erro ao notificar upload:", e)
 
     return {"mensagem": f"Arquivo {tipo} salvo", "arquivo": nome_arquivo}
 
@@ -437,6 +507,13 @@ async def registrar_exigencia(
     p.status = recalcular_status(p)
     p.atualizado_em = datetime.now()
     db.commit()
+    if arquivo is not None and p.arquivo_exigencia:
+        try:
+            cam = os.path.join(UPLOADS_DIR, p.arquivo_exigencia)
+            for em in emails_do_grupo(db, p.grupo_id):
+                enviar_email_anexo(em, "Exigencia no seu processo - " + (p.empresa or ""), "Seu processo recebeu uma exigencia, segue em anexo o documento", cam, p.arquivo_exigencia)
+        except Exception as e:
+            print("Erro ao notificar exigencia ao cliente:", e)
     return {"mensagem": "Exigencia registrada", "status": p.status}
 
 

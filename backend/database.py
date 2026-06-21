@@ -72,6 +72,11 @@ class Processo(Base):
     texto_exigencia = Column(Text, nullable=True)
     arquivo_exigencia = Column(String, nullable=True)
     exigencia_ativa = Column(Boolean, default=False)
+    status_jucesp = Column(String, nullable=True)
+    ultima_consulta_em = Column(DateTime, nullable=True)
+    ultimo_alerta_em = Column(DateTime, nullable=True)
+    aguardando_cliente = Column(Boolean, default=False)
+    avisado_deferido = Column(Boolean, default=False)
     atualizado_em = Column(DateTime, default=datetime.now, onupdate=datetime.now)
 
 

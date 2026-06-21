@@ -331,14 +331,16 @@ async def criar_processo(
     return {"id": processo_id, "mensagem": "Processo criado com sucesso"}
 
 def recalcular_status(p):
-    # Prioridade: registro > exigencia ativa > protocolo > aberto
+    # Prioridade: registro(finalizado) > exigencia > deferido(automacao) > protocolo(tramitacao) > aberto
     if p.arquivo_registro:
-        return "aprovado"
+        return "finalizado"
     if getattr(p, "exigencia_ativa", False):
         return "exigencia"
+    if (p.status or "").lower() == "deferido":
+        return "deferido"
     if p.numero_protocolo or p.arquivo_protocolo:
         return "tramitacao"
-    return "recebido"
+    return "aberto"
 
 
 @app.patch("/processos/{processo_id}")
@@ -572,8 +574,10 @@ def metricas(x_token: str = Header(None), db: Session = Depends(get_db)):
     tramitacao = base.filter(Processo.status == "tramitacao").count()
     exigencia = base.filter(Processo.status == "exigencia").count()
     aprovado = base.filter(Processo.status == "aprovado").count()
+    deferido = base.filter(Processo.status == "deferido").count()
+    finalizado = base.filter(Processo.status == "finalizado").count()
     cobranca_pendente = base.filter(
-        Processo.status == "aprovado",
+        Processo.status.in_(["aprovado", "finalizado"]),
         Processo.nf_enviada == False
     ).count()
     return {
@@ -581,6 +585,8 @@ def metricas(x_token: str = Header(None), db: Session = Depends(get_db)):
         "tramitacao": tramitacao,
         "exigencia": exigencia,
         "aprovado": aprovado,
+        "deferido": deferido,
+        "finalizado": finalizado,
         "cobranca_pendente": cobranca_pendente
     }
 

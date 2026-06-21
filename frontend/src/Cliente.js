@@ -8,7 +8,10 @@ const STATUS_CONFIG = {
   recebido: { label: "Aberto", bg: "#eceae2", color: "#6b6c66" },
   tramitacao: { label: "Tramitação", bg: "#f0e0cb", color: "#8a5818" },
   exigencia: { label: "Exigência", bg: "#f0dcd5", color: "#a8492a" },
+  deferido: { label: "Deferido", bg: "#d5e3df", color: "#1f4d52" },
   aprovado: { label: "Deferido", bg: "#d5e3df", color: "#1f4d52" },
+  aberto: { label: "Aberto", bg: "#eceae2", color: "#6b6c66" },
+  finalizado: { label: "Finalizado", bg: "#cfe8d8", color: "#15803d" },
 };
 
 function abreviarAto(texto, data) {
@@ -190,7 +193,7 @@ export function Painel({ sessao, onSair }) {
   }
   function clicarStatus(p) {
     if (p.status === "exigencia") setExigenciaAberta(p);
-    else if (p.status === "aprovado") baixar(p.id, "registro", (p.empresa || "registro").replace(/[^a-zA-Z0-9]/g, "_"));
+    else if (p.status === "aprovado" || p.status === "finalizado" || p.status === "deferido") baixar(p.id, "registro", (p.empresa || "registro").replace(/[^a-zA-Z0-9]/g, "_"));
     else setDocsAbertos(p);
   }
   return (
@@ -230,7 +233,8 @@ export function Painel({ sessao, onSair }) {
                   <option value="recebido">Aberto</option>
                   <option value="tramitacao">Tramitacao</option>
                   <option value="exigencia">Exigencia</option>
-                  <option value="aprovado">Deferido</option>
+                  <option value="deferido">Deferido</option>
+                  <option value="finalizado">Finalizado</option>
                 </select>
                 {(fBusca || fUf || fAto || fStatus) && (
                   <button onClick={() => { setFBusca(""); setFUf(""); setFAto(""); setFStatus(""); }}

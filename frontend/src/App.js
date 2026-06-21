@@ -6,9 +6,12 @@ const API = "";
 
 const STATUS_CONFIG = {
   recebido: { label: "Aberto", bg: "#eceae2", color: "#6b6c66" },
+  aberto: { label: "Aberto", bg: "#eceae2", color: "#6b6c66" },
   tramitacao: { label: "Tramitação", bg: "#f0e0cb", color: "#8a5818" },
   exigencia: { label: "Exigência", bg: "#f0dcd5", color: "#a8492a" },
+  deferido: { label: "Deferido", bg: "#d5e3df", color: "#1f4d52" },
   aprovado: { label: "Deferido", bg: "#d5e3df", color: "#1f4d52" },
+  finalizado: { label: "Finalizado", bg: "#cfe8d8", color: "#15803d" },
 };
 
 function abreviarAto(texto, data) {
@@ -535,8 +538,12 @@ function AppPainel({ onSair }) {
                 </div>
                 <div style={s.metricCard}>
                   <div style={s.metricLabel}>Deferidos</div>
-                  <div style={{ ...s.metricValue, color: "#1f4d52" }}>{metricas.aprovado || 0}</div>
+                  <div style={{ ...s.metricValue, color: "#1f4d52" }}>{metricas.deferido || 0}</div>
 
+                </div>
+                <div style={s.metricCard}>
+                  <div style={s.metricLabel}>Finalizados</div>
+                  <div style={{ ...s.metricValue, color: "#15803d" }}>{metricas.finalizado || 0}</div>
                 </div>
               </div>
 
@@ -605,7 +612,8 @@ function AppPainel({ onSair }) {
                   <option value="recebido">Aberto</option>
                   <option value="tramitacao">Tramitação</option>
                   <option value="exigencia">Exigência</option>
-                  <option value="aprovado">Deferido</option>
+                  <option value="deferido">Deferido</option>
+                  <option value="finalizado">Finalizado</option>
                 </select>
                 <select value={fGrupo} onChange={e => setFGrupo(e.target.value)} style={{ padding: "9px 10px", border: "0.5px solid #1f4d52", borderRadius: 8, fontSize: 13, background: "#f4f2ec", cursor: "pointer", color: "#1f4d52", fontWeight: 500 }}>
                   <option value="">Cliente: todos</option>

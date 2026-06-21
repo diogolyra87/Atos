@@ -441,14 +441,14 @@ function AppPainel({ onSair }) {
             <button style={s.btnPrimary} onClick={registrarExigencia} disabled={salvandoExig}>
               {salvandoExig ? "Salvando..." : "Registrar exigência"}
             </button>
-            {p.exigencia_ativa && (
+            {p.exigencia_ativa && (<>
               <button style={{ ...s.btnSecondary, borderColor: "#86efac", color: "#166534" }} onClick={exigenciaCumprida}>
                 ✓ Exigência cumprida
               </button>
               <button style={{ ...s.btnSecondary, borderColor: "#fbbf24", color: "#92400e" }} onClick={exigenciaAguardandoCliente}>
                 Exigência Aguardando Cliente
               </button>
-            )}
+            </>)}
           </div>
         </div>
 

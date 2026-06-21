@@ -24,7 +24,7 @@ BASE_URL_SISTEMA = os.getenv("BASE_URL_SISTEMA", "https://atos.net.br")
 def enviar_email(destinatario, assunto, corpo):
     try:
         msg = MIMEMultipart()
-        msg["From"] = EMAIL_USER
+        msg["From"] = "Atos - Gestao Societaria <%s>" % EMAIL_USER
         msg["To"] = destinatario
         msg["Subject"] = assunto
         msg.attach(MIMEText(corpo, "plain"))
@@ -42,7 +42,7 @@ def enviar_email_anexo(destinatario, assunto, corpo, caminho_anexo=None, nome_an
     try:
         from email.mime.application import MIMEApplication
         msg = MIMEMultipart()
-        msg["From"] = EMAIL_USER
+        msg["From"] = "Atos - Gestao Societaria <%s>" % EMAIL_USER
         msg["To"] = destinatario
         msg["Subject"] = assunto
         msg.attach(MIMEText(corpo, "plain"))
@@ -136,11 +136,14 @@ CONHECIMENTO BASE:
 DOCUMENTO:
 {texto_ata[:4000]}
 
+REGRA IMPORTANTE PARA UF: Identifique a UF (sigla do estado, 2 letras) da sede da sociedade. Em alteracoes contratuais de sociedades limitadas, a UF aparece no campo de qualificacao da sociedade, no padrao Cidade/UF (exemplo: 'Rio de Janeiro/RJ' significa UF=RJ; 'Sao Paulo/SP' significa UF=SP). Procure a cidade seguida de barra e a sigla do estado no endereco da sede. Retorne so a sigla de 2 letras maiuscula.
+
 Retorne APENAS um JSON válido com esta estrutura exata:
 {{
   "empresa": "nome completo da empresa",
   "cnpj": "XX.XXX.XXX/XXXX-XX",
   "nire": "número NIRE se encontrado",
+  "uf": "sigla de 2 letras do estado da sede, ex RJ ou SP",
   "tipo_sociedade": "SA ou LTDA",
   "tipo_ato": "AGO, AGE, AGOE, RCA, ALTERACAO_CONTRATUAL, ARS etc",
   "identificador_ato": "ex: RCA 25/05/2026, 39ª Alteração Contratual, AGE 10/05/2026",
@@ -355,6 +358,7 @@ async def criar_processo(
         empresa=info.get("empresa", ""),
         cnpj=info.get("cnpj", ""),
         nire=info.get("nire", ""),
+        uf=(info.get("uf") or "").upper().strip()[:2],
         tipo_sociedade=info.get("tipo_sociedade", ""),
         tipo_ato=info.get("tipo_ato", ""),
         identificador_ato=info.get("identificador_ato", ""),

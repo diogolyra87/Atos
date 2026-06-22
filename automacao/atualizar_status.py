@@ -7,8 +7,10 @@ from datetime import datetime, timedelta
 from dotenv import load_dotenv
 
 sys.path.insert(0, "/root/atos/backend")
+sys.path.insert(0, "/root/atos/automacao")
 from database import SessionLocal, Processo, Grupo, EmailGrupo
 from consultar_jucesp import consultar
+from consultar_jucerja import consultar_jucerja, classificar_status_rj
 
 load_dotenv("/root/atos/.env")
 
@@ -16,6 +18,9 @@ EMAIL_USER = os.getenv("EMAIL_USER")
 EMAIL_PASS = os.getenv("EMAIL_PASS")
 EMAIL_HOST = os.getenv("EMAIL_HOST", "mail.realpublicidade.com.br")
 EMAIL_PORT_SMTP = int(os.getenv("EMAIL_PORT_SMTP", "587"))
+
+JUCERJA_USUARIO = os.getenv("JUCERJA_USUARIO")
+JUCERJA_SENHA = os.getenv("JUCERJA_SENHA")
 
 EMAIL_ADMIN = "diogo@realpublicidade.com.br"
 BASE_URL = "https://atos.net.br"
@@ -59,87 +64,127 @@ def corpo_admin(p, status_label):
     return "Empresa: " + (p.empresa or "") + "\nAto: " + ato + "\nStatus: " + status_label + "\n\nProtocolo: " + (p.numero_protocolo or "")
 
 
-def processar():
-    db = SessionLocal()
-    agora = datetime.now()
+def aplicar_classificacao(db, p, classificacao, agora):
+    """classificacao: 'exigencia' | 'deferido' | 'tramitacao'. Mesma logica para SP e RJ."""
+    status_atual = (p.status or "").lower()
+    p.ultima_consulta_em = agora
+
+    if classificacao == "exigencia":
+        if status_atual != "exigencia":
+            p.status = "exigencia"
+            p.exigencia_ativa = True
+            p.aguardando_cliente = False
+            p.ultimo_alerta_em = agora
+            db.commit()
+            enviar_email(EMAIL_ADMIN, "[Atos] Exigencia - " + str(p.empresa), corpo_admin(p, "Exigencia"))
+            print("   -> mudou para EXIGENCIA + alertou admin")
+        else:
+            if precisa_alertar(p, agora):
+                p.ultimo_alerta_em = agora
+                db.commit()
+                enviar_email(EMAIL_ADMIN, "[Atos] Exigencia (lembrete) - " + str(p.empresa), corpo_admin(p, "Exigencia"))
+                print("   -> lembrete de exigencia ao admin")
+            else:
+                db.commit()
+                print("   -> exigencia ainda no intervalo, sem novo email")
+
+    elif classificacao == "deferido":
+        if status_atual != "deferido":
+            p.status = "deferido"
+            p.exigencia_ativa = False
+            p.ultimo_alerta_em = agora
+            db.commit()
+            enviar_email(EMAIL_ADMIN, "[Atos] Deferido - " + str(p.empresa), corpo_admin(p, "Deferido") + "\n\nAguardando a Junta Comercial disponibilizar o Registro.")
+            if not p.avisado_deferido:
+                for em in emails_do_grupo(db, p.grupo_id):
+                    enviar_email(em, "Atualizacao do seu processo - " + str(p.empresa), "Documento Deferido, aguardando liberacao do Registro.")
+                p.avisado_deferido = True
+                db.commit()
+            print("   -> mudou para DEFERIDO + alertou admin e cliente")
+        else:
+            if precisa_alertar(p, agora):
+                p.ultimo_alerta_em = agora
+                db.commit()
+                enviar_email(EMAIL_ADMIN, "[Atos] Deferido (lembrete) - " + str(p.empresa), corpo_admin(p, "Deferido"))
+                print("   -> lembrete de deferido ao admin")
+            else:
+                db.commit()
+                print("   -> deferido ainda no intervalo, sem novo email")
+
+    else:
+        if status_atual not in ("tramitacao", "exigencia", "deferido"):
+            p.status = "tramitacao"
+        db.commit()
+        print("   -> tramitacao (mantido)")
+
+
+def processar_sp(db, agora):
     processos = db.query(Processo).filter(
         Processo.uf == "SP",
         Processo.numero_protocolo.isnot(None),
         Processo.numero_protocolo != "",
     ).all()
-    print("[" + str(agora) + "] " + str(len(processos)) + " processo(s) SP com protocolo.\n")
-
+    print("[SP] " + str(len(processos)) + " processo(s) com protocolo.\n")
     for p in processos:
-        status_atual = (p.status or "").lower()
-        if status_atual == "finalizado":
+        if (p.status or "").lower() == "finalizado":
             continue
-
-        print("-> " + str(p.empresa) + " | prot " + str(p.numero_protocolo) + " | status atual: " + status_atual)
+        print("-> [SP] " + str(p.empresa) + " | prot " + str(p.numero_protocolo) + " | status: " + (p.status or ""))
         try:
             resultado = consultar(p.numero_protocolo)
         except Exception as e:
-            print("   ERRO consulta (mantem status):", e)
+            print("   ERRO consulta JUCESP (mantem):", e)
             continue
-
         if not resultado:
             print("   JUCESP vazio (mantem status).")
             continue
-
         print("   JUCESP:", resultado)
         p.status_jucesp = resultado
-        p.ultima_consulta_em = agora
         r = resultado.upper()
-
         if r == "EXIGENCIA":
-            if status_atual != "exigencia":
-                p.status = "exigencia"
-                p.exigencia_ativa = True
-                p.aguardando_cliente = False
-                p.ultimo_alerta_em = agora
-                db.commit()
-                enviar_email(EMAIL_ADMIN, "[Atos] Exigencia - " + str(p.empresa), corpo_admin(p, "Exigencia"))
-                print("   -> mudou para EXIGENCIA + alertou admin")
-            else:
-                if precisa_alertar(p, agora):
-                    p.ultimo_alerta_em = agora
-                    db.commit()
-                    enviar_email(EMAIL_ADMIN, "[Atos] Exigencia (lembrete) - " + str(p.empresa), corpo_admin(p, "Exigencia"))
-                    print("   -> lembrete de exigencia ao admin")
-                else:
-                    db.commit()
-                    print("   -> exigencia ainda no intervalo, sem novo email")
-
+            cls = "exigencia"
         elif r == "DEFERIDO":
-            if status_atual != "deferido":
-                p.status = "deferido"
-                p.exigencia_ativa = False
-                p.ultimo_alerta_em = agora
-                db.commit()
-                enviar_email(EMAIL_ADMIN, "[Atos] Deferido - " + str(p.empresa), corpo_admin(p, "Deferido") + "\n\nAguardando a Junta Comercial disponibilizar o Registro.")
-                if not p.avisado_deferido:
-                    for em in emails_do_grupo(db, p.grupo_id):
-                        enviar_email(em, "Atualizacao do seu processo - " + str(p.empresa), "Documento Deferido, aguardando liberacao do Registro.")
-                    p.avisado_deferido = True
-                    db.commit()
-                print("   -> mudou para DEFERIDO + alertou admin e cliente")
-            else:
-                if precisa_alertar(p, agora):
-                    p.ultimo_alerta_em = agora
-                    db.commit()
-                    enviar_email(EMAIL_ADMIN, "[Atos] Deferido (lembrete) - " + str(p.empresa), corpo_admin(p, "Deferido"))
-                    print("   -> lembrete de deferido ao admin")
-                else:
-                    db.commit()
-                    print("   -> deferido ainda no intervalo, sem novo email")
-
+            cls = "deferido"
         else:
-            if status_atual not in ("tramitacao", "exigencia", "deferido"):
-                p.status = "tramitacao"
-            db.commit()
-            print("   -> tramitacao (mantido)")
-
+            cls = "tramitacao"
+        aplicar_classificacao(db, p, cls, agora)
         print()
 
+
+def processar_rj(db, agora):
+    processos = db.query(Processo).filter(
+        Processo.uf == "RJ",
+        Processo.numero_protocolo.isnot(None),
+        Processo.numero_protocolo != "",
+    ).all()
+    pendentes = [p for p in processos if (p.status or "").lower() != "finalizado"]
+    print("[RJ] " + str(len(pendentes)) + " processo(s) com protocolo.\n")
+    if not pendentes:
+        return
+    if not JUCERJA_USUARIO or not JUCERJA_SENHA:
+        print("   [RJ] credenciais JUCERJA ausentes no .env - pulando RJ.")
+        return
+    for p in pendentes:
+        print("-> [RJ] " + str(p.empresa) + " | prot " + str(p.numero_protocolo) + " | status: " + (p.status or ""))
+        try:
+            res = consultar_jucerja(p.numero_protocolo, JUCERJA_USUARIO, JUCERJA_SENHA, headless=True)
+        except Exception as e:
+            print("   ERRO consulta JUCERJA (mantem):", e)
+            continue
+        if res.get("erro"):
+            print("   JUCERJA erro (mantem status):", res["erro"])
+            continue
+        print("   JUCERJA:", res)
+        p.status_jucesp = res.get("status_texto")
+        aplicar_classificacao(db, p, res.get("classificacao", "tramitacao"), agora)
+        print()
+
+
+def processar():
+    db = SessionLocal()
+    agora = datetime.now()
+    print("[" + str(agora) + "] Iniciando consultas autonomas.\n")
+    processar_sp(db, agora)
+    processar_rj(db, agora)
     db.close()
     print("FIM.")
 

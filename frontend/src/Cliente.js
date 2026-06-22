@@ -445,5 +445,4 @@ function estilos() {
     btnDl: { background: "#e8efee", color: "#1f4d52", border: "0.5px solid #c5d8d5", borderRadius: 8, padding: "8px 16px", fontSize: 13, cursor: "pointer" },
     btnFechar: { background: "#1f4d52", color: "#fff", border: "none", borderRadius: 8, padding: "8px 18px", fontSize: 13, cursor: "pointer" },
   };
-      const resLogin = await axios.post(`${API}/login`, { login, senha });
-      salvarSessao(resLogin.data);}
+}

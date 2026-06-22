@@ -16,6 +16,7 @@ from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 
 EMAIL_USER = os.getenv("EMAIL_USER")
+EMAIL_FROM = os.getenv("EMAIL_FROM") or EMAIL_USER
 EMAIL_PASS = os.getenv("EMAIL_PASS")
 EMAIL_HOST = os.getenv("EMAIL_HOST", "smtp.gmail.com")
 EMAIL_PORT_SMTP = int(os.getenv("EMAIL_PORT_SMTP", "587"))
@@ -24,7 +25,7 @@ BASE_URL_SISTEMA = os.getenv("BASE_URL_SISTEMA", "https://atos.net.br")
 def enviar_email(destinatario, assunto, corpo):
     try:
         msg = MIMEMultipart()
-        msg["From"] = "Atos - Gestao Societaria <%s>" % EMAIL_USER
+        msg["From"] = "Atos - Gestao Societaria <%s>" % EMAIL_FROM
         msg["To"] = destinatario
         msg["Subject"] = assunto
         msg.attach(MIMEText(corpo, "plain"))
@@ -42,7 +43,7 @@ def enviar_email_anexo(destinatario, assunto, corpo, caminho_anexo=None, nome_an
     try:
         from email.mime.application import MIMEApplication
         msg = MIMEMultipart()
-        msg["From"] = "Atos - Gestao Societaria <%s>" % EMAIL_USER
+        msg["From"] = "Atos - Gestao Societaria <%s>" % EMAIL_FROM
         msg["To"] = destinatario
         msg["Subject"] = assunto
         msg.attach(MIMEText(corpo, "plain"))

@@ -15,6 +15,7 @@ from consultar_jucerja import consultar_jucerja, classificar_status_rj
 load_dotenv("/root/atos/.env")
 
 EMAIL_USER = os.getenv("EMAIL_USER")
+EMAIL_FROM = os.getenv("EMAIL_FROM") or EMAIL_USER
 EMAIL_PASS = os.getenv("EMAIL_PASS")
 EMAIL_HOST = os.getenv("EMAIL_HOST", "mail.realpublicidade.com.br")
 EMAIL_PORT_SMTP = int(os.getenv("EMAIL_PORT_SMTP", "587"))
@@ -32,7 +33,7 @@ INTERVALO_AGUARDANDO = timedelta(days=7)
 def enviar_email(destinatario, assunto, corpo):
     try:
         msg = MIMEMultipart()
-        msg["From"] = EMAIL_USER
+        msg["From"] = "Atos - Gestao Societaria <%s>" % EMAIL_FROM
         msg["To"] = destinatario
         msg["Subject"] = assunto
         msg.attach(MIMEText(corpo, "plain"))

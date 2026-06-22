@@ -56,7 +56,8 @@ export default function Cliente() {
     setCarregando(true);
     try {
       await axios.post(`${API}/cadastro`, { codigo_grupo: codigoGrupo, login, senha });
-      setModo("login"); setSenha(""); setAviso("Cadastro realizado! Faça login para entrar.");
+            const resLogin = await axios.post(`${API}/login`, { login, senha });
+      salvarSessao(resLogin.data);
     } catch (e) {
       const dd = e.response && e.response.data && e.response.data.detail;
       setErro(dd ? dd : "Erro ao cadastrar.");
@@ -87,7 +88,7 @@ export default function Cliente() {
       <div style={s.wrap}>
         <div style={s.card}>
           <div style={s.logo}>atos<span style={{ color: "#d85a30" }}>.</span></div>
-          <div style={s.sub}>Gestão Societária — {ehCadastro ? "Criar acesso" : "Área do cliente"}</div>
+          <div style={s.sub}>Gestão Societária — {ehCadastro ? "Crie Seu Login e Senha" : "Área do cliente"}</div>
           {erro && <div style={s.erro}>{erro}</div>}
           {aviso && <div style={s.aviso}>{aviso}</div>}
           {ehCadastro && codigoGrupo && <div style={s.grupoBox}>Cadastro para o grupo: <strong>{codigoGrupo}</strong></div>}
@@ -124,7 +125,11 @@ export function Painel({ sessao, onSair }) {
   const processosFiltrados = processos.filter(p => {
     if (fBusca && !(p.empresa || "").toLowerCase().includes(fBusca.toLowerCase())) return false;
     if (fUf && p.uf !== fUf) return false;
-    if (fStatus && p.status !== fStatus) return false;
+    if (fStatus) {
+      const sin = { aberto: ["aberto","recebido"], deferido: ["deferido","aprovado"] };
+      const aceitos = sin[fStatus] || [fStatus];
+      if (!aceitos.includes((p.status || "").toLowerCase())) return false;
+    }
     if (fAto && abreviarAto(p.identificador_ato, "").split(" ")[0] !== fAto) return false;
     return true;
   });
@@ -230,7 +235,7 @@ export function Painel({ sessao, onSair }) {
                 </select>
                 <select value={fStatus} onChange={e => setFStatus(e.target.value)} style={{ padding: "9px 10px", border: "0.5px solid #e6e0d2", borderRadius: 8, fontSize: 13, background: "#fff", cursor: "pointer", color: "#475569" }}>
                   <option value="">Status: todos</option>
-                  <option value="recebido">Aberto</option>
+                  <option value="aberto">Aberto</option>
                   <option value="tramitacao">Tramitacao</option>
                   <option value="exigencia">Exigencia</option>
                   <option value="deferido">Deferido</option>
@@ -440,4 +445,5 @@ function estilos() {
     btnDl: { background: "#e8efee", color: "#1f4d52", border: "0.5px solid #c5d8d5", borderRadius: 8, padding: "8px 16px", fontSize: 13, cursor: "pointer" },
     btnFechar: { background: "#1f4d52", color: "#fff", border: "none", borderRadius: 8, padding: "8px 18px", fontSize: 13, cursor: "pointer" },
   };
-}
+      const resLogin = await axios.post(`${API}/login`, { login, senha });
+      salvarSessao(resLogin.data);}

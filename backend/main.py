@@ -94,7 +94,7 @@ def _disparar_convites(nome, link, emails):
         enviar_email(email, "Acesso ao sistema Atos - " + nome, corpo)
 
 
-app = FastAPI(title="Mané API")
+app = FastAPI(title="Atos API")
 
 app.add_middleware(
     CORSMiddleware,
@@ -171,7 +171,7 @@ Retorne APENAS um JSON válido com esta estrutura exata:
 # ============================================================
 @app.get("/")
 def root():
-    return {"status": "Mané online"}
+    return {"status": "Atos online"}
 
 
 @app.post("/cadastro")

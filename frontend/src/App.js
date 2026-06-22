@@ -150,7 +150,11 @@ function AppPainel({ onSair }) {
   const processosFiltrados = processos.filter(p => {
     if (fBusca && !(p.empresa || "").toLowerCase().includes(fBusca.toLowerCase())) return false;
     if (fUf && p.uf !== fUf) return false;
-    if (fStatus && p.status !== fStatus) return false;
+    if (fStatus) {
+      const sin = { aberto: ["aberto","recebido"], deferido: ["deferido","aprovado"] };
+      const aceitos = sin[fStatus] || [fStatus];
+      if (!aceitos.includes((p.status || "").toLowerCase())) return false;
+    }
     if (fGrupo && p.grupo_id !== fGrupo) return false;
     if (fAto && abreviarAto(p.identificador_ato, "").split(" ")[0] !== fAto) return false;
     return true;
@@ -625,7 +629,7 @@ function AppPainel({ onSair }) {
                 </select>
                 <select value={fStatus} onChange={e => setFStatus(e.target.value)} style={{ padding: "9px 10px", border: "0.5px solid #e6e0d2", borderRadius: 8, fontSize: 13, background: "#fff", cursor: "pointer", color: "#475569" }}>
                   <option value="">Status: todos</option>
-                  <option value="recebido">Aberto</option>
+                  <option value="aberto">Aberto</option>
                   <option value="tramitacao">Tramitação</option>
                   <option value="exigencia">Exigência</option>
                   <option value="deferido">Deferido</option>
@@ -695,7 +699,7 @@ function AppPainel({ onSair }) {
             ) : (
               <div>
                 <div style={{ background: "#dcfce7", border: "0.5px solid #86efac", borderRadius: 8, padding: 10, marginBottom: 16, fontSize: 13, color: "#166534" }}>
-                  ✓ Documento analisado pelo Mané
+                  ✓ Documento analisado pelo Atos
                 </div>
 
                 {dadosAnalise.requer_cpl && (

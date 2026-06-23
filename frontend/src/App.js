@@ -345,6 +345,16 @@ function AppPainel({ onSair }) {
         alert("Erro ao marcar exigência como cumprida.");
       }
 }
+async function excluirProcesso() {
+      if (!window.confirm("Tem certeza que deseja EXCLUIR este processo? Esta acao nao pode ser desfeita.")) return;
+      try {
+        await axios.delete(`${API}/processos/${p.id}`);
+        setProcessoSelecionado(null);
+        carregar();
+      } catch (e) {
+        alert("Erro ao excluir o processo.");
+      }
+    }
         async function exigenciaAguardandoCliente() {
       try {
         await axios.post(`${API}/processos/${p.id}/exigencia/aguardando-cliente`);
@@ -381,7 +391,7 @@ function AppPainel({ onSair }) {
               {p.cnpj} · NIRE {p.nire} · {p.id}
             </div>
           </div>
-          <button style={s.btnSecondary} onClick={() => setProcessoSelecionado(null)}>← Voltar</button>
+          <button style={s.btnSecondary} onClick={() => setProcessoSelecionado(null)}>← Voltar</button> <button style={{ background: "#b91c1c", color: "#fff", border: "none", borderRadius: 8, padding: "8px 16px", fontSize: 13, cursor: "pointer", marginLeft: 8 }} onClick={excluirProcesso}>Excluir Processo</button>
         </div>
 
         {p.requer_cpl && (

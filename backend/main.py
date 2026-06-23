@@ -540,6 +540,20 @@ def exigencia_cumprida(processo_id: str, x_token: str = Header(None), db: Sessio
     db.commit()
     return {"mensagem": "Exigencia marcada como cumprida", "status": p.status}
 
+@app.delete("/processos/{processo_id}")
+def excluir_processo(processo_id: str, x_token: str = Header(None), db: Session = Depends(get_db)):
+    if not x_token:
+        raise HTTPException(status_code=401, detail="Token necessario")
+    usuario = db.query(Usuario).filter(Usuario.token == x_token).first()
+    if not usuario or not usuario.is_admin:
+        raise HTTPException(status_code=403, detail="Apenas administrador pode excluir processos")
+    p = db.query(Processo).filter(Processo.id == processo_id).first()
+    if not p:
+        raise HTTPException(status_code=404, detail="Processo nao encontrado")
+    db.delete(p)
+    db.commit()
+    return {"mensagem": "Processo excluido"}
+
 @app.post("/processos/{processo_id}/exigencia/aguardando-cliente")
 def exigencia_aguardando_cliente(processo_id: str, x_token: str = Header(None), db: Session = Depends(get_db)):
     if not x_token:

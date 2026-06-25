@@ -795,17 +795,40 @@ export default function App() {
   }
 
   return (
-    <div style={{ minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", background: "#23282a", fontFamily: "Inter, sans-serif" }}>
-      <div style={{ background: "#fff", borderRadius: 12, padding: 36, width: 340, boxShadow: "0 10px 40px rgba(0,0,0,0.3)" }}>
-        <div style={{ fontSize: 30, fontWeight: 800, color: "#16151a", letterSpacing: -1.5, textAlign: "center" }}>atos<span style={{ color: "#d85a30" }}>.</span></div>
-        <div style={{ textAlign: "center", fontSize: 13, color: "#64748b", marginBottom: 24 }}>Acesso ao sistema</div>
-        {erro && <div style={{ background: "#fee2e2", color: "#991b1b", borderRadius: 8, padding: "8px 12px", fontSize: 13, marginBottom: 14 }}>{erro}</div>}
-        <label style={{ fontSize: 12, color: "#64748b", marginBottom: 4, display: "block" }}>Login</label>
-        <input style={{ width: "100%", padding: "10px 12px", border: "0.5px solid #cbd5e1", borderRadius: 8, fontSize: 14, outline: "none", marginBottom: 14, boxSizing: "border-box" }} value={login} onChange={e => setLogin(e.target.value)} onKeyDown={e => e.key === "Enter" && entrar()} />
-        <label style={{ fontSize: 12, color: "#64748b", marginBottom: 4, display: "block" }}>Senha</label>
-        <input style={{ width: "100%", padding: "10px 12px", border: "0.5px solid #cbd5e1", borderRadius: 8, fontSize: 14, outline: "none", marginBottom: 14, boxSizing: "border-box" }} type="password" value={senha} onChange={e => setSenha(e.target.value)} onKeyDown={e => e.key === "Enter" && entrar()} />
-        <button style={{ width: "100%", background: "#1f4d52", color: "#fff", border: "none", padding: "11px", borderRadius: 8, fontSize: 14, cursor: "pointer", marginTop: 4 }} onClick={entrar} disabled={carregando}>{carregando ? "Aguarde..." : "Entrar"}</button>
+    <>
+      <style>{`
+        @keyframes atosWaveMove { 0% { transform: translate(0,0) rotate(0deg); } 50% { transform: translate(-3%,2%) rotate(5deg); } 100% { transform: translate(0,0) rotate(0deg); } }
+        @keyframes atosSplashOut { 0%,62% { opacity:1; visibility:visible; } 80%,100% { opacity:0; visibility:hidden; } }
+        @keyframes atosLogoIn { 0%,6% { opacity:0; transform: translateY(16px); } 26%,60% { opacity:1; transform: translateY(0); } 76%,100% { opacity:0; transform: translateY(-8px); } }
+        @keyframes atosSubIn { 0%,28% { opacity:0; transform: translateY(10px); } 44%,60% { opacity:1; transform: translateY(0); } 76%,100% { opacity:0; transform: translateY(-6px); } }
+        @keyframes atosFormIn { 0%,66% { opacity:0; transform: translateY(12px); } 86%,100% { opacity:1; transform: translateY(0); } }
+        .atos-splash { position:fixed; inset:0; z-index:50; background:#1a1340; display:flex; flex-direction:column; align-items:center; justify-content:center; animation: atosSplashOut 3s ease-in-out forwards; pointer-events:none; }
+        .atos-splash-wave { position:absolute; top:-35%; left:-30%; width:80%; height:130%; filter:blur(24px); border-radius:45%; background: radial-gradient(circle at 30% 30%, #7c3aed, transparent 60%), radial-gradient(circle at 60% 60%, #d946a8, transparent 55%); animation: atosWaveMove 9s ease-in-out infinite; }
+        .atos-splash-logo { position:relative; z-index:2; margin:0; font-size:52px; font-weight:800; color:#fff; line-height:1; letter-spacing:-2px; animation: atosLogoIn 3s ease-in-out forwards; }
+        .atos-splash-sub { position:relative; z-index:2; margin:10px 0 0; font-size:17px; color:#cecbf6; letter-spacing:0.5px; animation: atosSubIn 3s ease-in-out forwards; }
+        .atos-login-card { animation: atosFormIn 3s ease-in-out forwards; }
+        .atos-bgwave { position:absolute; top:-50%; left:-20%; width:70%; height:120%; filter:blur(40px); border-radius:45%; background: radial-gradient(circle at 40% 40%, rgba(124,58,237,0.55), transparent 62%), radial-gradient(circle at 60% 60%, rgba(217,70,168,0.4), transparent 55%); pointer-events:none; }
+      `}</style>
+      <div className="atos-splash">
+        <div className="atos-splash-wave"></div>
+        <div className="atos-splash-logo">atos<span style={{ color: "#f0997b" }}>.</span></div>
+        <div className="atos-splash-sub">Gestão Societária</div>
       </div>
-    </div>
+      <div style={{ minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", background: "#1a1340", fontFamily: "Inter, sans-serif", position: "relative", overflow: "hidden", padding: "16px" }}>
+        <div className="atos-bgwave"></div>
+        <div className="atos-login-card" style={{ background: "#fff", borderRadius: 16, padding: 32, width: "100%", maxWidth: 360, boxShadow: "0 10px 50px rgba(20,10,50,0.45)", position: "relative", zIndex: 2, boxSizing: "border-box" }}>
+          <div style={{ fontSize: 34, fontWeight: 800, color: "#241b4a", letterSpacing: -1.5, textAlign: "center" }}>atos<span style={{ color: "#d85a30" }}>.</span></div>
+          <div style={{ textAlign: "center", fontSize: 13, color: "#7a7790", marginBottom: 4 }}>Gestão Societária</div>
+          <div style={{ textAlign: "center", fontSize: 12, color: "#a09dba", marginBottom: 24 }}>Painel do Administrador</div>
+          {erro && <div style={{ background: "#fee2e2", color: "#991b1b", borderRadius: 8, padding: "8px 12px", fontSize: 13, marginBottom: 14 }}>{erro}</div>}
+          <label style={{ fontSize: 12, color: "#7a7790", marginBottom: 4, display: "block" }}>Login</label>
+          <input style={{ width: "100%", padding: "11px 13px", border: "0.5px solid #d9d5ea", borderRadius: 8, fontSize: 14, outline: "none", marginBottom: 14, boxSizing: "border-box", background: "#fbfaff" }} value={login} onChange={e => setLogin(e.target.value)} onKeyDown={e => e.key === "Enter" && entrar()} />
+          <label style={{ fontSize: 12, color: "#7a7790", marginBottom: 4, display: "block" }}>Senha</label>
+          <input style={{ width: "100%", padding: "11px 13px", border: "0.5px solid #d9d5ea", borderRadius: 8, fontSize: 14, outline: "none", marginBottom: 14, boxSizing: "border-box", background: "#fbfaff" }} type="password" value={senha} onChange={e => setSenha(e.target.value)} onKeyDown={e => e.key === "Enter" && entrar()} />
+          <button style={{ width: "100%", background: "linear-gradient(135deg,#4f46b7,#7c3aed)", color: "#fff", border: "none", padding: "12px", borderRadius: 8, fontSize: 14, fontWeight: 600, cursor: "pointer", marginTop: 4 }} onClick={entrar} disabled={carregando}>{carregando ? "Aguarde..." : "Entrar"}</button>
+        </div>
+      </div>
+    </>
   );
 }
+

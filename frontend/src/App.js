@@ -9,8 +9,8 @@ const STATUS_CONFIG = {
   aberto: { label: "Aberto", bg: "#eceae2", color: "#6b6c66" },
   tramitacao: { label: "Tramitação", bg: "#f0e0cb", color: "#8a5818" },
   exigencia: { label: "Exigência", bg: "#f0dcd5", color: "#a8492a" },
-  deferido: { label: "Deferido", bg: "#d5e3df", color: "#1f4d52" },
-  aprovado: { label: "Deferido", bg: "#d5e3df", color: "#1f4d52" },
+  deferido: { label: "Deferido", bg: "#d5e3df", color: "#4f46b7" },
+  aprovado: { label: "Deferido", bg: "#d5e3df", color: "#4f46b7" },
   finalizado: { label: "Finalizado", bg: "#cfe8d8", color: "#15803d" },
 };
 
@@ -119,7 +119,7 @@ function TelaGrupos() {
         <button onClick={adicionarEmail} style={{ background: "transparent", border: "0.5px dashed #94a3b8", borderRadius: 8, padding: "8px 12px", cursor: "pointer", color: "#475569", fontSize: 13, marginBottom: 20 }}>+ Adicionar outro email</button>
 
         <div>
-          <button onClick={criar} disabled={criando} style={{ background: "#1f4d52", color: "#fff", border: "none", padding: "11px 22px", borderRadius: 8, fontSize: 14, cursor: "pointer" }}>{criando ? "Criando e enviando..." : "Criar grupo"}</button>
+          <button onClick={criar} disabled={criando} style={{ background: "#4f46b7", color: "#fff", border: "none", padding: "11px 22px", borderRadius: 8, fontSize: 14, cursor: "pointer" }}>{criando ? "Criando e enviando..." : "Criar grupo"}</button>
         </div>
       </div>
     </>
@@ -257,9 +257,9 @@ function AppPainel({ onSair }) {
 
   const s = {
     layout: { display: "flex", minHeight: "100vh", fontFamily: "'Inter', sans-serif" },
-    sidebar: { width: 220, background: "#1f4d52", display: "flex", flexDirection: "column", padding: "24px 16px", gap: 8 },
+    sidebar: { width: 220, background: "linear-gradient(165deg,#241b4a,#4f46b7)", display: "flex", flexDirection: "column", padding: "24px 16px", gap: 8 },
     logo: { fontFamily: "'Inter', sans-serif", fontSize: 30, fontWeight: 800, color: "#16151a", letterSpacing: -1.5, lineHeight: 1 },
-    nav: (ativo) => ({ display: "flex", alignItems: "center", gap: 10, padding: "9px 10px", borderRadius: 8, color: ativo ? "#fff" : "#aecaca", background: ativo ? "rgba(255,255,255,0.13)" : "transparent", cursor: "pointer", fontSize: 13, border: "none", width: "100%", textAlign: "left" }),
+    nav: (ativo) => ({ display: "flex", alignItems: "center", gap: 10, padding: "9px 10px", borderRadius: 8, color: ativo ? "#fff" : "#cecbf6", background: ativo ? "rgba(255,255,255,0.13)" : "transparent", cursor: "pointer", fontSize: 13, border: "none", width: "100%", textAlign: "left" }),
     main: { flex: 1, background: "#f8fafc", padding: 28 },
     topbar: { display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 24 },
     h1: { fontSize: 18, fontWeight: 500, color: "#23282a", margin: 0 },
@@ -277,7 +277,7 @@ function AppPainel({ onSair }) {
     cnpj: { fontFamily: "monospace", fontSize: 11, color: "#94a3b8", marginTop: 2 },
     cell: { fontSize: 12, color: "#475569" },
     badge: (status) => ({ display: "inline-block", padding: "3px 10px", borderRadius: 20, fontSize: 11, fontWeight: 500, background: STATUS_CONFIG[status]?.bg || "#f1f5f9", color: STATUS_CONFIG[status]?.color || "#475569" }),
-    btnVer: { background: "none", border: "0.5px solid #e2e8f0", borderRadius: 6, padding: "5px 10px", fontSize: 11, color: "#1f4d52", cursor: "pointer" },
+    btnVer: { background: "none", border: "0.5px solid #e2e8f0", borderRadius: 6, padding: "5px 10px", fontSize: 11, color: "#4f46b7", cursor: "pointer" },
     overlay: { position: "fixed", inset: 0, background: "rgba(0,0,0,0.5)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 1000 },
     modal: { background: "#fff", borderRadius: 12, padding: 28, width: 560, maxHeight: "80vh", overflowY: "auto" },
     modalTitle: { fontSize: 16, fontWeight: 500, color: "#23282a", marginBottom: 20 },
@@ -491,7 +491,7 @@ async function excluirProcesso() {
                 ? <span style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
                     <span style={s.uploadOk}>✓ Anexado</span>
                     <button onClick={() => baixarArquivo(p.id, tipo, (p.empresa||"documento").replace(/[^a-zA-Z0-9]/g,"_"))}
-                      style={{ background: "transparent", border: "0.5px solid #1f4d52", color: "#1f4d52", borderRadius: 6, padding: "3px 10px", fontSize: 11, cursor: "pointer", fontFamily: "'Inter', sans-serif" }}>↓ Baixar</button>
+                      style={{ background: "transparent", border: "0.5px solid #4f46b7", color: "#4f46b7", borderRadius: 6, padding: "3px 10px", fontSize: 11, cursor: "pointer", fontFamily: "'Inter', sans-serif" }}>↓ Baixar</button>
                   </span>
                 : <label style={{ cursor: "pointer" }}>
                     <span style={s.uploadPend}>+ Anexar</span>
@@ -534,7 +534,7 @@ async function excluirProcesso() {
             </button>
           ))}
           <div style={{ marginTop: "auto", padding: "12px 16px" }}>
-            <button onClick={onSair} style={{ width: "100%", background: "transparent", border: "0.5px solid rgba(255,255,255,0.25)", color: "#aecaca", borderRadius: 8, padding: "9px 10px", fontSize: 13, cursor: "pointer" }}>Sair</button>
+            <button onClick={onSair} style={{ width: "100%", background: "transparent", border: "0.5px solid rgba(255,255,255,0.25)", color: "#cecbf6", borderRadius: 8, padding: "9px 10px", fontSize: 13, cursor: "pointer" }}>Sair</button>
           </div>
         </div>
 
@@ -568,7 +568,7 @@ async function excluirProcesso() {
                 </div>
                 <div style={s.metricCard}>
                   <div style={s.metricLabel}>Deferidos</div>
-                  <div style={{ ...s.metricValue, color: "#1f4d52" }}>{metricas.deferido || 0}</div>
+                  <div style={{ ...s.metricValue, color: "#4f46b7" }}>{metricas.deferido || 0}</div>
 
                 </div>
                 <div style={s.metricCard}>
@@ -604,25 +604,25 @@ async function excluirProcesso() {
                 style={{ border: "1.5px dashed #2d6a70", borderRadius: 12, padding: "18px", marginBottom: 18, background: "#fbfaf6" }}>
                 <div style={{ display: "flex", gap: 10, alignItems: "center", justifyContent: "center", flexWrap: "wrap" }}>
                   <select value={upGrupo} onChange={e => setUpGrupo(e.target.value)} disabled={upSubindo}
-                    style={{ padding: "9px 10px", border: "0.5px solid #1f4d52", borderRadius: 8, fontSize: 13, background: "#fff", cursor: "pointer", color: "#1f4d52", fontWeight: 500 }}>
+                    style={{ padding: "9px 10px", border: "0.5px solid #4f46b7", borderRadius: 8, fontSize: 13, background: "#fff", cursor: "pointer", color: "#4f46b7", fontWeight: 500 }}>
                     <option value="">Grupo Empresarial</option>
                     {grupos.map(g => <option key={g.id} value={g.codigo}>{g.nome}</option>)}
                   </select>
                   <label style={{ display: "inline-block", cursor: (upSubindo||!upGrupo) ? "not-allowed" : "pointer" }}>
-                    <span style={{ background: "#1f4d52", color: "#fff", borderRadius: 8, padding: "9px 16px", fontSize: 13, fontFamily: "'Inter', sans-serif", opacity: (upSubindo||!upGrupo) ? 0.5 : 1 }}>
+                    <span style={{ background: "#4f46b7", color: "#fff", borderRadius: 8, padding: "9px 16px", fontSize: 13, fontFamily: "'Inter', sans-serif", opacity: (upSubindo||!upGrupo) ? 0.5 : 1 }}>
                       Selecionar Arquivos
                     </span>
                     <input type="file" accept="application/pdf" multiple style={{ display: "none" }}
                       disabled={upSubindo||!upGrupo} onChange={e => processarArquivosAdmin(e.target.files)} />
                   </label>
                   <label style={{ display: "inline-block", cursor: (upSubindo||!upGrupo) ? "not-allowed" : "pointer" }}>
-                    <span style={{ background: "transparent", color: "#1f4d52", border: "0.5px solid #1f4d52", borderRadius: 8, padding: "9px 16px", fontSize: 13, fontFamily: "'Inter', sans-serif", opacity: (upSubindo||!upGrupo) ? 0.5 : 1 }}>
+                    <span style={{ background: "transparent", color: "#4f46b7", border: "0.5px solid #4f46b7", borderRadius: 8, padding: "9px 16px", fontSize: 13, fontFamily: "'Inter', sans-serif", opacity: (upSubindo||!upGrupo) ? 0.5 : 1 }}>
                       Selecionar Pasta
                     </span>
                     <input type="file" webkitdirectory="" directory="" multiple style={{ display: "none" }}
                       disabled={upSubindo||!upGrupo} onChange={e => processarArquivosAdmin(e.target.files)} />
                   </label>
-                  {upSubindo && <span style={{ fontSize: 13, color: "#1f4d52" }}>Enviando {upProg.feitos} de {upProg.total}{upProg.erros ? ` (${upProg.erros} erro)` : ""}...</span>}
+                  {upSubindo && <span style={{ fontSize: 13, color: "#4f46b7" }}>Enviando {upProg.feitos} de {upProg.total}{upProg.erros ? ` (${upProg.erros} erro)` : ""}...</span>}
                 </div>
               </div>
               <div style={{ fontSize: 14, fontWeight: 500, color: "#23282a", marginBottom: 12 }}>Processos recentes</div>
@@ -645,7 +645,7 @@ async function excluirProcesso() {
                   <option value="deferido">Deferido</option>
                   <option value="finalizado">Finalizado</option>
                 </select>
-                <select value={fGrupo} onChange={e => setFGrupo(e.target.value)} style={{ padding: "9px 10px", border: "0.5px solid #1f4d52", borderRadius: 8, fontSize: 13, background: "#f4f2ec", cursor: "pointer", color: "#1f4d52", fontWeight: 500 }}>
+                <select value={fGrupo} onChange={e => setFGrupo(e.target.value)} style={{ padding: "9px 10px", border: "0.5px solid #4f46b7", borderRadius: 8, fontSize: 13, background: "#f4f2ec", cursor: "pointer", color: "#4f46b7", fontWeight: 500 }}>
                   <option value="">Cliente: todos</option>
                   {grupos.map(g => <option key={g.id} value={g.id}>{g.nome}</option>)}
                 </select>

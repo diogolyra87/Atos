@@ -310,6 +310,20 @@ function AppPainel({ onSair }) {
     const checklist = JSON.parse(p.checklist || "[]");
     const [numProtocolo, setNumProtocolo] = useState(p.numero_protocolo || "");
     const [salvandoProt, setSalvandoProt] = useState(false);
+    const [anexados, setAnexados] = useState({});
+    async function uploadProtocoloLocal(tipo, arquivo) {
+      const form = new FormData();
+      form.append("arquivo", arquivo);
+      try {
+        const resp = await axios.post(API + "/processos/" + p.id + "/upload/" + tipo, form);
+        setAnexados(a => ({ ...a, [tipo]: true }));
+        if (tipo === "protocolo" && resp.data && resp.data.numero_protocolo) {
+          setNumProtocolo(resp.data.numero_protocolo);
+        }
+      } catch (e) {
+        alert("Erro ao anexar o arquivo.");
+      }
+    }
 
     const [textoExig, setTextoExig] = useState(p.texto_exigencia || "");
     const [arqExig, setArqExig] = useState(null);
@@ -487,7 +501,7 @@ async function excluirProcesso() {
           ].map(({ tipo, label, arquivo }) => (
             <div key={tipo} style={s.uploadItem}>
               <span style={s.uploadLabel}>{label}</span>
-              {arquivo
+              {(arquivo || anexados[tipo])
                 ? <span style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
                     <span style={s.uploadOk}>✓ Anexado</span>
                     <button onClick={() => baixarArquivo(p.id, tipo, (p.empresa||"documento").replace(/[^a-zA-Z0-9]/g,"_"))}
@@ -495,7 +509,7 @@ async function excluirProcesso() {
                   </span>
                 : <label style={{ cursor: "pointer" }}>
                     <span style={s.uploadPend}>+ Anexar</span>
-                    <input type="file" style={{ display: "none" }} onChange={e => uploadArquivo(p.id, tipo, e.target.files[0])} />
+                    <input type="file" style={{ display: "none" }} onChange={e => uploadProtocoloLocal(tipo, e.target.files[0])} />
                   </label>
               }
             </div>

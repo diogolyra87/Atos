@@ -29,6 +29,11 @@ def enviar_email(destinatario, assunto, corpo, corpo_html=None):
         msg["To"] = destinatario
         msg["Subject"] = assunto
         msg.attach(MIMEText(corpo, "plain"))
+        if not corpo_html:
+            try:
+                corpo_html = envolver_html(corpo)
+            except Exception:
+                corpo_html = None
         if corpo_html:
             msg.attach(MIMEText(corpo_html, "html"))
         server = smtplib.SMTP(EMAIL_HOST, EMAIL_PORT_SMTP)
@@ -84,6 +89,39 @@ def corpo_status_cliente(p, status_label, frase_final):
         linhas.append(frase_final)
     return "\n".join(linhas)
 
+def rodape_atos():
+    return (
+        '<div style="border-top:1px solid #eef1f5;padding:18px 24px;background:#f7f9fc;">'
+        '<div style="font-size:26px;font-weight:bold;color:#111111;letter-spacing:-1px;line-height:1;">atos<span style="color:#d85a30;">.</span></div>'
+        '<div style="font-size:11px;color:#5a7088;letter-spacing:1px;margin-top:2px;">Gestao Societaria</div>'
+        '<div style="font-size:11px;color:#9aa4b2;margin-top:8px;">contato@atos.net.br &middot; atos.net.br</div>'
+        '</div>'
+    )
+
+def _badge_status(status_label):
+    cores = {"Aberto": ("#eceae2", "#6b6c66"), "Tramitacao": ("#f0e0cb", "#8a5818"), "Exigencia": ("#f0dcd5", "#a8492a"), "Deferido": ("#d5e3df", "#15803d"), "Finalizado": ("#cfe8d8", "#15803d")}
+    bg, cor = cores.get(status_label, ("#e6f1fb", "#185fa5"))
+    return '<span style="display:inline-block;background:' + bg + ';color:' + cor + ';font-size:12px;font-weight:bold;padding:5px 14px;border-radius:20px;">' + status_label + '</span>'
+
+def envolver_html(corpo_texto, titulo="Atualizacao do seu processo"):
+    linhas = corpo_texto.split(chr(10))
+    corpo_p = ""
+    for ln in linhas:
+        if ln.strip() == "":
+            continue
+        corpo_p = corpo_p + '<div style="font-size:14px;color:#445;line-height:1.65;margin-bottom:4px;">' + ln + '</div>'
+    return (
+        '<div style="font-family:Arial,Helvetica,sans-serif;max-width:520px;margin:0 auto;background:#ffffff;border:1px solid #e6ebf2;border-radius:12px;overflow:hidden;">'
+        '<div style="height:5px;background:linear-gradient(90deg,#2563eb,#2dd4bf);"></div>'
+        '<div style="padding:28px 24px;">'
+        '<div style="font-size:19px;font-weight:bold;color:#1a2330;margin-bottom:14px;">' + titulo + '</div>'
+        + corpo_p +
+        '</div>'
+        + rodape_atos() +
+        '</div>'
+    )
+
+
 def _disparar_convites(nome, link, emails):
     corpo = (
         "Ola!\n\n"
@@ -95,14 +133,15 @@ def _disparar_convites(nome, link, emails):
     )
     corpo_html = (
         '<div style="font-family:Arial,Helvetica,sans-serif;max-width:480px;margin:0 auto;color:#241b4a;">'
-        '<h2 style="color:#4f46b7;margin:0 0 4px;">atos<span style="color:#d85a30;">.</span></h2>'
+        '<h2 style="color:#111111;margin:0 0 4px;">atos<span style="color:#d85a30;">.</span></h2>'
         '<p style="font-size:12px;color:#7a7790;margin:0 0 18px;">Gestao Societaria</p>'
         '<p>Ola!</p>'
         '<p>Voce foi cadastrado para acessar o sistema <strong>Atos - Gestao Societaria</strong>, no grupo <strong>' + nome + '</strong>.</p>'
         '<p>Para criar seu usuario e senha de acesso, clique no botao abaixo:</p>'
-        '<p style="text-align:center;margin:24px 0;"><a href="' + link + '" style="background:#4f46b7;color:#ffffff;text-decoration:none;padding:13px 28px;border-radius:8px;font-weight:bold;display:inline-block;">Criar meu acesso</a></p>'
+        '<p style="text-align:center;margin:24px 0;"><a href="' + link + '" style="background:#2563eb;color:#ffffff;text-decoration:none;padding:13px 28px;border-radius:8px;font-weight:bold;display:inline-block;">Criar meu acesso</a></p>'
         '<p style="font-size:13px;color:#7a7790;">Ou copie e cole este endereco no navegador:<br><a href="' + link + '">' + link + '</a></p>'
         '<p style="margin-top:24px;">Atenciosamente,<br>Equipe Atos</p>'
+        + rodape_atos() +
         '</div>'
     )
     for email in emails:

@@ -8,8 +8,8 @@ const STATUS_CONFIG = {
   recebido: { label: "Aberto", bg: "#eceae2", color: "#6b6c66" },
   tramitacao: { label: "Tramitação", bg: "#f0e0cb", color: "#8a5818" },
   exigencia: { label: "Exigência", bg: "#f0dcd5", color: "#a8492a" },
-  deferido: { label: "Deferido", bg: "#d5e3df", color: "#1f4d52" },
-  aprovado: { label: "Deferido", bg: "#d5e3df", color: "#1f4d52" },
+  deferido: { label: "Deferido", bg: "#d5e3df", color: "#2563eb" },
+  aprovado: { label: "Deferido", bg: "#d5e3df", color: "#2563eb" },
   aberto: { label: "Aberto", bg: "#eceae2", color: "#6b6c66" },
   finalizado: { label: "Finalizado", bg: "#cfe8d8", color: "#15803d" },
 };
@@ -85,8 +85,25 @@ export default function Cliente() {
   const s = estilos();
   return (
     <>
+﻿      <style>{`
+        @keyframes atosWaveMove { 0% { transform: translate(0,0) rotate(0deg); } 50% { transform: translate(-3%,2%) rotate(5deg); } 100% { transform: translate(0,0) rotate(0deg); } }
+        @keyframes atosSplashOut { 0%,62% { opacity:1; visibility:visible; } 80%,100% { opacity:0; visibility:hidden; } }
+        @keyframes atosLogoIn { 0%,6% { opacity:0; transform: translateY(16px); } 26%,60% { opacity:1; transform: translateY(0); } 76%,100% { opacity:0; transform: translateY(-8px); } }
+        @keyframes atosSubIn { 0%,28% { opacity:0; transform: translateY(10px); } 44%,60% { opacity:1; transform: translateY(0); } 76%,100% { opacity:0; transform: translateY(-6px); } }
+        @keyframes atosFormIn { 0%,66% { opacity:0; transform: translateY(12px); } 86%,100% { opacity:1; transform: translateY(0); } }
+        .atos-splash { position:fixed; inset:0; z-index:50; background:linear-gradient(180deg,#dff3f0 0%,#7fd0d8 38%,#3b82f6 72%,#1e3a8a 100%); display:flex; flex-direction:column; align-items:center; justify-content:center; animation: atosSplashOut 3s ease-in-out forwards; pointer-events:none; }
+        .atos-splash-wave { position:absolute; top:-35%; left:-30%; width:80%; height:130%; filter:blur(24px); border-radius:45%; background: radial-gradient(circle at 30% 30%, #2dd4bf, transparent 60%), radial-gradient(circle at 60% 60%, #3b82f6, transparent 55%); animation: atosWaveMove 9s ease-in-out infinite; }
+        .atos-splash-logo { position:relative; z-index:2; margin:0; font-family:Inter,sans-serif; font-size:68px; font-weight:800; color:#111; line-height:1; letter-spacing:-2px; animation: atosLogoIn 3s ease-in-out forwards; }
+        .atos-splash-sub { position:relative; z-index:2; margin:12px 0 0; font-size:22px; color:#163a6b; letter-spacing:0.5px; animation: atosSubIn 3s ease-in-out forwards; }
+        .atos-login-card { animation: atosFormIn 3s ease-in-out forwards; }
+      `}</style>
+      <div className="atos-splash">
+        <div className="atos-splash-wave"></div>
+        <div className="atos-splash-logo">atos<span style={{ color: "#d85a30" }}>.</span></div>
+        <div className="atos-splash-sub">Gestao Societaria</div>
+      </div>
       <div style={s.wrap}>
-        <div style={s.card}>
+        <div className="atos-login-card" style={s.card}>
           <div style={s.logo}>atos<span style={{ color: "#d85a30" }}>.</span></div>
           <div style={s.sub}>Gestão Societária — {ehCadastro ? "Crie Seu Login e Senha" : "Área do cliente"}</div>
           {erro && <div style={s.erro}>{erro}</div>}
@@ -271,7 +288,7 @@ export function Painel({ sessao, onSair }) {
                     processarArquivos(e.dataTransfer.files);
                   }
                 }}
-                style={{ border: "1.5px dashed #2d6a70", borderRadius: 12, padding: "20px", marginBottom: 18, background: "#fbfaf6", textAlign: "center" }}>
+                style={{ border: "1.5px dashed #2563eb", borderRadius: 12, padding: "20px", marginBottom: 18, background: "#fbfaf6", textAlign: "center" }}>
                 <div style={{ fontSize: 13, color: "#6b6c66", marginBottom: 12 }}>
                   {subindo
                     ? `Enviando... ${progresso.feitos} de ${progresso.total}${progresso.erros ? ` (${progresso.erros} com erro)` : ""}`
@@ -279,7 +296,7 @@ export function Painel({ sessao, onSair }) {
                 </div>
                 <div style={{ display: "inline-flex", gap: 10 }}>
                   <label style={{ display: "inline-block", cursor: subindo ? "not-allowed" : "pointer" }}>
-                    <span style={{ background: "#1f4d52", color: "#fff", borderRadius: 8, padding: "9px 18px", fontSize: 13, fontFamily: "'Inter', sans-serif", opacity: subindo ? 0.6 : 1 }}>
+                    <span style={{ background: "#2563eb", color: "#fff", borderRadius: 8, padding: "9px 18px", fontSize: 13, fontFamily: "'Inter', sans-serif", opacity: subindo ? 0.6 : 1 }}>
                       {subindo ? "Enviando..." : "Selecionar Arquivos"}
                     </span>
                     <input type="file" accept="application/pdf" multiple style={{ display: "none" }}
@@ -287,7 +304,7 @@ export function Painel({ sessao, onSair }) {
                       onChange={e => processarArquivos(e.target.files)} />
                   </label>
                   <label style={{ display: "inline-block", cursor: subindo ? "not-allowed" : "pointer" }}>
-                    <span style={{ background: "transparent", color: "#1f4d52", border: "0.5px solid #1f4d52", borderRadius: 8, padding: "9px 18px", fontSize: 13, fontFamily: "'Inter', sans-serif", opacity: subindo ? 0.6 : 1 }}>
+                    <span style={{ background: "transparent", color: "#2563eb", border: "0.5px solid #2563eb", borderRadius: 8, padding: "9px 18px", fontSize: 13, fontFamily: "'Inter', sans-serif", opacity: subindo ? 0.6 : 1 }}>
                       Selecionar Pastas
                     </span>
                     <input type="file" webkitdirectory="" directory="" multiple style={{ display: "none" }}
@@ -341,7 +358,7 @@ export function Painel({ sessao, onSair }) {
                   <div key={r.st} style={{ background: "#fff", border: "0.5px solid #e6e0d2", borderRadius: 12, padding: 18 }}>
                     <div style={{ fontSize: 14, fontWeight: 500, color: "#23282a", marginBottom: 14 }}>{r.lb}</div>
                     <div style={{ display: "flex", gap: 8 }}>
-                      <button onClick={() => baixarRelatorio(r.st)} style={{ flex: 1, background: "#1f4d52", color: "#fff", border: "none", borderRadius: 8, padding: "9px 12px", fontSize: 13, cursor: "pointer", fontFamily: "'Inter', sans-serif" }}>Baixar planilha</button>
+                      <button onClick={() => baixarRelatorio(r.st)} style={{ flex: 1, background: "#2563eb", color: "#fff", border: "none", borderRadius: 8, padding: "9px 12px", fontSize: 13, cursor: "pointer", fontFamily: "'Inter', sans-serif" }}>Baixar planilha</button>
                       <button disabled title="Disponivel em breve" style={{ background: "#eceae2", color: "#a8a395", border: "none", borderRadius: 8, padding: "9px 12px", fontSize: 13, cursor: "not-allowed", fontFamily: "'Inter', sans-serif" }}>Enviar email</button>
                     </div>
                   </div>
@@ -405,7 +422,7 @@ export function Painel({ sessao, onSair }) {
 function estilos() {
   return {
     appCliente: { display: "grid", gridTemplateColumns: "240px 1fr", minHeight: "100vh", fontFamily: "'Inter', sans-serif", background: "#f4f2ec" },
-    sidebar: { background: "#1f4d52", display: "flex", flexDirection: "column" },
+    sidebar: { background: "#2563eb", display: "flex", flexDirection: "column" },
     brandBox: { margin: "20px 18px 10px", padding: "16px 18px", background: "#f4f2ec", borderRadius: 12 },
     logoSide: { fontFamily: "'Inter', sans-serif", fontSize: 30, fontWeight: 800, color: "#16151a", letterSpacing: -1.5, lineHeight: 1 },
     tagSide: { fontSize: 11, color: "#6b6c66", marginTop: 4 },
@@ -413,18 +430,18 @@ function estilos() {
     navItem: (ativo) => ({ display: "block", width: "100%", textAlign: "left", padding: "11px 14px", borderRadius: 10, border: "none", cursor: "pointer", fontSize: 14, fontWeight: 500, fontFamily: "'Inter', sans-serif", color: ativo ? "#fff" : "#aecaca", background: ativo ? "rgba(255,255,255,0.13)" : "transparent" }),
     sideFoot: { padding: "18px 24px", borderTop: "1px solid rgba(255,255,255,0.10)", display: "flex", flexDirection: "column", alignItems: "flex-start" },
     sideGrupo: { fontSize: 13, color: "#fff", fontWeight: 500 },
-    sideLogin: { fontSize: 12, color: "#8fb0b0", marginBottom: 10 },
+    sideLogin: { fontSize: 12, color: "#cfe8f0", marginBottom: 10 },
     mainCliente: { overflowY: "auto" },
-    wrap: { minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", background: "#23282a", fontFamily: "'Inter', sans-serif" },
+    wrap: { minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", background: "linear-gradient(180deg,#dff3f0 0%,#7fd0d8 38%,#3b82f6 72%,#1e3a8a 100%)", fontFamily: "'Inter', sans-serif" },
     card: { background: "#fff", borderRadius: 12, padding: 36, width: 340, boxShadow: "0 10px 40px rgba(0,0,0,0.3)" },
-    logo: { fontFamily: "'DM Serif Display', serif", fontSize: 52, color: "#1f4d52", textAlign: "center", lineHeight: 1 },
+    logo: { fontFamily: "'DM Serif Display', serif", fontSize: 52, color: "#2563eb", textAlign: "center", lineHeight: 1 },
     sub: { textAlign: "center", fontSize: 13, color: "#64748b", marginBottom: 24 },
     label: { fontSize: 12, color: "#64748b", marginBottom: 4, display: "block" },
     input: { width: "100%", padding: "10px 12px", border: "0.5px solid #cbd5e1", borderRadius: 8, fontSize: 14, outline: "none", marginBottom: 14, boxSizing: "border-box" },
-    btn: { width: "100%", background: "#1f4d52", color: "#fff", border: "none", padding: "11px", borderRadius: 8, fontSize: 14, cursor: "pointer", marginTop: 4 },
+    btn: { width: "100%", background: "#2563eb", color: "#fff", border: "none", padding: "11px", borderRadius: 8, fontSize: 14, cursor: "pointer", marginTop: 4 },
     erro: { background: "#fee2e2", color: "#991b1b", borderRadius: 8, padding: "8px 12px", fontSize: 13, marginBottom: 14 },
     aviso: { background: "#dcfce7", color: "#166534", borderRadius: 8, padding: "8px 12px", fontSize: 13, marginBottom: 14 },
-    grupoBox: { background: "#e8efee", color: "#1f4d52", borderRadius: 8, padding: "8px 12px", fontSize: 12, marginBottom: 14, textAlign: "center" },
+    grupoBox: { background: "#e8efee", color: "#2563eb", borderRadius: 8, padding: "8px 12px", fontSize: 12, marginBottom: 14, textAlign: "center" },
     btnSair: { background: "none", border: "0.5px solid #334155", color: "#94a3b8", borderRadius: 6, padding: "5px 12px", fontSize: 12, cursor: "pointer" },
     conteudo: { padding: 28, maxWidth: 920, margin: "0 auto" },
     h1: { fontSize: 18, fontWeight: 500, color: "#23282a", marginBottom: 18 },
@@ -442,7 +459,7 @@ function estilos() {
     modalTitle: { fontSize: 16, fontWeight: 500, color: "#23282a", marginBottom: 16 },
     exigTexto: { background: "#fef2f2", border: "0.5px solid #fecaca", borderRadius: 8, padding: 14, fontSize: 14, color: "#7f1d1d", lineHeight: 1.5, marginBottom: 18, whiteSpace: "pre-wrap" },
     modalBtns: { display: "flex", gap: 10, justifyContent: "flex-end" },
-    btnDl: { background: "#e8efee", color: "#1f4d52", border: "0.5px solid #c5d8d5", borderRadius: 8, padding: "8px 16px", fontSize: 13, cursor: "pointer" },
-    btnFechar: { background: "#1f4d52", color: "#fff", border: "none", borderRadius: 8, padding: "8px 18px", fontSize: 13, cursor: "pointer" },
+    btnDl: { background: "#e8efee", color: "#2563eb", border: "0.5px solid #c5d8d5", borderRadius: 8, padding: "8px 16px", fontSize: 13, cursor: "pointer" },
+    btnFechar: { background: "#2563eb", color: "#fff", border: "none", borderRadius: 8, padding: "8px 18px", fontSize: 13, cursor: "pointer" },
   };
 }

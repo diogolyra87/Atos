@@ -533,7 +533,7 @@ async function excluirProcesso() {
       <div style={s.layout}>
         <div style={s.sidebar}>
           <div style={{ margin: "20px 16px 14px", padding: "16px 18px", background: "#f4f2ec", borderRadius: 12 }}>
-            <div style={s.logo}>atos<span style={{ color: "#d85a30" }}>.</span></div>
+            <div style={{ ...s.logo, cursor: "pointer" }} onClick={() => { setTela("processos"); setProcessoSelecionado(null); }}>atos<span style={{ color: "#d85a30" }}>.</span></div>
             <div style={{ fontSize: 11, color: "#6b6c66", marginTop: 4 }}>Gestão Societária</div>
           </div>
           {[

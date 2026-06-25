@@ -22,13 +22,15 @@ EMAIL_HOST = os.getenv("EMAIL_HOST", "smtp.gmail.com")
 EMAIL_PORT_SMTP = int(os.getenv("EMAIL_PORT_SMTP", "587"))
 BASE_URL_SISTEMA = os.getenv("BASE_URL_SISTEMA", "https://atos.net.br")
 
-def enviar_email(destinatario, assunto, corpo):
+def enviar_email(destinatario, assunto, corpo, corpo_html=None):
     try:
-        msg = MIMEMultipart()
+        msg = MIMEMultipart("alternative")
         msg["From"] = "Atos - Gestao Societaria <%s>" % EMAIL_FROM
         msg["To"] = destinatario
         msg["Subject"] = assunto
         msg.attach(MIMEText(corpo, "plain"))
+        if corpo_html:
+            msg.attach(MIMEText(corpo_html, "html"))
         server = smtplib.SMTP(EMAIL_HOST, EMAIL_PORT_SMTP)
         server.starttls()
         server.login(EMAIL_USER, EMAIL_PASS)
@@ -91,8 +93,20 @@ def _disparar_convites(nome, link, emails):
         "Apos criar seu acesso, voce podera acompanhar seus processos pelo endereco " + BASE_URL_SISTEMA + ".\n\n"
         "Atenciosamente,\nEquipe Atos"
     )
+    corpo_html = (
+        '<div style="font-family:Arial,Helvetica,sans-serif;max-width:480px;margin:0 auto;color:#241b4a;">'
+        '<h2 style="color:#4f46b7;margin:0 0 4px;">atos<span style="color:#d85a30;">.</span></h2>'
+        '<p style="font-size:12px;color:#7a7790;margin:0 0 18px;">Gestao Societaria</p>'
+        '<p>Ola!</p>'
+        '<p>Voce foi cadastrado para acessar o sistema <strong>Atos - Gestao Societaria</strong>, no grupo <strong>' + nome + '</strong>.</p>'
+        '<p>Para criar seu usuario e senha de acesso, clique no botao abaixo:</p>'
+        '<p style="text-align:center;margin:24px 0;"><a href="' + link + '" style="background:#4f46b7;color:#ffffff;text-decoration:none;padding:13px 28px;border-radius:8px;font-weight:bold;display:inline-block;">Criar meu acesso</a></p>'
+        '<p style="font-size:13px;color:#7a7790;">Ou copie e cole este endereco no navegador:<br><a href="' + link + '">' + link + '</a></p>'
+        '<p style="margin-top:24px;">Atenciosamente,<br>Equipe Atos</p>'
+        '</div>'
+    )
     for email in emails:
-        enviar_email(email, "Acesso ao sistema Atos - " + nome, corpo)
+        enviar_email(email, "Acesso ao sistema Atos - " + nome, corpo, corpo_html)
 
 
 app = FastAPI(title="Atos API")

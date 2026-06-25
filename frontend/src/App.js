@@ -9,8 +9,8 @@ const STATUS_CONFIG = {
   aberto: { label: "Aberto", bg: "#eceae2", color: "#6b6c66" },
   tramitacao: { label: "Tramitação", bg: "#f0e0cb", color: "#8a5818" },
   exigencia: { label: "Exigência", bg: "#f0dcd5", color: "#a8492a" },
-  deferido: { label: "Deferido", bg: "#d5e3df", color: "#4f46b7" },
-  aprovado: { label: "Deferido", bg: "#d5e3df", color: "#4f46b7" },
+  deferido: { label: "Deferido", bg: "#d5e3df", color: "#2563eb" },
+  aprovado: { label: "Deferido", bg: "#d5e3df", color: "#2563eb" },
   finalizado: { label: "Finalizado", bg: "#cfe8d8", color: "#15803d" },
 };
 
@@ -119,7 +119,7 @@ function TelaGrupos() {
         <button onClick={adicionarEmail} style={{ background: "transparent", border: "0.5px dashed #94a3b8", borderRadius: 8, padding: "8px 12px", cursor: "pointer", color: "#475569", fontSize: 13, marginBottom: 20 }}>+ Adicionar outro email</button>
 
         <div>
-          <button onClick={criar} disabled={criando} style={{ background: "#4f46b7", color: "#fff", border: "none", padding: "11px 22px", borderRadius: 8, fontSize: 14, cursor: "pointer" }}>{criando ? "Criando e enviando..." : "Criar grupo"}</button>
+          <button onClick={criar} disabled={criando} style={{ background: "#2563eb", color: "#fff", border: "none", padding: "11px 22px", borderRadius: 8, fontSize: 14, cursor: "pointer" }}>{criando ? "Criando e enviando..." : "Criar grupo"}</button>
         </div>
       </div>
     </>
@@ -257,9 +257,9 @@ function AppPainel({ onSair }) {
 
   const s = {
     layout: { display: "flex", minHeight: "100vh", fontFamily: "'Inter', sans-serif" },
-    sidebar: { width: 220, background: "linear-gradient(165deg,#241b4a,#4f46b7)", display: "flex", flexDirection: "column", padding: "24px 16px", gap: 8 },
+    sidebar: { width: 220, background: "linear-gradient(165deg,#0e2a6e,#2563eb)", display: "flex", flexDirection: "column", padding: "24px 16px", gap: 8 },
     logo: { fontFamily: "'Inter', sans-serif", fontSize: 30, fontWeight: 800, color: "#16151a", letterSpacing: -1.5, lineHeight: 1 },
-    nav: (ativo) => ({ display: "flex", alignItems: "center", gap: 10, padding: "9px 10px", borderRadius: 8, color: ativo ? "#fff" : "#cecbf6", background: ativo ? "rgba(255,255,255,0.13)" : "transparent", cursor: "pointer", fontSize: 13, border: "none", width: "100%", textAlign: "left" }),
+    nav: (ativo) => ({ display: "flex", alignItems: "center", gap: 10, padding: "9px 10px", borderRadius: 8, color: ativo ? "#fff" : "#cfe8f0", background: ativo ? "rgba(255,255,255,0.13)" : "transparent", cursor: "pointer", fontSize: 13, border: "none", width: "100%", textAlign: "left" }),
     main: { flex: 1, background: "#f8fafc", padding: 28 },
     topbar: { display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 24 },
     h1: { fontSize: 18, fontWeight: 500, color: "#23282a", margin: 0 },
@@ -277,7 +277,7 @@ function AppPainel({ onSair }) {
     cnpj: { fontFamily: "monospace", fontSize: 11, color: "#94a3b8", marginTop: 2 },
     cell: { fontSize: 12, color: "#475569" },
     badge: (status) => ({ display: "inline-block", padding: "3px 10px", borderRadius: 20, fontSize: 11, fontWeight: 500, background: STATUS_CONFIG[status]?.bg || "#f1f5f9", color: STATUS_CONFIG[status]?.color || "#475569" }),
-    btnVer: { background: "none", border: "0.5px solid #e2e8f0", borderRadius: 6, padding: "5px 10px", fontSize: 11, color: "#4f46b7", cursor: "pointer" },
+    btnVer: { background: "none", border: "0.5px solid #e2e8f0", borderRadius: 6, padding: "5px 10px", fontSize: 11, color: "#2563eb", cursor: "pointer" },
     overlay: { position: "fixed", inset: 0, background: "rgba(0,0,0,0.5)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 1000 },
     modal: { background: "#fff", borderRadius: 12, padding: 28, width: 560, maxHeight: "80vh", overflowY: "auto" },
     modalTitle: { fontSize: 16, fontWeight: 500, color: "#23282a", marginBottom: 20 },
@@ -491,7 +491,7 @@ async function excluirProcesso() {
                 ? <span style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
                     <span style={s.uploadOk}>✓ Anexado</span>
                     <button onClick={() => baixarArquivo(p.id, tipo, (p.empresa||"documento").replace(/[^a-zA-Z0-9]/g,"_"))}
-                      style={{ background: "transparent", border: "0.5px solid #4f46b7", color: "#4f46b7", borderRadius: 6, padding: "3px 10px", fontSize: 11, cursor: "pointer", fontFamily: "'Inter', sans-serif" }}>↓ Baixar</button>
+                      style={{ background: "transparent", border: "0.5px solid #2563eb", color: "#2563eb", borderRadius: 6, padding: "3px 10px", fontSize: 11, cursor: "pointer", fontFamily: "'Inter', sans-serif" }}>↓ Baixar</button>
                   </span>
                 : <label style={{ cursor: "pointer" }}>
                     <span style={s.uploadPend}>+ Anexar</span>
@@ -519,7 +519,7 @@ async function excluirProcesso() {
       <div style={s.layout}>
         <div style={s.sidebar}>
           <div style={{ margin: "20px 16px 14px", padding: "16px 18px", background: "#f4f2ec", borderRadius: 12 }}>
-            <div style={s.logo}>atos<span style={{ color: "#d85a30" }}>.</span></div>
+            <div style={s.logo}>atos<span style={{ color: "#2dd4bf" }}>.</span></div>
             <div style={{ fontSize: 11, color: "#6b6c66", marginTop: 4 }}>Gestão Societária</div>
           </div>
           {[
@@ -568,7 +568,7 @@ async function excluirProcesso() {
                 </div>
                 <div style={s.metricCard}>
                   <div style={s.metricLabel}>Deferidos</div>
-                  <div style={{ ...s.metricValue, color: "#4f46b7" }}>{metricas.deferido || 0}</div>
+                  <div style={{ ...s.metricValue, color: "#2563eb" }}>{metricas.deferido || 0}</div>
 
                 </div>
                 <div style={s.metricCard}>
@@ -604,25 +604,25 @@ async function excluirProcesso() {
                 style={{ border: "1.5px dashed #2d6a70", borderRadius: 12, padding: "18px", marginBottom: 18, background: "#fbfaf6" }}>
                 <div style={{ display: "flex", gap: 10, alignItems: "center", justifyContent: "center", flexWrap: "wrap" }}>
                   <select value={upGrupo} onChange={e => setUpGrupo(e.target.value)} disabled={upSubindo}
-                    style={{ padding: "9px 10px", border: "0.5px solid #4f46b7", borderRadius: 8, fontSize: 13, background: "#fff", cursor: "pointer", color: "#4f46b7", fontWeight: 500 }}>
+                    style={{ padding: "9px 10px", border: "0.5px solid #2563eb", borderRadius: 8, fontSize: 13, background: "#fff", cursor: "pointer", color: "#2563eb", fontWeight: 500 }}>
                     <option value="">Grupo Empresarial</option>
                     {grupos.map(g => <option key={g.id} value={g.codigo}>{g.nome}</option>)}
                   </select>
                   <label style={{ display: "inline-block", cursor: (upSubindo||!upGrupo) ? "not-allowed" : "pointer" }}>
-                    <span style={{ background: "#4f46b7", color: "#fff", borderRadius: 8, padding: "9px 16px", fontSize: 13, fontFamily: "'Inter', sans-serif", opacity: (upSubindo||!upGrupo) ? 0.5 : 1 }}>
+                    <span style={{ background: "#2563eb", color: "#fff", borderRadius: 8, padding: "9px 16px", fontSize: 13, fontFamily: "'Inter', sans-serif", opacity: (upSubindo||!upGrupo) ? 0.5 : 1 }}>
                       Selecionar Arquivos
                     </span>
                     <input type="file" accept="application/pdf" multiple style={{ display: "none" }}
                       disabled={upSubindo||!upGrupo} onChange={e => processarArquivosAdmin(e.target.files)} />
                   </label>
                   <label style={{ display: "inline-block", cursor: (upSubindo||!upGrupo) ? "not-allowed" : "pointer" }}>
-                    <span style={{ background: "transparent", color: "#4f46b7", border: "0.5px solid #4f46b7", borderRadius: 8, padding: "9px 16px", fontSize: 13, fontFamily: "'Inter', sans-serif", opacity: (upSubindo||!upGrupo) ? 0.5 : 1 }}>
+                    <span style={{ background: "transparent", color: "#2563eb", border: "0.5px solid #2563eb", borderRadius: 8, padding: "9px 16px", fontSize: 13, fontFamily: "'Inter', sans-serif", opacity: (upSubindo||!upGrupo) ? 0.5 : 1 }}>
                       Selecionar Pasta
                     </span>
                     <input type="file" webkitdirectory="" directory="" multiple style={{ display: "none" }}
                       disabled={upSubindo||!upGrupo} onChange={e => processarArquivosAdmin(e.target.files)} />
                   </label>
-                  {upSubindo && <span style={{ fontSize: 13, color: "#4f46b7" }}>Enviando {upProg.feitos} de {upProg.total}{upProg.erros ? ` (${upProg.erros} erro)` : ""}...</span>}
+                  {upSubindo && <span style={{ fontSize: 13, color: "#2563eb" }}>Enviando {upProg.feitos} de {upProg.total}{upProg.erros ? ` (${upProg.erros} erro)` : ""}...</span>}
                 </div>
               </div>
               <div style={{ fontSize: 14, fontWeight: 500, color: "#23282a", marginBottom: 12 }}>Processos recentes</div>
@@ -645,7 +645,7 @@ async function excluirProcesso() {
                   <option value="deferido">Deferido</option>
                   <option value="finalizado">Finalizado</option>
                 </select>
-                <select value={fGrupo} onChange={e => setFGrupo(e.target.value)} style={{ padding: "9px 10px", border: "0.5px solid #4f46b7", borderRadius: 8, fontSize: 13, background: "#f4f2ec", cursor: "pointer", color: "#4f46b7", fontWeight: 500 }}>
+                <select value={fGrupo} onChange={e => setFGrupo(e.target.value)} style={{ padding: "9px 10px", border: "0.5px solid #2563eb", borderRadius: 8, fontSize: 13, background: "#f4f2ec", cursor: "pointer", color: "#2563eb", fontWeight: 500 }}>
                   <option value="">Cliente: todos</option>
                   {grupos.map(g => <option key={g.id} value={g.id}>{g.nome}</option>)}
                 </select>
@@ -802,22 +802,22 @@ export default function App() {
         @keyframes atosLogoIn { 0%,6% { opacity:0; transform: translateY(16px); } 26%,60% { opacity:1; transform: translateY(0); } 76%,100% { opacity:0; transform: translateY(-8px); } }
         @keyframes atosSubIn { 0%,28% { opacity:0; transform: translateY(10px); } 44%,60% { opacity:1; transform: translateY(0); } 76%,100% { opacity:0; transform: translateY(-6px); } }
         @keyframes atosFormIn { 0%,66% { opacity:0; transform: translateY(12px); } 86%,100% { opacity:1; transform: translateY(0); } }
-        .atos-splash { position:fixed; inset:0; z-index:50; background:#1a1340; display:flex; flex-direction:column; align-items:center; justify-content:center; animation: atosSplashOut 3s ease-in-out forwards; pointer-events:none; }
-        .atos-splash-wave { position:absolute; top:-35%; left:-30%; width:80%; height:130%; filter:blur(24px); border-radius:45%; background: radial-gradient(circle at 30% 30%, #7c3aed, transparent 60%), radial-gradient(circle at 60% 60%, #d946a8, transparent 55%); animation: atosWaveMove 9s ease-in-out infinite; }
+        .atos-splash { position:fixed; inset:0; z-index:50; background:linear-gradient(180deg,#dff3f0 0%,#7fd0d8 38%,#3b82f6 72%,#1e3a8a 100%); display:flex; flex-direction:column; align-items:center; justify-content:center; animation: atosSplashOut 3s ease-in-out forwards; pointer-events:none; }
+        .atos-splash-wave { position:absolute; top:-35%; left:-30%; width:80%; height:130%; filter:blur(24px); border-radius:45%; background: radial-gradient(circle at 30% 30%, #2dd4bf, transparent 60%), radial-gradient(circle at 60% 60%, #3b82f6, transparent 55%); animation: atosWaveMove 9s ease-in-out infinite; }
         .atos-splash-logo { position:relative; z-index:2; margin:0; font-size:52px; font-weight:800; color:#fff; line-height:1; letter-spacing:-2px; animation: atosLogoIn 3s ease-in-out forwards; }
-        .atos-splash-sub { position:relative; z-index:2; margin:10px 0 0; font-size:17px; color:#cecbf6; letter-spacing:0.5px; animation: atosSubIn 3s ease-in-out forwards; }
+        .atos-splash-sub { position:relative; z-index:2; margin:10px 0 0; font-size:17px; color:#163a6b; letter-spacing:0.5px; animation: atosSubIn 3s ease-in-out forwards; }
         .atos-login-card { animation: atosFormIn 3s ease-in-out forwards; }
-        .atos-bgwave { position:absolute; top:-50%; left:-20%; width:70%; height:120%; filter:blur(40px); border-radius:45%; background: radial-gradient(circle at 40% 40%, rgba(124,58,237,0.55), transparent 62%), radial-gradient(circle at 60% 60%, rgba(217,70,168,0.4), transparent 55%); pointer-events:none; }
+        .atos-bgwave { position:absolute; top:-50%; left:-20%; width:70%; height:120%; filter:blur(40px); border-radius:45%; background: radial-gradient(circle at 40% 40%, rgba(45,212,191,0.45), transparent 62%), radial-gradient(circle at 60% 60%, rgba(59,130,246,0.4), transparent 55%); pointer-events:none; }
       `}</style>
       <div className="atos-splash">
         <div className="atos-splash-wave"></div>
-        <div className="atos-splash-logo">atos<span style={{ color: "#f0997b" }}>.</span></div>
+        <div className="atos-splash-logo">atos<span style={{ color: "#2dd4bf" }}>.</span></div>
         <div className="atos-splash-sub">Gestão Societária</div>
       </div>
-      <div style={{ minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", background: "#1a1340", fontFamily: "Inter, sans-serif", position: "relative", overflow: "hidden", padding: "16px" }}>
+      <div style={{ minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", background: "linear-gradient(180deg,#dff3f0 0%,#7fd0d8 38%,#3b82f6 72%,#1e3a8a 100%)", fontFamily: "Inter, sans-serif", position: "relative", overflow: "hidden", padding: "16px" }}>
         <div className="atos-bgwave"></div>
         <div className="atos-login-card" style={{ background: "#fff", borderRadius: 16, padding: 32, width: "100%", maxWidth: 360, boxShadow: "0 10px 50px rgba(20,10,50,0.45)", position: "relative", zIndex: 2, boxSizing: "border-box" }}>
-          <div style={{ fontSize: 34, fontWeight: 800, color: "#241b4a", letterSpacing: -1.5, textAlign: "center" }}>atos<span style={{ color: "#d85a30" }}>.</span></div>
+          <div style={{ fontSize: 34, fontWeight: 800, color: "#111111", letterSpacing: -1.5, textAlign: "center" }}>atos<span style={{ color: "#2dd4bf" }}>.</span></div>
           <div style={{ textAlign: "center", fontSize: 13, color: "#7a7790", marginBottom: 4 }}>Gestão Societária</div>
           <div style={{ textAlign: "center", fontSize: 12, color: "#a09dba", marginBottom: 24 }}>Painel do Administrador</div>
           {erro && <div style={{ background: "#fee2e2", color: "#991b1b", borderRadius: 8, padding: "8px 12px", fontSize: 13, marginBottom: 14 }}>{erro}</div>}
@@ -825,7 +825,7 @@ export default function App() {
           <input style={{ width: "100%", padding: "11px 13px", border: "0.5px solid #d9d5ea", borderRadius: 8, fontSize: 14, outline: "none", marginBottom: 14, boxSizing: "border-box", background: "#fbfaff" }} value={login} onChange={e => setLogin(e.target.value)} onKeyDown={e => e.key === "Enter" && entrar()} />
           <label style={{ fontSize: 12, color: "#7a7790", marginBottom: 4, display: "block" }}>Senha</label>
           <input style={{ width: "100%", padding: "11px 13px", border: "0.5px solid #d9d5ea", borderRadius: 8, fontSize: 14, outline: "none", marginBottom: 14, boxSizing: "border-box", background: "#fbfaff" }} type="password" value={senha} onChange={e => setSenha(e.target.value)} onKeyDown={e => e.key === "Enter" && entrar()} />
-          <button style={{ width: "100%", background: "linear-gradient(135deg,#4f46b7,#7c3aed)", color: "#fff", border: "none", padding: "12px", borderRadius: 8, fontSize: 14, fontWeight: 600, cursor: "pointer", marginTop: 4 }} onClick={entrar} disabled={carregando}>{carregando ? "Aguarde..." : "Entrar"}</button>
+          <button style={{ width: "100%", background: "linear-gradient(135deg,#2563eb,#2dd4bf)", color: "#fff", border: "none", padding: "12px", borderRadius: 8, fontSize: 14, fontWeight: 600, cursor: "pointer", marginTop: 4 }} onClick={entrar} disabled={carregando}>{carregando ? "Aguarde..." : "Entrar"}</button>
         </div>
       </div>
     </>

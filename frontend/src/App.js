@@ -519,7 +519,7 @@ async function excluirProcesso() {
       <div style={s.layout}>
         <div style={s.sidebar}>
           <div style={{ margin: "20px 16px 14px", padding: "16px 18px", background: "#f4f2ec", borderRadius: 12 }}>
-            <div style={s.logo}>atos<span style={{ color: "#2dd4bf" }}>.</span></div>
+            <div style={s.logo}>atos<span style={{ color: "#d85a30" }}>.</span></div>
             <div style={{ fontSize: 11, color: "#6b6c66", marginTop: 4 }}>Gestão Societária</div>
           </div>
           {[
@@ -804,20 +804,20 @@ export default function App() {
         @keyframes atosFormIn { 0%,66% { opacity:0; transform: translateY(12px); } 86%,100% { opacity:1; transform: translateY(0); } }
         .atos-splash { position:fixed; inset:0; z-index:50; background:linear-gradient(180deg,#dff3f0 0%,#7fd0d8 38%,#3b82f6 72%,#1e3a8a 100%); display:flex; flex-direction:column; align-items:center; justify-content:center; animation: atosSplashOut 3s ease-in-out forwards; pointer-events:none; }
         .atos-splash-wave { position:absolute; top:-35%; left:-30%; width:80%; height:130%; filter:blur(24px); border-radius:45%; background: radial-gradient(circle at 30% 30%, #2dd4bf, transparent 60%), radial-gradient(circle at 60% 60%, #3b82f6, transparent 55%); animation: atosWaveMove 9s ease-in-out infinite; }
-        .atos-splash-logo { position:relative; z-index:2; margin:0; font-size:52px; font-weight:800; color:#fff; line-height:1; letter-spacing:-2px; animation: atosLogoIn 3s ease-in-out forwards; }
-        .atos-splash-sub { position:relative; z-index:2; margin:10px 0 0; font-size:17px; color:#163a6b; letter-spacing:0.5px; animation: atosSubIn 3s ease-in-out forwards; }
+        .atos-splash-logo { position:relative; z-index:2; margin:0; font-size:68px; font-weight:800; color:#111; line-height:1; letter-spacing:-2px; animation: atosLogoIn 3s ease-in-out forwards; }
+        .atos-splash-sub { position:relative; z-index:2; margin:12px 0 0; font-size:22px; color:#163a6b; letter-spacing:0.5px; animation: atosSubIn 3s ease-in-out forwards; }
         .atos-login-card { animation: atosFormIn 3s ease-in-out forwards; }
         .atos-bgwave { position:absolute; top:-50%; left:-20%; width:70%; height:120%; filter:blur(40px); border-radius:45%; background: radial-gradient(circle at 40% 40%, rgba(45,212,191,0.45), transparent 62%), radial-gradient(circle at 60% 60%, rgba(59,130,246,0.4), transparent 55%); pointer-events:none; }
       `}</style>
       <div className="atos-splash">
         <div className="atos-splash-wave"></div>
-        <div className="atos-splash-logo">atos<span style={{ color: "#2dd4bf" }}>.</span></div>
+        <div className="atos-splash-logo">atos<span style={{ color: "#d85a30" }}>.</span></div>
         <div className="atos-splash-sub">Gestão Societária</div>
       </div>
       <div style={{ minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", background: "linear-gradient(180deg,#dff3f0 0%,#7fd0d8 38%,#3b82f6 72%,#1e3a8a 100%)", fontFamily: "Inter, sans-serif", position: "relative", overflow: "hidden", padding: "16px" }}>
         <div className="atos-bgwave"></div>
         <div className="atos-login-card" style={{ background: "#fff", borderRadius: 16, padding: 32, width: "100%", maxWidth: 360, boxShadow: "0 10px 50px rgba(20,10,50,0.45)", position: "relative", zIndex: 2, boxSizing: "border-box" }}>
-          <div style={{ fontSize: 34, fontWeight: 800, color: "#111111", letterSpacing: -1.5, textAlign: "center" }}>atos<span style={{ color: "#2dd4bf" }}>.</span></div>
+          <div style={{ fontSize: 34, fontWeight: 800, color: "#111111", letterSpacing: -1.5, textAlign: "center" }}>atos<span style={{ color: "#d85a30" }}>.</span></div>
           <div style={{ textAlign: "center", fontSize: 13, color: "#7a7790", marginBottom: 4 }}>Gestão Societária</div>
           <div style={{ textAlign: "center", fontSize: 12, color: "#a09dba", marginBottom: 24 }}>Painel do Administrador</div>
           {erro && <div style={{ background: "#fee2e2", color: "#991b1b", borderRadius: 8, padding: "8px 12px", fontSize: 13, marginBottom: 14 }}>{erro}</div>}

@@ -38,6 +38,19 @@ class EmailGrupo(Base):
     criado_em = Column(DateTime, default=datetime.now)
 
 
+class AuditLog(Base):
+    __tablename__ = "audit_logs"
+    id = Column(String, primary_key=True)
+    usuario_login = Column(String)
+    usuario_id = Column(String)
+    grupo_id = Column(String)
+    is_admin = Column(Boolean, default=False)
+    acao = Column(String, nullable=False)
+    processo_id = Column(String)
+    detalhe = Column(String)
+    ip = Column(String)
+    data_hora = Column(DateTime, default=datetime.now)
+
 class Processo(Base):
     __tablename__ = "processos"
     id = Column(String, primary_key=True)

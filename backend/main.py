@@ -2,7 +2,7 @@ from fastapi import FastAPI, Depends, UploadFile, File, Form, HTTPException, Hea
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from sqlalchemy.orm import Session
-from database import get_db, Processo, Grupo, Usuario, EmailGrupo, criar_banco
+from database import get_db, Processo, Grupo, Usuario, EmailGrupo, criar_banco, AuditLog
 from datetime import datetime
 from openai import OpenAI
 import json, os, uuid, shutil, bcrypt
@@ -113,6 +113,38 @@ def validar_token(x_token, db):
         if datetime.now() - tc > timedelta(days=30):
             return None  # token expirado
     return u
+
+def obter_ip(request):
+    """Retorna o IP real do cliente, lendo cabecalhos do proxy nginx."""
+    if not request:
+        return None
+    xr = request.headers.get("x-real-ip")
+    if xr:
+        return xr
+    xff = request.headers.get("x-forwarded-for")
+    if xff:
+        return xff.split(",")[0].strip()
+    return request.client.host if request.client else None
+
+def registrar_auditoria(db, usuario, acao, processo_id=None, detalhe=None, ip=None):
+    """Registra uma acao na trilha de auditoria. Nunca quebra a operacao principal."""
+    try:
+        import uuid as _uuid
+        log = AuditLog(
+            id=str(_uuid.uuid4()),
+            usuario_login=getattr(usuario, "login", None) if usuario else None,
+            usuario_id=getattr(usuario, "id", None) if usuario else None,
+            grupo_id=getattr(usuario, "grupo_id", None) if usuario else None,
+            is_admin=bool(getattr(usuario, "is_admin", False)) if usuario else False,
+            acao=acao,
+            processo_id=processo_id,
+            detalhe=detalhe,
+            ip=ip,
+        )
+        db.add(log)
+        db.commit()
+    except Exception as e:
+        print("Falha ao registrar auditoria:", e)
 
 def emails_do_grupo(db, grupo_id):
     if not grupo_id:
@@ -398,7 +430,7 @@ def cadastro(dados: dict, db: Session = Depends(get_db)):
 
 @app.post("/login")
 def login(dados: dict, request: Request, db: Session = Depends(get_db)):
-    ip = request.client.host if request.client else "desconhecido"
+    ip = obter_ip(request) or "desconhecido"
     if not _checar_rate_login(ip):
         raise HTTPException(status_code=429, detail="Muitas tentativas. Tente novamente em alguns minutos.")
     login = (dados.get("login") or "").strip()
@@ -417,12 +449,13 @@ def login(dados: dict, request: Request, db: Session = Depends(get_db)):
     usuario.token = token
     usuario.token_criado_em = datetime.now()
     db.commit()
+    registrar_auditoria(db, usuario, "login", None, "acesso ao sistema", ip)
     grupo = db.query(Grupo).filter(Grupo.id == usuario.grupo_id).first()
     return {"token": token, "login": usuario.login, "grupo_id": usuario.grupo_id, "grupo": grupo.nome if grupo else None, "is_admin": bool(usuario.is_admin)}
 
 
 @app.get("/download/{processo_id}/{tipo}")
-def download(processo_id: str, tipo: str, x_token: str = Header(None), db: Session = Depends(get_db)):
+def download(processo_id: str, tipo: str, request: Request = None, x_token: str = Header(None), db: Session = Depends(get_db)):
     from fastapi.responses import FileResponse
     if not x_token:
         raise HTTPException(status_code=401, detail="Token necessario")
@@ -443,6 +476,8 @@ def download(processo_id: str, tipo: str, x_token: str = Header(None), db: Sessi
     caminho = os.path.join(UPLOADS_DIR, nome_arquivo)
     if not os.path.exists(caminho):
         raise HTTPException(status_code=404, detail="Arquivo nao encontrado no disco")
+    _ip = obter_ip(request)
+    registrar_auditoria(db, usuario, "download", processo_id, "tipo=" + str(tipo) + " arquivo=" + str(nome_arquivo), _ip)
     return FileResponse(caminho, filename=nome_arquivo)
 
 @app.get("/processos")
@@ -464,7 +499,7 @@ def listar_processos(codigo_grupo: str = None, x_token: str = Header(None), db: 
     return processos
 
 @app.get("/processos/{processo_id}")
-def obter_processo(processo_id: str, x_token: str = Header(None), db: Session = Depends(get_db)):
+def obter_processo(processo_id: str, request: Request = None, x_token: str = Header(None), db: Session = Depends(get_db)):
     if not x_token:
         raise HTTPException(status_code=401, detail="Token necessario")
     usuario = validar_token(x_token, db)
@@ -475,6 +510,8 @@ def obter_processo(processo_id: str, x_token: str = Header(None), db: Session = 
         raise HTTPException(status_code=403, detail="Sem permissao para este processo")
     if not p:
         raise HTTPException(status_code=404, detail="Processo não encontrado")
+    _ip = obter_ip(request)
+    registrar_auditoria(db, usuario, "visualizar", processo_id, "empresa=" + str(p.empresa), _ip)
     return p
 
 @app.post("/processos/analisar")
@@ -594,7 +631,7 @@ def recalcular_status(p):
 
 
 @app.patch("/processos/{processo_id}")
-def atualizar_processo(processo_id: str, dados: dict, x_token: str = Header(None), db: Session = Depends(get_db)):
+def atualizar_processo(processo_id: str, dados: dict, request: Request = None, x_token: str = Header(None), db: Session = Depends(get_db)):
     if not x_token:
         raise HTTPException(status_code=401, detail="Token necessario")
     usuario = validar_token(x_token, db)
@@ -605,6 +642,8 @@ def atualizar_processo(processo_id: str, dados: dict, x_token: str = Header(None
         raise HTTPException(status_code=403, detail="Sem permissao para este processo")
     if not p:
         raise HTTPException(status_code=404, detail="Processo não encontrado")
+    _ip = obter_ip(request)
+    registrar_auditoria(db, usuario, "editar", processo_id, "campos=" + ",".join(list(dados.keys())), _ip)
     for campo, valor in dados.items():
         if hasattr(p, campo):
             setattr(p, campo, valor)
@@ -635,6 +674,7 @@ async def upload_arquivo(
     processo_id: str,
     tipo: str,
     arquivo: UploadFile = File(...),
+    request: Request = None,
     x_token: str = Header(None),
     db: Session = Depends(get_db)
 ):
@@ -668,6 +708,8 @@ async def upload_arquivo(
     caminho = os.path.join(UPLOADS_DIR, nome_arquivo)
     with open(caminho, "wb") as f:
         f.write(conteudo)
+    _ip = obter_ip(request)
+    registrar_auditoria(db, usuario, "upload", processo_id, "tipo=" + str(tipo) + " arquivo=" + str(nome_arquivo), _ip)
 
     campo_map = {
         "protocolo": "arquivo_protocolo",
@@ -759,7 +801,7 @@ def exigencia_cumprida(processo_id: str, x_token: str = Header(None), db: Sessio
     return {"mensagem": "Exigencia marcada como cumprida", "status": p.status}
 
 @app.delete("/processos/{processo_id}")
-def excluir_processo(processo_id: str, x_token: str = Header(None), db: Session = Depends(get_db)):
+def excluir_processo(processo_id: str, request: Request = None, x_token: str = Header(None), db: Session = Depends(get_db)):
     if not x_token:
         raise HTTPException(status_code=401, detail="Token necessario")
     usuario = validar_token(x_token, db)
@@ -768,6 +810,8 @@ def excluir_processo(processo_id: str, x_token: str = Header(None), db: Session 
     p = db.query(Processo).filter(Processo.id == processo_id).first()
     if not p:
         raise HTTPException(status_code=404, detail="Processo nao encontrado")
+    _ip = obter_ip(request)
+    registrar_auditoria(db, usuario, "excluir", processo_id, "empresa=" + str(p.empresa) + " cnpj=" + str(p.cnpj), _ip)
     db.delete(p)
     db.commit()
     return {"mensagem": "Processo excluido"}

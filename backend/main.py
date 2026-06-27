@@ -1,4 +1,4 @@
-from fastapi import FastAPI, Depends, UploadFile, File, Form, HTTPException, Header, BackgroundTasks
+from fastapi import FastAPI, Depends, UploadFile, File, Form, HTTPException, Header, BackgroundTasks, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from sqlalchemy.orm import Session
@@ -10,6 +10,31 @@ import json, os, uuid, shutil, bcrypt
 from dotenv import load_dotenv
 import os
 load_dotenv()
+
+# --- Rate limiter simples em memoria (anti-forca-bruta no login) ---
+import time as _time
+_login_tentativas = {}
+_LOGIN_MAX = 5          # tentativas
+_LOGIN_JANELA = 300     # segundos (5 min)
+_LOGIN_BLOQUEIO = 900   # segundos (15 min de bloqueio)
+def _checar_rate_login(ip):
+    agora = _time.time()
+    reg = _login_tentativas.get(ip)
+    if reg and reg.get("bloqueado_ate", 0) > agora:
+        return False
+    if not reg or (agora - reg.get("inicio", 0)) > _LOGIN_JANELA:
+        _login_tentativas[ip] = {"inicio": agora, "falhas": 0, "bloqueado_ate": 0}
+    return True
+def _registrar_falha_login(ip):
+    agora = _time.time()
+    reg = _login_tentativas.get(ip) or {"inicio": agora, "falhas": 0, "bloqueado_ate": 0}
+    reg["falhas"] = reg.get("falhas", 0) + 1
+    if reg["falhas"] >= _LOGIN_MAX:
+        reg["bloqueado_ate"] = agora + _LOGIN_BLOQUEIO
+    _login_tentativas[ip] = reg
+def _limpar_falhas_login(ip):
+    if ip in _login_tentativas:
+        del _login_tentativas[ip]
 
 import smtplib
 from email.mime.multipart import MIMEMultipart
@@ -49,11 +74,17 @@ def enviar_email(destinatario, assunto, corpo, corpo_html=None):
 def enviar_email_anexo(destinatario, assunto, corpo, caminho_anexo=None, nome_anexo=None):
     try:
         from email.mime.application import MIMEApplication
-        msg = MIMEMultipart()
+        msg = MIMEMultipart("mixed")
         msg["From"] = "Atos - Gestao Societaria <%s>" % EMAIL_FROM
         msg["To"] = destinatario
         msg["Subject"] = assunto
-        msg.attach(MIMEText(corpo, "plain"))
+        alt = MIMEMultipart("alternative")
+        alt.attach(MIMEText(corpo, "plain"))
+        try:
+            alt.attach(MIMEText(envolver_html(corpo), "html"))
+        except Exception as _e:
+            print("aviso html anexo:", _e)
+        msg.attach(alt)
         if caminho_anexo and os.path.exists(caminho_anexo):
             with open(caminho_anexo, "rb") as fa:
                 part = MIMEApplication(fa.read(), Name=(nome_anexo or os.path.basename(caminho_anexo)))
@@ -69,11 +100,116 @@ def enviar_email_anexo(destinatario, assunto, corpo, caminho_anexo=None, nome_an
         print(f"Erro ao enviar email (anexo) para {destinatario}: {e}")
         return False
 
+def validar_token(x_token, db):
+    """Busca o usuario pelo token e verifica se nao expirou (30 dias)."""
+    if not x_token:
+        return None
+    u = db.query(Usuario).filter(Usuario.token == x_token).first()
+    if not u:
+        return None
+    tc = getattr(u, "token_criado_em", None)
+    if tc is not None:
+        from datetime import timedelta
+        if datetime.now() - tc > timedelta(days=30):
+            return None  # token expirado
+    return u
+
 def emails_do_grupo(db, grupo_id):
     if not grupo_id:
         return []
     regs = db.query(EmailGrupo).filter(EmailGrupo.grupo_id == grupo_id).all()
     return [r.email for r in regs if r.email]
+
+def _regex_protocolo(texto):
+    import re
+    up = texto.upper()
+    if "JUCESP PROTOCOLO" in up:
+        idx = up.find("JUCESP PROTOCOLO")
+        m = re.search(r"\d\.\d{3}\.\d{3}/\d{2}-\d", texto[idx: idx + 120])
+        if m:
+            return m.group(0)
+    m = re.search(r"\d\.\d{3}\.\d{3}/\d{2}-\d", texto)
+    if m:
+        return m.group(0)
+    if "PROTOCOLO" in up:
+        idx = up.rfind("PROTOCOLO")
+        mm = re.search(r"(20\d{2})\s*/\s*([\d/\s]+?)\s*-\s*(\d)", texto[idx: idx + 80])
+        if mm:
+            meio = re.sub(r"[^0-9]", "", mm.group(2)).zfill(8)[-8:]
+            return mm.group(1) + "/" + meio + "-" + mm.group(3)
+    m = re.search(r"20\d{2}/\d{8}-\d", texto)
+    if m:
+        return m.group(0)
+    return None
+
+def _texto_pdf(caminho_pdf):
+    import subprocess
+    try:
+        out = subprocess.run(["pdftotext", caminho_pdf, "-"], capture_output=True, text=True, timeout=30)
+        return out.stdout or ""
+    except Exception:
+        return ""
+
+def _gemini_protocolo(caminho_pdf):
+    import base64, json, urllib.request
+    if not GEMINI_KEY:
+        return None
+    try:
+        with open(caminho_pdf, "rb") as f:
+            pdf_b64 = base64.b64encode(f.read()).decode()
+        prompt = ("Este e um comprovante de protocolo de Junta Comercial (JUCESP ou JUCERJA). "
+                  "Extraia APENAS o numero do protocolo e responda somente com ele, sem mais nada. "
+                  "JUCESP tem formato 0.000.000/00-0. JUCERJA tem formato 2026/00000000-0.")
+        body = {
+            "contents": [{"parts": [
+                {"text": prompt},
+                {"inline_data": {"mime_type": "application/pdf", "data": pdf_b64}}
+            ]}]
+        }
+        url = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=" + GEMINI_KEY
+        req = urllib.request.Request(url, data=json.dumps(body).encode(), headers={"Content-Type": "application/json"})
+        resp = urllib.request.urlopen(req, timeout=40)
+        data = json.loads(resp.read().decode())
+        txt = data["candidates"][0]["content"]["parts"][0]["text"].strip()
+        return _regex_protocolo(txt) or txt.strip()
+    except Exception as e:
+        print("Gemini protocolo falhou:", e)
+        return None
+
+def _tesseract_protocolo(caminho_pdf):
+    import subprocess, os, glob, tempfile
+    try:
+        d = tempfile.mkdtemp()
+        subprocess.run(["pdftoppm", "-r", "300", "-png", caminho_pdf, os.path.join(d, "pg")], check=True, timeout=60)
+        texto = ""
+        for img in sorted(glob.glob(os.path.join(d, "*.png"))):
+            out = subprocess.run(["tesseract", img, "stdout", "-l", "por"], capture_output=True, text=True, timeout=60)
+            if not out.stdout.strip():
+                out = subprocess.run(["tesseract", img, "stdout"], capture_output=True, text=True, timeout=60)
+            texto += out.stdout + "\n"
+        return _regex_protocolo(texto)
+    except Exception as e:
+        print("Tesseract protocolo falhou:", e)
+        return None
+
+def extrair_protocolo_ocr(caminho_pdf):
+    # 1) PDF editavel: texto direto (gratis, instantaneo)
+    texto = _texto_pdf(caminho_pdf)
+    if len(texto.strip()) > 30:
+        num = _regex_protocolo(texto)
+        if num:
+            print("protocolo via texto:", num)
+            return num
+    # 2) PDF fechado: Gemini (preciso)
+    num = _gemini_protocolo(caminho_pdf)
+    if num:
+        print("protocolo via Gemini:", num)
+        return num
+    # 3) fallback: Tesseract
+    num = _tesseract_protocolo(caminho_pdf)
+    if num:
+        print("protocolo via Tesseract:", num)
+    return num
 
 def corpo_status_cliente(p, status_label, frase_final):
     ato = p.identificador_ato or p.tipo_ato or ""
@@ -152,7 +288,7 @@ app = FastAPI(title="Atos API")
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=["https://atos.net.br", "https://www.atos.net.br"],
     allow_methods=["*"],
     allow_headers=["*"],
 )
@@ -163,6 +299,7 @@ os.makedirs(UPLOADS_DIR, exist_ok=True)
 
 # app.mount("/uploads", StaticFiles(directory=UPLOADS_DIR), name="uploads")  # desativado: arquivos agora so via /download protegido
 
+GEMINI_KEY = os.getenv("GEMINI_KEY")
 DEEPSEEK_KEY = os.getenv("DEEPSEEK_KEY")
 client = OpenAI(api_key=DEEPSEEK_KEY, base_url="https://api.deepseek.com")
 
@@ -260,7 +397,10 @@ def cadastro(dados: dict, db: Session = Depends(get_db)):
 
 
 @app.post("/login")
-def login(dados: dict, db: Session = Depends(get_db)):
+def login(dados: dict, request: Request, db: Session = Depends(get_db)):
+    ip = request.client.host if request.client else "desconhecido"
+    if not _checar_rate_login(ip):
+        raise HTTPException(status_code=429, detail="Muitas tentativas. Tente novamente em alguns minutos.")
     login = (dados.get("login") or "").strip()
     senha = dados.get("senha") or ""
 
@@ -269,10 +409,13 @@ def login(dados: dict, db: Session = Depends(get_db)):
 
     usuario = db.query(Usuario).filter(Usuario.login == login).first()
     if not usuario or not bcrypt.checkpw(senha.encode()[:72], usuario.senha_hash.encode()):
+        _registrar_falha_login(ip)
         raise HTTPException(status_code=401, detail="login ou senha invalidos")
+    _limpar_falhas_login(ip)
 
     token = str(uuid.uuid4())
     usuario.token = token
+    usuario.token_criado_em = datetime.now()
     db.commit()
     grupo = db.query(Grupo).filter(Grupo.id == usuario.grupo_id).first()
     return {"token": token, "login": usuario.login, "grupo_id": usuario.grupo_id, "grupo": grupo.nome if grupo else None, "is_admin": bool(usuario.is_admin)}
@@ -283,7 +426,7 @@ def download(processo_id: str, tipo: str, x_token: str = Header(None), db: Sessi
     from fastapi.responses import FileResponse
     if not x_token:
         raise HTTPException(status_code=401, detail="Token necessario")
-    usuario = db.query(Usuario).filter(Usuario.token == x_token).first()
+    usuario = validar_token(x_token, db)
     if not usuario:
         raise HTTPException(status_code=401, detail="Token invalido ou sessao expirada")
     p = db.query(Processo).filter(Processo.id == processo_id).first()
@@ -306,7 +449,7 @@ def download(processo_id: str, tipo: str, x_token: str = Header(None), db: Sessi
 def listar_processos(codigo_grupo: str = None, x_token: str = Header(None), db: Session = Depends(get_db)):
     if not x_token:
         raise HTTPException(status_code=401, detail="Token necessario")
-    usuario = db.query(Usuario).filter(Usuario.token == x_token).first()
+    usuario = validar_token(x_token, db)
     if not usuario:
         raise HTTPException(status_code=401, detail="Token invalido ou sessao expirada")
     query = db.query(Processo)
@@ -324,7 +467,7 @@ def listar_processos(codigo_grupo: str = None, x_token: str = Header(None), db: 
 def obter_processo(processo_id: str, x_token: str = Header(None), db: Session = Depends(get_db)):
     if not x_token:
         raise HTTPException(status_code=401, detail="Token necessario")
-    usuario = db.query(Usuario).filter(Usuario.token == x_token).first()
+    usuario = validar_token(x_token, db)
     if not usuario:
         raise HTTPException(status_code=401, detail="Token invalido ou sessao expirada")
     p = db.query(Processo).filter(Processo.id == processo_id).first()
@@ -338,7 +481,7 @@ def obter_processo(processo_id: str, x_token: str = Header(None), db: Session = 
 async def analisar_documento(arquivo: UploadFile = File(...), x_token: str = Header(None), db: Session = Depends(get_db)):
     if not x_token:
         raise HTTPException(status_code=401, detail="Token necessario")
-    usuario = db.query(Usuario).filter(Usuario.token == x_token).first()
+    usuario = validar_token(x_token, db)
     if not usuario:
         raise HTTPException(status_code=401, detail="Token invalido ou sessao expirada")
     import fitz
@@ -384,7 +527,7 @@ async def criar_processo(
 
     if not x_token:
         raise HTTPException(status_code=401, detail="Token necessario")
-    usuario_tok = db.query(Usuario).filter(Usuario.token == x_token).first()
+    usuario_tok = validar_token(x_token, db)
     if not usuario_tok:
         raise HTTPException(status_code=401, detail="Token invalido ou sessao expirada")
     grupo_id = None
@@ -454,7 +597,7 @@ def recalcular_status(p):
 def atualizar_processo(processo_id: str, dados: dict, x_token: str = Header(None), db: Session = Depends(get_db)):
     if not x_token:
         raise HTTPException(status_code=401, detail="Token necessario")
-    usuario = db.query(Usuario).filter(Usuario.token == x_token).first()
+    usuario = validar_token(x_token, db)
     if not usuario:
         raise HTTPException(status_code=401, detail="Token invalido ou sessao expirada")
     p = db.query(Processo).filter(Processo.id == processo_id).first()
@@ -473,12 +616,18 @@ def atualizar_processo(processo_id: str, dados: dict, x_token: str = Header(None
     p.atualizado_em = datetime.now()
     db.commit()
     if status_antes_patch != "tramitacao" and (p.status or "").lower() == "tramitacao":
-        try:
-            corpo = corpo_status_cliente(p, "Tramitacao", "Aguardando analise da Junta Comercial.")
-            for em in emails_do_grupo(db, p.grupo_id):
-                enviar_email(em, "Atualizacao do seu processo - " + (p.empresa or ""), corpo)
-        except Exception as e:
-            print("Erro ao notificar tramitacao:", e)
+        tem_numero = bool((p.numero_protocolo or "").strip())
+        tem_pdf = bool((p.arquivo_protocolo or "").strip())
+        if tem_numero and tem_pdf:
+            try:
+                corpo = corpo_status_cliente(p, "Tramitacao", "Aguardando analise da Junta Comercial.")
+                cam = os.path.join(UPLOADS_DIR, p.arquivo_protocolo)
+                for em in emails_do_grupo(db, p.grupo_id):
+                    enviar_email_anexo(em, "Atualizacao do seu processo - " + (p.empresa or ""), corpo, cam, p.arquivo_protocolo)
+            except Exception as e:
+                print("Erro ao notificar tramitacao:", e)
+        else:
+            print("Tramitacao sem email - falta numero ou pdf. numero:", tem_numero, "pdf:", tem_pdf)
     return {"mensagem": "Atualizado com sucesso"}
 
 @app.post("/processos/{processo_id}/upload/{tipo}")
@@ -491,7 +640,7 @@ async def upload_arquivo(
 ):
     if not x_token:
         raise HTTPException(status_code=401, detail="Token necessario")
-    usuario = db.query(Usuario).filter(Usuario.token == x_token).first()
+    usuario = validar_token(x_token, db)
     if not usuario:
         raise HTTPException(status_code=401, detail="Token invalido ou sessao expirada")
     p = db.query(Processo).filter(Processo.id == processo_id).first()
@@ -500,11 +649,25 @@ async def upload_arquivo(
     if not p:
         raise HTTPException(status_code=404, detail="Processo não encontrado")
 
-    ext = os.path.splitext(arquivo.filename)[1]
+    ext = os.path.splitext(arquivo.filename or "")[1].lower()
+    # validacao: so extensoes permitidas
+    EXT_PERMITIDAS = {".pdf", ".png", ".jpg", ".jpeg"}
+    if ext not in EXT_PERMITIDAS:
+        raise HTTPException(status_code=400, detail="Tipo de arquivo nao permitido. Envie PDF ou imagem.")
+    # validacao: tamanho maximo 20 MB
+    conteudo = await arquivo.read()
+    MAX_BYTES = 20 * 1024 * 1024
+    if len(conteudo) > MAX_BYTES:
+        raise HTTPException(status_code=400, detail="Arquivo muito grande. Limite de 20 MB.")
+    if len(conteudo) == 0:
+        raise HTTPException(status_code=400, detail="Arquivo vazio.")
+    # validacao: se diz ser PDF, conferir a assinatura real do arquivo
+    if ext == ".pdf" and not conteudo[:5].startswith(b"%PDF"):
+        raise HTTPException(status_code=400, detail="Arquivo nao e um PDF valido.")
     nome_arquivo = f"{processo_id}_{tipo}{ext}"
     caminho = os.path.join(UPLOADS_DIR, nome_arquivo)
     with open(caminho, "wb") as f:
-        f.write(await arquivo.read())
+        f.write(conteudo)
 
     campo_map = {
         "protocolo": "arquivo_protocolo",
@@ -515,9 +678,15 @@ async def upload_arquivo(
     if tipo in campo_map:
         status_antes_up = (p.status or "").lower()
         setattr(p, campo_map[tipo], nome_arquivo)
+        if tipo == "protocolo" and not (p.numero_protocolo or "").strip():
+            _num = extrair_protocolo_ocr(caminho)
+            if _num:
+                p.numero_protocolo = _num
+                print("OCR protocolo detectado:", _num)
         if tipo == "protocolo" and getattr(p, "exigencia_ativa", False):
             p.exigencia_ativa = False
-        p.status = recalcular_status(p)
+        if tipo != "protocolo":
+            p.status = recalcular_status(p)
         p.atualizado_em = datetime.now()
         db.commit()
         try:
@@ -526,14 +695,10 @@ async def upload_arquivo(
                 corpo = corpo_status_cliente(p, "Finalizado", "Seu Processo foi Finalizado, em Anexo o Registro.")
                 for em in emails_do_grupo(db, p.grupo_id):
                     enviar_email_anexo(em, "Processo Finalizado - " + (p.empresa or ""), corpo, caminho, nome_arquivo)
-            elif tipo == "protocolo" and status_antes_up != "tramitacao" and novo_status == "tramitacao":
-                corpo = corpo_status_cliente(p, "Tramitacao", "Aguardando analise da Junta Comercial.")
-                for em in emails_do_grupo(db, p.grupo_id):
-                    enviar_email(em, "Atualizacao do seu processo - " + (p.empresa or ""), corpo)
         except Exception as e:
             print("Erro ao notificar upload:", e)
 
-    return {"mensagem": f"Arquivo {tipo} salvo", "arquivo": nome_arquivo}
+    return {"mensagem": f"Arquivo {tipo} salvo", "arquivo": nome_arquivo, "numero_protocolo": (p.numero_protocolo or "")}
 
 @app.post("/processos/{processo_id}/exigencia")
 async def registrar_exigencia(
@@ -545,7 +710,7 @@ async def registrar_exigencia(
 ):
     if not x_token:
         raise HTTPException(status_code=401, detail="Token necessario")
-    usuario = db.query(Usuario).filter(Usuario.token == x_token).first()
+    usuario = validar_token(x_token, db)
     if not usuario:
         raise HTTPException(status_code=401, detail="Token invalido ou sessao expirada")
     p = db.query(Processo).filter(Processo.id == processo_id).first()
@@ -579,7 +744,7 @@ async def registrar_exigencia(
 def exigencia_cumprida(processo_id: str, x_token: str = Header(None), db: Session = Depends(get_db)):
     if not x_token:
         raise HTTPException(status_code=401, detail="Token necessario")
-    usuario = db.query(Usuario).filter(Usuario.token == x_token).first()
+    usuario = validar_token(x_token, db)
     if not usuario:
         raise HTTPException(status_code=401, detail="Token invalido ou sessao expirada")
     p = db.query(Processo).filter(Processo.id == processo_id).first()
@@ -597,7 +762,7 @@ def exigencia_cumprida(processo_id: str, x_token: str = Header(None), db: Sessio
 def excluir_processo(processo_id: str, x_token: str = Header(None), db: Session = Depends(get_db)):
     if not x_token:
         raise HTTPException(status_code=401, detail="Token necessario")
-    usuario = db.query(Usuario).filter(Usuario.token == x_token).first()
+    usuario = validar_token(x_token, db)
     if not usuario or not usuario.is_admin:
         raise HTTPException(status_code=403, detail="Apenas administrador pode excluir processos")
     p = db.query(Processo).filter(Processo.id == processo_id).first()
@@ -611,7 +776,7 @@ def excluir_processo(processo_id: str, x_token: str = Header(None), db: Session 
 def exigencia_aguardando_cliente(processo_id: str, x_token: str = Header(None), db: Session = Depends(get_db)):
     if not x_token:
         raise HTTPException(status_code=401, detail="Token necessario")
-    usuario = db.query(Usuario).filter(Usuario.token == x_token).first()
+    usuario = validar_token(x_token, db)
     if not usuario or not usuario.is_admin:
         raise HTTPException(status_code=403, detail="Acesso restrito ao administrador")
     p = db.query(Processo).filter(Processo.id == processo_id).first()
@@ -627,7 +792,7 @@ def exigencia_aguardando_cliente(processo_id: str, x_token: str = Header(None), 
 def listar_grupos(x_token: str = Header(None), db: Session = Depends(get_db)):
     if not x_token:
         raise HTTPException(status_code=401, detail="Token necessario")
-    usuario = db.query(Usuario).filter(Usuario.token == x_token).first()
+    usuario = validar_token(x_token, db)
     if not usuario or not usuario.is_admin:
         raise HTTPException(status_code=403, detail="Acesso restrito ao administrador")
     grupos = db.query(Grupo).order_by(Grupo.nome).all()
@@ -637,7 +802,7 @@ def listar_grupos(x_token: str = Header(None), db: Session = Depends(get_db)):
 def criar_grupo(dados: dict, background: BackgroundTasks, x_token: str = Header(None), db: Session = Depends(get_db)):
     if not x_token:
         raise HTTPException(status_code=401, detail="Token necessario")
-    usuario = db.query(Usuario).filter(Usuario.token == x_token).first()
+    usuario = validar_token(x_token, db)
     if not usuario or not usuario.is_admin:
         raise HTTPException(status_code=403, detail="Acesso restrito ao administrador")
 
@@ -688,7 +853,7 @@ def gerar_relatorio(status: str = "todos", x_token: str = Header(None), db: Sess
     import io
     if not x_token:
         raise HTTPException(status_code=401, detail="Token necessario")
-    usuario = db.query(Usuario).filter(Usuario.token == x_token).first()
+    usuario = validar_token(x_token, db)
     if not usuario:
         raise HTTPException(status_code=401, detail="Token invalido")
     query = db.query(Processo).filter(Processo.grupo_id == usuario.grupo_id)
@@ -728,7 +893,7 @@ def gerar_relatorio(status: str = "todos", x_token: str = Header(None), db: Sess
 def metricas(x_token: str = Header(None), db: Session = Depends(get_db)):
     if not x_token:
         raise HTTPException(status_code=401, detail="Token necessario")
-    usuario = db.query(Usuario).filter(Usuario.token == x_token).first()
+    usuario = validar_token(x_token, db)
     if not usuario:
         raise HTTPException(status_code=401, detail="Token invalido ou sessao expirada")
     base = db.query(Processo)

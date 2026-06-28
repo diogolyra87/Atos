@@ -24,6 +24,7 @@ class Usuario(Base):
     id = Column(String, primary_key=True)
     login = Column(String, unique=True, nullable=False)
     senha_hash = Column(String, nullable=False)
+    email = Column(String, nullable=True)
     grupo_id = Column(String, nullable=False)
     token = Column(String, nullable=True)
     token_criado_em = Column(DateTime, nullable=True)
@@ -37,6 +38,16 @@ class EmailGrupo(Base):
     grupo_id = Column(String, nullable=False)
     criado_em = Column(DateTime, default=datetime.now)
 
+
+class Codigo2FA(Base):
+    __tablename__ = "codigos_2fa"
+    id = Column(String, primary_key=True)
+    usuario_id = Column(String, nullable=False)
+    login = Column(String, nullable=False)
+    codigo = Column(String, nullable=False)
+    expira_em = Column(DateTime, nullable=False)
+    usado = Column(Boolean, default=False)
+    criado_em = Column(DateTime, default=datetime.now)
 
 class AuditLog(Base):
     __tablename__ = "audit_logs"

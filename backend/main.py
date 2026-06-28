@@ -2,8 +2,8 @@ from fastapi import FastAPI, Depends, UploadFile, File, Form, HTTPException, Hea
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from sqlalchemy.orm import Session
-from database import get_db, Processo, Grupo, Usuario, EmailGrupo, criar_banco, AuditLog
-from datetime import datetime
+from database import get_db, Processo, Grupo, Usuario, EmailGrupo, criar_banco, AuditLog, Codigo2FA
+from datetime import datetime, timedelta
 from openai import OpenAI
 import json, os, uuid, shutil, bcrypt
 
@@ -125,6 +125,19 @@ def obter_ip(request):
     if xff:
         return xff.split(",")[0].strip()
     return request.client.host if request.client else None
+
+def email_do_usuario(db, usuario):
+    """Retorna o e-mail do usuario (proprio se houver, senao o primeiro e-mail do grupo)."""
+    try:
+        e = getattr(usuario, "email", None)
+        if e:
+            return e
+        eg = db.query(EmailGrupo).filter(EmailGrupo.grupo_id == usuario.grupo_id).first()
+        return eg.email if eg else None
+    except Exception as ex:
+        print("Erro email_do_usuario:", ex)
+        return None
+
 
 def registrar_auditoria(db, usuario, acao, processo_id=None, detalhe=None, ip=None):
     """Registra uma acao na trilha de auditoria. Nunca quebra a operacao principal."""
@@ -444,14 +457,55 @@ def login(dados: dict, request: Request, db: Session = Depends(get_db)):
         _registrar_falha_login(ip)
         raise HTTPException(status_code=401, detail="login ou senha invalidos")
     _limpar_falhas_login(ip)
+    import random as _random
+    codigo = "{:06d}".format(_random.randint(0, 999999))
+    novo_cod = Codigo2FA(
+        id=str(uuid.uuid4()),
+        usuario_id=usuario.id,
+        login=usuario.login,
+        codigo=codigo,
+        expira_em=datetime.now() + timedelta(minutes=10),
+        usado=False,
+    )
+    db.add(novo_cod)
+    db.commit()
+    email_destino = email_do_usuario(db, usuario)
+    if email_destino:
+        try:
+            corpo = "Seu codigo de acesso ao ATOS e: " + codigo + ". Valido por 10 minutos. Se voce nao tentou acessar, ignore este e-mail."
+            enviar_email(email_destino, "Codigo de acesso ATOS", corpo)
+        except Exception as e:
+            print("Erro ao enviar codigo 2FA:", e)
+    return {"requer_2fa": True, "login": usuario.login, "mensagem": "Enviamos um codigo de acesso para o seu e-mail."}
 
+@app.post("/login/verificar")
+def login_verificar(dados: dict, request: Request, db: Session = Depends(get_db)):
+    ip = obter_ip(request) or "desconhecido"
+    login = (dados.get("login") or "").strip()
+    codigo = (dados.get("codigo") or "").strip()
+    if not login or not codigo:
+        raise HTTPException(status_code=400, detail="login e codigo sao obrigatorios")
+    usuario = db.query(Usuario).filter(Usuario.login == login).first()
+    if not usuario:
+        raise HTTPException(status_code=401, detail="usuario invalido")
+    reg = db.query(Codigo2FA).filter(
+        Codigo2FA.login == login,
+        Codigo2FA.codigo == codigo,
+        Codigo2FA.usado == False,
+    ).order_by(Codigo2FA.criado_em.desc()).first()
+    if not reg:
+        raise HTTPException(status_code=401, detail="codigo invalido")
+    if reg.expira_em < datetime.now():
+        raise HTTPException(status_code=401, detail="codigo expirado, faca login novamente")
+    reg.usado = True
     token = str(uuid.uuid4())
     usuario.token = token
     usuario.token_criado_em = datetime.now()
     db.commit()
-    registrar_auditoria(db, usuario, "login", None, "acesso ao sistema", ip)
+    registrar_auditoria(db, usuario, "login", None, "acesso ao sistema (2FA)", ip)
     grupo = db.query(Grupo).filter(Grupo.id == usuario.grupo_id).first()
     return {"token": token, "login": usuario.login, "grupo_id": usuario.grupo_id, "grupo": grupo.nome if grupo else None, "is_admin": bool(usuario.is_admin)}
+
 
 
 @app.get("/download/{processo_id}/{tipo}")

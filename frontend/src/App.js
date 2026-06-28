@@ -779,6 +779,8 @@ export default function App() {
   const [senha, setSenha] = useState("");
   const [erro, setErro] = useState("");
   const [carregando, setCarregando] = useState(false);
+  const [etapa, setEtapa] = useState(1);
+  const [codigo, setCodigo] = useState("");
 
   async function entrar() {
     setErro("");
@@ -786,6 +788,11 @@ export default function App() {
     setCarregando(true);
     try {
       const r = await axios.post(`${API}/login`, { login, senha });
+      if (r.data && r.data.requer_2fa) {
+        setEtapa(2);
+        setCarregando(false);
+        return;
+      }
       axios.defaults.headers.common["x-token"] = r.data.token;
       localStorage.setItem("atos_admin", JSON.stringify(r.data));
       setSessao(r.data);
@@ -796,6 +803,21 @@ export default function App() {
     setCarregando(false);
   }
 
+  async function verificarCodigo() {
+    setErro("");
+    if (!codigo) { setErro("Digite o codigo recebido por e-mail."); return; }
+    setCarregando(true);
+    try {
+      const r = await axios.post(`${API}/login/verificar`, { login, codigo });
+      axios.defaults.headers.common["x-token"] = r.data.token;
+      localStorage.setItem("atos_admin", JSON.stringify(r.data));
+      setSessao(r.data);
+    } catch (e) {
+      if (e.response && e.response.status === 401) setErro("Codigo invalido ou expirado.");
+      else setErro("Erro ao conectar.");
+    }
+    setCarregando(false);
+  }
   function sair() {
     localStorage.removeItem("atos_admin");
     delete axios.defaults.headers.common["x-token"];
@@ -835,11 +857,19 @@ export default function App() {
           <div style={{ textAlign: "center", fontSize: 13, color: "#7a7790", marginBottom: 4 }}>Gestão Societária</div>
           <div style={{ textAlign: "center", fontSize: 12, color: "#a09dba", marginBottom: 24 }}>Painel do Administrador</div>
           {erro && <div style={{ background: "#fee2e2", color: "#991b1b", borderRadius: 8, padding: "8px 12px", fontSize: 13, marginBottom: 14 }}>{erro}</div>}
+          {etapa === 1 && (<>
           <label style={{ fontSize: 12, color: "#7a7790", marginBottom: 4, display: "block" }}>Login</label>
           <input style={{ width: "100%", padding: "11px 13px", border: "0.5px solid #d9d5ea", borderRadius: 8, fontSize: 14, outline: "none", marginBottom: 14, boxSizing: "border-box", background: "#fbfaff" }} value={login} onChange={e => setLogin(e.target.value)} onKeyDown={e => e.key === "Enter" && entrar()} />
           <label style={{ fontSize: 12, color: "#7a7790", marginBottom: 4, display: "block" }}>Senha</label>
           <input style={{ width: "100%", padding: "11px 13px", border: "0.5px solid #d9d5ea", borderRadius: 8, fontSize: 14, outline: "none", marginBottom: 14, boxSizing: "border-box", background: "#fbfaff" }} type="password" value={senha} onChange={e => setSenha(e.target.value)} onKeyDown={e => e.key === "Enter" && entrar()} />
-          <button style={{ width: "100%", background: "linear-gradient(135deg,#2563eb,#2dd4bf)", color: "#fff", border: "none", padding: "12px", borderRadius: 8, fontSize: 14, fontWeight: 600, cursor: "pointer", marginTop: 4 }} onClick={entrar} disabled={carregando}>{carregando ? "Aguarde..." : "Entrar"}</button>
+          <button style={{ width: "100%", background: "linear-gradient(135deg,#2563eb,#2dd4bf)", color: "#fff", border: "none", padding: "12px", borderRadius: 8, fontSize: 14, fontWeight: 600, cursor: "pointer", marginTop: 4 }} onClick={entrar} disabled={carregando}>{carregando ? "Aguarde..." : "Entrar"}</button></>)}
+          {etapa === 2 && (<>
+          <div style={{ fontSize: 13, color: "#7a7790", marginBottom: 12 }}>Enviamos um codigo para o seu e-mail. Digite-o abaixo para entrar.</div>
+          <label style={{ fontSize: 12, color: "#7a7790", marginBottom: 4, display: "block" }}>Codigo de acesso</label>
+          <input style={{ width: "100%", padding: "11px 13px", border: "0.5px solid #d9d5ea", borderRadius: 8, fontSize: 18, letterSpacing: 4, textAlign: "center", outline: "none", marginBottom: 14, boxSizing: "border-box", background: "#fbfaff" }} value={codigo} onChange={e => setCodigo(e.target.value)} onKeyDown={e => e.key === "Enter" && verificarCodigo()} maxLength={6} />
+          <button style={{ width: "100%", background: "linear-gradient(135deg,#2563eb,#2dd4bf)", color: "#fff", border: "none", padding: "12px", borderRadius: 8, fontSize: 14, fontWeight: 600, cursor: "pointer", marginTop: 4 }} onClick={verificarCodigo} disabled={carregando}>{carregando ? "Aguarde..." : "Verificar codigo"}</button>
+          <button style={{ width: "100%", background: "transparent", color: "#7a7790", border: "none", padding: "10px", fontSize: 13, cursor: "pointer", marginTop: 8 }} onClick={() => { setEtapa(1); setCodigo(""); setErro(""); }}>Voltar</button>
+          </>)}
         </div>
       </div>
     </>

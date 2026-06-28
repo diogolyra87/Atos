@@ -42,6 +42,8 @@ export default function Cliente() {
   const [erro, setErro] = useState("");
   const [aviso, setAviso] = useState("");
   const [carregando, setCarregando] = useState(false);
+  const [etapa, setEtapa] = useState(1);
+  const [codigo, setCodigo] = useState("");
   const [sessao, setSessao] = useState(() => {
     try { const s = localStorage.getItem("mane_sessao"); return s ? JSON.parse(s) : null; } catch { return null; }
   });
@@ -57,6 +59,7 @@ export default function Cliente() {
     try {
       await axios.post(`${API}/cadastro`, { codigo_grupo: codigoGrupo, login, senha });
             const resLogin = await axios.post(`${API}/login`, { login, senha });
+      if (resLogin.data && resLogin.data.requer_2fa) { setEtapa(2); setCarregando(false); return; }
       salvarSessao(resLogin.data);
     } catch (e) {
       const dd = e.response && e.response.data && e.response.data.detail;
@@ -71,6 +74,7 @@ export default function Cliente() {
     setCarregando(true);
     try {
       const res = await axios.post(`${API}/login`, { login, senha });
+      if (res.data && res.data.requer_2fa) { setEtapa(2); setCarregando(false); return; }
       salvarSessao(res.data);
     } catch (e) {
       if (e.response && e.response.status === 401) setErro("Login ou senha inválidos.");
@@ -79,6 +83,19 @@ export default function Cliente() {
     setCarregando(false);
   }
 
+  async function verificarCodigo() {
+    setErro(""); setAviso("");
+    if (!codigo) { setErro("Digite o codigo recebido por e-mail."); return; }
+    setCarregando(true);
+    try {
+      const res = await axios.post(`${API}/login/verificar`, { login, codigo });
+      salvarSessao(res.data);
+    } catch (e) {
+      if (e.response && e.response.status === 401) setErro("Codigo invalido ou expirado.");
+      else setErro("Erro ao conectar.");
+    }
+    setCarregando(false);
+  }
   if (sessao) return <Painel sessao={sessao} onSair={limparSessao} />;
 
   const ehCadastro = modo === "cadastro";
@@ -109,6 +126,7 @@ export default function Cliente() {
           {erro && <div style={s.erro}>{erro}</div>}
           {aviso && <div style={s.aviso}>{aviso}</div>}
           {ehCadastro && codigoGrupo && <div style={s.grupoBox}>Cadastro para o grupo: <strong>{codigoGrupo}</strong></div>}
+          {etapa === 1 && (<>
           <label style={s.label}>Login</label>
           <input style={s.input} value={login} onChange={e => setLogin(e.target.value)}
             onKeyDown={e => e.key === "Enter" && (ehCadastro ? cadastrar() : entrar())} />
@@ -118,6 +136,14 @@ export default function Cliente() {
           <button style={s.btn} onClick={ehCadastro ? cadastrar : entrar} disabled={carregando}>
             {carregando ? "Aguarde..." : (ehCadastro ? "Cadastrar" : "Entrar")}
           </button>
+          </>)}
+          {etapa === 2 && (<>
+          <div style={{ fontSize: 13, color: "#6b6c66", marginBottom: 12 }}>Enviamos um codigo para o seu e-mail. Digite-o abaixo para entrar.</div>
+          <label style={s.label}>Codigo de acesso</label>
+          <input style={{ ...s.input, fontSize: 18, letterSpacing: 4, textAlign: "center" }} value={codigo} onChange={e => setCodigo(e.target.value)} onKeyDown={e => e.key === "Enter" && verificarCodigo()} maxLength={6} />
+          <button style={s.btn} onClick={verificarCodigo} disabled={carregando}>{carregando ? "Aguarde..." : "Verificar codigo"}</button>
+          <button style={{ ...s.btn, background: "transparent", color: "#6b6c66" }} onClick={() => { setEtapa(1); setCodigo(""); setErro(""); }}>Voltar</button>
+          </>)}
         </div>
       </div>
     </>

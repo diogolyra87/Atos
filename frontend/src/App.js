@@ -328,6 +328,45 @@ function AppPainel({ onSair }) {
     const [textoExig, setTextoExig] = useState(p.texto_exigencia || "");
     const [arqExig, setArqExig] = useState(null);
     const [salvandoExig, setSalvandoExig] = useState(false);
+    const [anexos, setAnexos] = useState([]);
+    const [enviandoAnexo, setEnviandoAnexo] = useState(false);
+    const [descAnexo, setDescAnexo] = useState("");
+    async function carregarAnexos() {
+      try {
+        const r = await axios.get(`${API}/processos/${p.id}/anexos`);
+        setAnexos(r.data || []);
+      } catch (e) { /* silencioso */ }
+    }
+    useEffect(() => { carregarAnexos(); /* eslint-disable-next-line */ }, []);
+    async function enviarAnexo(arquivo) {
+      if (!arquivo) return;
+      setEnviandoAnexo(true);
+      try {
+        const fd = new FormData();
+        fd.append("arquivo", arquivo);
+        fd.append("descricao", descAnexo || "");
+        await axios.post(`${API}/processos/${p.id}/anexos`, fd, { headers: { "Content-Type": "multipart/form-data" } });
+        setDescAnexo("");
+        await carregarAnexos();
+      } catch (e) { alert("Nao foi possivel enviar o anexo."); }
+      setEnviandoAnexo(false);
+    }
+    async function baixarAnexo(anexoId, nome) {
+      try {
+        const res = await axios.get(`${API}/anexos/${anexoId}/download`, { responseType: "blob" });
+        const url = window.URL.createObjectURL(new Blob([res.data]));
+        const a = document.createElement("a");
+        a.href = url; a.download = nome || "anexo";
+        document.body.appendChild(a); a.click(); a.remove();
+      } catch (e) { alert("Nao foi possivel baixar o anexo."); }
+    }
+    async function excluirAnexo(anexoId) {
+      if (!window.confirm("Remover este anexo?")) return;
+      try {
+        await axios.delete(`${API}/anexos/${anexoId}`);
+        await carregarAnexos();
+      } catch (e) { alert("Nao foi possivel remover o anexo."); }
+    }
 
     async function registrarExigencia() {
       setSalvandoExig(true);

@@ -2,7 +2,7 @@ from fastapi import FastAPI, Depends, UploadFile, File, Form, HTTPException, Hea
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from sqlalchemy.orm import Session
-from database import get_db, Processo, Grupo, Usuario, EmailGrupo, criar_banco, AuditLog, Codigo2FA
+from database import get_db, Processo, Grupo, Usuario, EmailGrupo, criar_banco, AuditLog, Codigo2FA, Anexo
 from datetime import datetime, timedelta
 from openai import OpenAI
 import json, os, uuid, shutil, bcrypt
@@ -507,6 +507,104 @@ def login_verificar(dados: dict, request: Request, db: Session = Depends(get_db)
     return {"token": token, "login": usuario.login, "grupo_id": usuario.grupo_id, "grupo": grupo.nome if grupo else None, "is_admin": bool(usuario.is_admin)}
 
 
+
+
+# ===== ANEXOS DO PROCESSO =====
+@app.post("/processos/{processo_id}/anexos")
+async def enviar_anexo(processo_id: str, arquivo: UploadFile = File(...), descricao: str = Form(None), request: Request = None, x_token: str = Header(None), db: Session = Depends(get_db)):
+    if not x_token:
+        raise HTTPException(status_code=401, detail="Token necessario")
+    usuario = validar_token(x_token, db)
+    if not usuario:
+        raise HTTPException(status_code=401, detail="Token invalido ou sessao expirada")
+    p = db.query(Processo).filter(Processo.id == processo_id).first()
+    if not p:
+        raise HTTPException(status_code=404, detail="Processo nao encontrado")
+    if not usuario.is_admin and p.grupo_id != usuario.grupo_id:
+        raise HTTPException(status_code=403, detail="Sem permissao para este processo")
+    ext = os.path.splitext(arquivo.filename or "")[1].lower()
+    EXT_PERMITIDAS = {".pdf", ".png", ".jpg", ".jpeg", ".xml", ".txt"}
+    if ext not in EXT_PERMITIDAS:
+        raise HTTPException(status_code=400, detail="Tipo de arquivo nao permitido para anexo.")
+    conteudo = await arquivo.read()
+    if len(conteudo) > 20 * 1024 * 1024:
+        raise HTTPException(status_code=400, detail="Arquivo muito grande. Limite de 20 MB.")
+    if len(conteudo) == 0:
+        raise HTTPException(status_code=400, detail="Arquivo vazio.")
+    anexo_id = str(uuid.uuid4())
+    nome_arquivo = "anexo_" + anexo_id + ext
+    caminho = os.path.join(UPLOADS_DIR, nome_arquivo)
+    with open(caminho, "wb") as f:
+        f.write(conteudo)
+    novo = Anexo(id=anexo_id, processo_id=processo_id, arquivo=nome_arquivo, nome_original=(arquivo.filename or ""), descricao=(descricao or ""), enviado_por=usuario.login)
+    db.add(novo)
+    db.commit()
+    _ip = obter_ip(request)
+    registrar_auditoria(db, usuario, "anexo_upload", processo_id, "arquivo=" + (arquivo.filename or ""), _ip)
+    return {"mensagem": "Anexo enviado", "id": anexo_id, "nome_original": arquivo.filename}
+
+@app.get("/processos/{processo_id}/anexos")
+def listar_anexos(processo_id: str, x_token: str = Header(None), db: Session = Depends(get_db)):
+    if not x_token:
+        raise HTTPException(status_code=401, detail="Token necessario")
+    usuario = validar_token(x_token, db)
+    if not usuario:
+        raise HTTPException(status_code=401, detail="Token invalido ou sessao expirada")
+    p = db.query(Processo).filter(Processo.id == processo_id).first()
+    if not p:
+        raise HTTPException(status_code=404, detail="Processo nao encontrado")
+    if not usuario.is_admin and p.grupo_id != usuario.grupo_id:
+        raise HTTPException(status_code=403, detail="Sem permissao para este processo")
+    anexos = db.query(Anexo).filter(Anexo.processo_id == processo_id).order_by(Anexo.criado_em).all()
+    return [{"id": a.id, "nome_original": a.nome_original, "descricao": a.descricao, "enviado_por": a.enviado_por, "criado_em": str(a.criado_em)} for a in anexos]
+
+@app.get("/anexos/{anexo_id}/download")
+def baixar_anexo(anexo_id: str, request: Request = None, x_token: str = Header(None), db: Session = Depends(get_db)):
+    from fastapi.responses import FileResponse
+    if not x_token:
+        raise HTTPException(status_code=401, detail="Token necessario")
+    usuario = validar_token(x_token, db)
+    if not usuario:
+        raise HTTPException(status_code=401, detail="Token invalido ou sessao expirada")
+    a = db.query(Anexo).filter(Anexo.id == anexo_id).first()
+    if not a:
+        raise HTTPException(status_code=404, detail="Anexo nao encontrado")
+    p = db.query(Processo).filter(Processo.id == a.processo_id).first()
+    if p and not usuario.is_admin and p.grupo_id != usuario.grupo_id:
+        raise HTTPException(status_code=403, detail="Sem permissao para este anexo")
+    caminho = os.path.join(UPLOADS_DIR, a.arquivo)
+    if not os.path.exists(caminho):
+        raise HTTPException(status_code=404, detail="Arquivo nao encontrado no disco")
+    _ip = obter_ip(request)
+    registrar_auditoria(db, usuario, "anexo_download", a.processo_id, "anexo=" + (a.nome_original or ""), _ip)
+    return FileResponse(caminho, filename=(a.nome_original or a.arquivo))
+
+@app.delete("/anexos/{anexo_id}")
+def excluir_anexo(anexo_id: str, request: Request = None, x_token: str = Header(None), db: Session = Depends(get_db)):
+    if not x_token:
+        raise HTTPException(status_code=401, detail="Token necessario")
+    usuario = validar_token(x_token, db)
+    if not usuario:
+        raise HTTPException(status_code=401, detail="Token invalido ou sessao expirada")
+    a = db.query(Anexo).filter(Anexo.id == anexo_id).first()
+    if not a:
+        raise HTTPException(status_code=404, detail="Anexo nao encontrado")
+    p = db.query(Processo).filter(Processo.id == a.processo_id).first()
+    if p and not usuario.is_admin and p.grupo_id != usuario.grupo_id:
+        raise HTTPException(status_code=403, detail="Sem permissao para este anexo")
+    caminho = os.path.join(UPLOADS_DIR, a.arquivo)
+    try:
+        if os.path.exists(caminho):
+            os.remove(caminho)
+    except Exception as e:
+        print("erro ao remover anexo do disco:", e)
+    proc_id = a.processo_id
+    nome = a.nome_original
+    db.delete(a)
+    db.commit()
+    _ip = obter_ip(request)
+    registrar_auditoria(db, usuario, "anexo_excluir", proc_id, "anexo=" + (nome or ""), _ip)
+    return {"mensagem": "Anexo removido"}
 
 @app.get("/download/{processo_id}/{tipo}")
 def download(processo_id: str, tipo: str, request: Request = None, x_token: str = Header(None), db: Session = Depends(get_db)):

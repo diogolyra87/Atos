@@ -49,6 +49,16 @@ class Codigo2FA(Base):
     usado = Column(Boolean, default=False)
     criado_em = Column(DateTime, default=datetime.now)
 
+class Anexo(Base):
+    __tablename__ = "anexos"
+    id = Column(String, primary_key=True)
+    processo_id = Column(String, nullable=False)
+    arquivo = Column(String, nullable=False)
+    nome_original = Column(String)
+    descricao = Column(String)
+    enviado_por = Column(String)
+    criado_em = Column(DateTime, default=datetime.now)
+
 class AuditLog(Base):
     __tablename__ = "audit_logs"
     id = Column(String, primary_key=True)

@@ -64,6 +64,121 @@ def processar_reply(msg):
     finally:
         db.close()
 
+AJUDA = (
+    "Comandos do ATOS:\n"
+    "/resumo - totais por status\n"
+    "/tramitando - processos em tramitacao\n"
+    "/exigencias - processos em exigencia\n"
+    "/deferidos - processos deferidos\n"
+    "/pendentes - aguardando confirmacao de tipo\n"
+    "/buscar <empresa> - status de uma empresa\n"
+    "/cliente <grupo> - processos de um grupo\n"
+    "/ajuda - esta lista"
+)
+
+def _linha(pr):
+    ident = pr.identificador_ato or pr.tipo_ato or "-"
+    prot = pr.numero_protocolo or "sem protocolo"
+    return f"- {pr.empresa or 'sem nome'} | {ident} | prot: {prot}"
+
+def _lista(titulo, itens):
+    if not itens:
+        return f"{titulo}\n(nenhum)"
+    corpo = "\n".join(_linha(x) for x in itens[:50])
+    extra = "" if len(itens) <= 50 else f"\n... e mais {len(itens)-50}"
+    return f"{titulo} ({len(itens)})\n{corpo}{extra}"
+
+def _sem_acento(s):
+    import unicodedata
+    s = (s or "").lower()
+    return "".join(c for c in unicodedata.normalize("NFD", s) if unicodedata.category(c) != "Mn")
+
+def _linha(pr):
+    ident = pr.identificador_ato or pr.tipo_ato or "-"
+    prot = pr.numero_protocolo or "sem protocolo"
+    return f"- {pr.empresa or 'sem nome'} | {ident} | prot: {prot}"
+
+def _responder_lista(chat_id, titulo, itens):
+    if not itens:
+        enviar(chat_id, f"{titulo}\n(nenhum)"); return
+    corpo = "\n".join(_linha(x) for x in itens[:50])
+    extra = "" if len(itens) <= 50 else f"\n... e mais {len(itens)-50}"
+    enviar(chat_id, f"{titulo} ({len(itens)})\n{corpo}{extra}")
+
+def processar_comando(chat_id, texto):
+    from database import SessionLocal, Processo, Grupo
+    db = SessionLocal()
+    try:
+        low = _sem_acento(texto).strip().lstrip("/")
+
+        # Filtro de grupo opcional: "... grupo <nome>"
+        grupo_obj = None
+        grupo_nome = None
+        if "grupo" in low:
+            partes = low.split("grupo", 1)
+            low_status = partes[0].strip()
+            grupo_termo = partes[1].strip()
+            if grupo_termo:
+                for g in db.query(Grupo).all():
+                    if _sem_acento(g.nome).find(grupo_termo) >= 0 or grupo_termo.find(_sem_acento(g.nome)) >= 0:
+                        grupo_obj = g; grupo_nome = g.nome; break
+                if not grupo_obj:
+                    enviar(chat_id, f"Grupo '{grupo_termo}' nao encontrado."); return
+        else:
+            low_status = low
+
+        def base():
+            q = db.query(Processo)
+            if grupo_obj:
+                q = q.filter(Processo.grupo_id == grupo_obj.id)
+            return q
+
+        suf = f" - Grupo {grupo_nome}" if grupo_nome else ""
+
+        # AJUDA
+        if any(k in low for k in ("ajuda", "help", "comandos")):
+            enviar(chat_id,
+                "Comandos (com ou sem acento):\n"
+                "Visao Geral\n"
+                "Processos Tramitando\n"
+                "Processos Em Exigencia\n"
+                "Processos Deferidos\n"
+                "Processos Finalizados\n"
+                "\nAdicione 'Grupo <nome>' para filtrar. Ex: Processos Deferidos Grupo Neoenergia")
+            return
+
+        # VISAO GERAL
+        if "visao geral" in low_status or low_status.strip() in ("visao", "geral", "resumo"):
+            def cont(sts): return base().filter(Processo.status.in_(sts)).count()
+            total = base().count()
+            enviar(chat_id,
+                f"Visao Geral{suf}\n"
+                f"Total: {total}\n"
+                f"Tramitando: {cont(['tramitacao'])}\n"
+                f"Em Exigencia: {cont(['exigencia'])}\n"
+                f"Deferidos: {cont(['deferido','aprovado'])}\n"
+                f"Finalizados: {cont(['finalizado'])}\n"
+                f"Abertos: {cont(['recebido','aberto'])}")
+            return
+
+        # LISTAS POR STATUS
+        if "tramit" in low_status:
+            _responder_lista(chat_id, f"Processos Tramitando{suf}", base().filter(Processo.status == "tramitacao").all()); return
+        if "exig" in low_status:
+            _responder_lista(chat_id, f"Processos Em Exigencia{suf}", base().filter(Processo.status == "exigencia").all()); return
+        if "defer" in low_status:
+            _responder_lista(chat_id, f"Processos Deferidos{suf}", base().filter(Processo.status.in_(["deferido","aprovado"])).all()); return
+        if "finaliz" in low_status:
+            _responder_lista(chat_id, f"Processos Finalizados{suf}", base().filter(Processo.status == "finalizado").all()); return
+
+        enviar(chat_id, "Nao entendi. Envie 'ajuda' para ver os comandos.")
+    except Exception as e:
+        print("erro comando:", e)
+        try: enviar(chat_id, "Erro ao consultar. Tente novamente.")
+        except: pass
+    finally:
+        db.close()
+
 def main():
     print("atos-bot iniciado. Polling...")
     offset = None
@@ -79,7 +194,12 @@ def main():
                 msg = upd.get("message")
                 if not msg:
                     continue
-                processar_reply(msg)
+                if msg.get("reply_to_message"):
+                    processar_reply(msg)
+                else:
+                    _cid = str(msg["chat"]["id"])
+                    if _cid == ADMIN_CHAT_ID and (msg.get("text") or "").strip().startswith("/"):
+                        processar_comando(_cid, msg.get("text"))
         except Exception as e:
             print("erro loop:", e)
             time.sleep(5)

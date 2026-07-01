@@ -502,7 +502,13 @@ function AppPainel({ onSair }) {
     async function carregarMsgs() {
       try { const r = await axios.get(`${API}/processos/${processoId}/mensagens`); setMsgs(r.data || []); } catch (e) {}
     }
-    useEffect(() => { if (aberto) carregarMsgs(); /* eslint-disable-next-line */ }, [aberto]);
+    useEffect(() => {
+      if (!aberto) return;
+      carregarMsgs();
+      const _t = setInterval(carregarMsgs, 5000);
+      return () => clearInterval(_t);
+      /* eslint-disable-next-line */
+    }, [aberto]);
     async function enviar() {
       const t = texto.trim();
       if (!t) return;

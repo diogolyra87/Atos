@@ -81,6 +81,14 @@ class MensagemProcesso(Base):
     tipo_ato_no_momento = Column(String)
     criado_em = Column(DateTime, default=datetime.now)
 
+class TelegramVinculo(Base):
+    __tablename__ = "telegram_vinculos"
+    id = Column(String, primary_key=True)
+    telegram_message_id = Column(Integer)
+    chat_id = Column(String)
+    processo_id = Column(String, nullable=False)
+    criado_em = Column(DateTime, default=datetime.now)
+
 class AuditLog(Base):
     __tablename__ = "audit_logs"
     id = Column(String, primary_key=True)

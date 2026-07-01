@@ -2,7 +2,7 @@ from fastapi import FastAPI, Depends, UploadFile, File, Form, HTTPException, Hea
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from sqlalchemy.orm import Session
-from database import get_db, Processo, Grupo, Usuario, EmailGrupo, criar_banco, AuditLog, Codigo2FA, Anexo, RegraAprendizado, MensagemProcesso
+from database import get_db, Processo, Grupo, Usuario, EmailGrupo, criar_banco, AuditLog, Codigo2FA, Anexo, RegraAprendizado, MensagemProcesso, TelegramVinculo
 from datetime import datetime, timedelta
 from openai import OpenAI
 import json, os, uuid, shutil, bcrypt
@@ -511,20 +511,24 @@ def login_verificar(dados: dict, request: Request, db: Session = Depends(get_db)
 
 # ===== ANEXOS DO PROCESSO =====
 def notificar_telegram(texto: str):
-    """Envia um aviso ao ADM via Telegram. Silencioso em caso de falha."""
+    """Envia um aviso ao ADM via Telegram. Retorna (chat_id, message_id) ou None."""
     try:
         import os, requests
         token = os.getenv("TELEGRAM_TOKEN")
         chat_id = os.getenv("TELEGRAM_CHAT_ID")
         if not token or not chat_id:
-            return
-        requests.post(
+            return None
+        r = requests.post(
             f"https://api.telegram.org/bot{token}/sendMessage",
             data={"chat_id": chat_id, "text": texto},
             timeout=5,
         )
+        j = r.json()
+        if j.get("ok"):
+            return (str(chat_id), j["result"]["message_id"])
     except Exception:
         pass
+    return None
 
 @app.post("/processos/{processo_id}/mensagens")
 async def enviar_mensagem(processo_id: str, dados: str = Form(...), request: Request = None, x_token: str = Header(None), db: Session = Depends(get_db)):
@@ -556,9 +560,16 @@ async def enviar_mensagem(processo_id: str, dados: str = Form(...), request: Req
     _ip = obter_ip(request)
     registrar_auditoria(db, usuario, "mensagem_processo", processo_id, "", _ip)
     if not usuario.is_admin:
-        _empresa = p.empresa or "processo"
-        _preview = texto if len(texto) <= 200 else texto[:200] + "..."
-        notificar_telegram(f"ATOS - Nova mensagem no chat\nCliente: {usuario.login}\nEmpresa: {_empresa}\nProcesso: {processo_id}\n\n{_preview}")
+        _grupo = db.query(Grupo).filter(Grupo.id == p.grupo_id).first()
+        _empresa = (_grupo.nome if _grupo else None) or p.empresa or "cliente"
+        _ato = p.identificador_ato or p.tipo_ato or "processo"
+        _preview = texto if len(texto) <= 500 else texto[:500] + "..."
+        _aviso = f"O Cliente {_empresa}, no Processo: {_ato}, Usuario: {usuario.login}, fez uma pergunta:\n\n{_preview}"
+        _res = notificar_telegram(_aviso)
+        if _res:
+            _cid, _mid = _res
+            db.add(TelegramVinculo(id=str(uuid.uuid4()), telegram_message_id=_mid, chat_id=_cid, processo_id=processo_id))
+            db.commit()
     return {"mensagem": "enviada", "id": msg.id}
 
 @app.get("/processos/{processo_id}/mensagens")

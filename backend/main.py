@@ -2,7 +2,7 @@ from fastapi import FastAPI, Depends, UploadFile, File, Form, HTTPException, Hea
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from sqlalchemy.orm import Session
-from database import get_db, Processo, Grupo, Usuario, EmailGrupo, criar_banco, AuditLog, Codigo2FA, Anexo
+from database import get_db, Processo, Grupo, Usuario, EmailGrupo, criar_banco, AuditLog, Codigo2FA, Anexo, RegraAprendizado
 from datetime import datetime, timedelta
 from openai import OpenAI
 import json, os, uuid, shutil, bcrypt
@@ -752,6 +752,80 @@ def _classificar(nome: str, texto: str):
         score -= 6
     return tipo, score
 
+# ===== APRENDIZADO POR REGRAS ACUMULADAS =====
+def _norm_ap(s):
+    import unicodedata
+    s = (s or "").strip().lower()
+    s = "".join(c for c in unicodedata.normalize("NFD", s) if unicodedata.category(c) != "Mn")
+    return " ".join(s.split())
+
+def consultar_regras(nome, texto, db):
+    """Retorna (classificacao, tipo_correto, peso) da melhor regra que casa, ou None."""
+    base = _norm_ap((nome or "") + " " + (texto[:2000] or ""))
+    if not base.strip():
+        return None
+    regras = db.query(RegraAprendizado).all()
+    melhor = None
+    for r in regras:
+        padrao = _norm_ap(r.padrao)
+        if padrao and padrao in base:
+            if melhor is None or (r.peso or 1) > (melhor.peso or 1):
+                melhor = r
+    if melhor:
+        return {"classificacao": melhor.classificacao, "tipo_correto": melhor.tipo_correto, "peso": melhor.peso}
+    return None
+
+@app.post("/aprendizado/registrar")
+async def aprendizado_registrar(dados: str = Form(...), x_token: str = Header(None), db: Session = Depends(get_db)):
+    if not x_token:
+        raise HTTPException(status_code=401, detail="Token necessario")
+    usuario = validar_token(x_token, db)
+    if not usuario or not usuario.is_admin:
+        raise HTTPException(status_code=403, detail="Apenas administrador")
+    info = json.loads(dados)
+    padrao = (info.get("padrao") or "").strip()
+    classificacao = (info.get("classificacao") or "").strip()  # "principal" ou "anexo"
+    tipo_correto = (info.get("tipo_correto") or "").strip()
+    origem = (info.get("origem") or "nome").strip()
+    if not padrao:
+        raise HTTPException(status_code=400, detail="padrao obrigatorio")
+    # se ja existe regra com mesmo padrao normalizado + classificacao, reforca o peso
+    alvo = _norm_ap(padrao)
+    existente = None
+    for r in db.query(RegraAprendizado).all():
+        if _norm_ap(r.padrao) == alvo and (r.classificacao or "") == classificacao and (r.tipo_correto or "") == tipo_correto:
+            existente = r; break
+    if existente:
+        existente.peso = (existente.peso or 1) + 1
+        db.commit()
+        return {"mensagem": "Regra reforcada", "id": existente.id, "peso": existente.peso}
+    nova = RegraAprendizado(id=str(uuid.uuid4()), padrao=padrao, origem=origem, classificacao=classificacao, tipo_correto=tipo_correto, peso=1, criado_por=usuario.login)
+    db.add(nova)
+    db.commit()
+    return {"mensagem": "Regra criada", "id": nova.id}
+
+@app.get("/aprendizado/regras")
+async def aprendizado_listar(x_token: str = Header(None), db: Session = Depends(get_db)):
+    if not x_token:
+        raise HTTPException(status_code=401, detail="Token necessario")
+    usuario = validar_token(x_token, db)
+    if not usuario or not usuario.is_admin:
+        raise HTTPException(status_code=403, detail="Apenas administrador")
+    rs = db.query(RegraAprendizado).order_by(RegraAprendizado.peso.desc()).all()
+    return [{"id": r.id, "padrao": r.padrao, "origem": r.origem, "classificacao": r.classificacao, "tipo_correto": r.tipo_correto, "peso": r.peso, "criado_por": r.criado_por} for r in rs]
+
+@app.delete("/aprendizado/regras/{regra_id}")
+async def aprendizado_apagar(regra_id: str, x_token: str = Header(None), db: Session = Depends(get_db)):
+    if not x_token:
+        raise HTTPException(status_code=401, detail="Token necessario")
+    usuario = validar_token(x_token, db)
+    if not usuario or not usuario.is_admin:
+        raise HTTPException(status_code=403, detail="Apenas administrador")
+    r = db.query(RegraAprendizado).filter(RegraAprendizado.id == regra_id).first()
+    if r:
+        db.delete(r); db.commit()
+    return {"mensagem": "Regra removida"}
+
 @app.post("/processos/analisar-pasta")
 async def analisar_pasta(arquivos: list[UploadFile] = File(...), x_token: str = Header(None), db: Session = Depends(get_db)):
     if not x_token:
@@ -764,7 +838,17 @@ async def analisar_pasta(arquivos: list[UploadFile] = File(...), x_token: str = 
         conteudo = await arq.read()
         texto = _extrair_texto_bytes(conteudo, arq.filename or "")
         tipo, score = _classificar(arq.filename or "", texto)
-        itens.append({"indice": idx, "nome": arq.filename or ("arquivo_" + str(idx)), "texto": texto, "tipo": tipo, "score": score})
+        regra = consultar_regras(arq.filename or "", texto, db)
+        regra_aplicada = None
+        if regra:
+            regra_aplicada = regra.get("classificacao")
+            if regra.get("classificacao") == "principal":
+                score += 100 + (regra.get("peso") or 1)
+                if regra.get("tipo_correto"):
+                    tipo = regra.get("tipo_correto")
+            elif regra.get("classificacao") == "anexo":
+                score -= 100 + (regra.get("peso") or 1)
+        itens.append({"indice": idx, "nome": arq.filename or ("arquivo_" + str(idx)), "texto": texto, "tipo": tipo, "score": score, "regra_aplicada": regra_aplicada})
     if not itens:
         raise HTTPException(status_code=400, detail="Nenhum arquivo recebido.")
     ordenados = sorted(itens, key=lambda x: x["score"], reverse=True)

@@ -1,4 +1,4 @@
-from sqlalchemy import create_engine, Column, String, DateTime, Text, Float, Boolean
+from sqlalchemy import create_engine, Column, String, DateTime, Text, Float, Boolean, Integer
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker
 from datetime import datetime
@@ -57,6 +57,17 @@ class Anexo(Base):
     nome_original = Column(String)
     descricao = Column(String)
     enviado_por = Column(String)
+    criado_em = Column(DateTime, default=datetime.now)
+
+class RegraAprendizado(Base):
+    __tablename__ = "regras_aprendizado"
+    id = Column(String, primary_key=True)
+    padrao = Column(Text, nullable=False)
+    origem = Column(String)
+    classificacao = Column(String)
+    tipo_correto = Column(String)
+    peso = Column(Integer, default=1)
+    criado_por = Column(String)
     criado_em = Column(DateTime, default=datetime.now)
 
 class AuditLog(Base):

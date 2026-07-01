@@ -128,6 +128,57 @@ function TelaGrupos() {
   );
 }
 
+function TelaAprendizado() {
+  const [regras, setRegras] = useState([]);
+  const [carregando, setCarregando] = useState(true);
+  async function carregarRegras() {
+    setCarregando(true);
+    try { const r = await axios.get(`${API}/aprendizado/regras`); setRegras(r.data || []); } catch (e) {}
+    setCarregando(false);
+  }
+  useEffect(() => { carregarRegras(); /* eslint-disable-next-line */ }, []);
+  async function apagar(id) {
+    if (!window.confirm("Remover esta regra aprendida?")) return;
+    try { await axios.delete(`${API}/aprendizado/regras/${id}`); await carregarRegras(); } catch (e) { alert("Erro ao remover."); }
+  }
+  return (
+    <>
+      <div style={{ marginBottom: 24 }}>
+        <h1 style={{ fontSize: 22, fontWeight: 800, color: "#16151a", margin: 0 }}>Aprendizado do sistema</h1>
+        <div style={{ fontSize: 13, color: "#64748b", marginTop: 4 }}>
+          Regras que o sistema aprendeu com suas confirmacoes. Quanto maior o peso, mais vezes foi confirmada.
+        </div>
+      </div>
+      {carregando ? (
+        <div style={{ color: "#94a3b8", fontSize: 13 }}>Carregando...</div>
+      ) : regras.length === 0 ? (
+        <div style={{ background: "#fff", border: "0.5px solid #e2e8f0", borderRadius: 12, padding: 28, color: "#64748b", fontSize: 13 }}>
+          Nenhuma regra aprendida ainda. Conforme voce confirma e corrige os avisos, o sistema aprende e as regras aparecem aqui.
+        </div>
+      ) : (
+        <div style={{ background: "#fff", border: "0.5px solid #e2e8f0", borderRadius: 12, overflow: "hidden" }}>
+          <div style={{ display: "grid", gridTemplateColumns: "2fr 1fr 1.3fr 0.6fr 70px", padding: "10px 16px", background: "#f1f5f9", borderBottom: "0.5px solid #e2e8f0" }}>
+            {["Padrao", "Classificacao", "Tipo correto", "Peso", ""].map((h, i) => (
+              <div key={i} style={{ fontSize: 11, fontWeight: 500, color: "#64748b" }}>{h}</div>
+            ))}
+          </div>
+          {regras.map(r => (
+            <div key={r.id} style={{ display: "grid", gridTemplateColumns: "2fr 1fr 1.3fr 0.6fr 70px", padding: "12px 16px", borderBottom: "0.5px solid #f1f5f9", alignItems: "center" }}>
+              <div style={{ fontSize: 13, color: "#23282a", wordBreak: "break-word" }}>{r.padrao}</div>
+              <div style={{ fontSize: 12, color: "#475569" }}>{r.classificacao || "—"}</div>
+              <div style={{ fontSize: 12, color: "#475569" }}>{r.tipo_correto || "—"}</div>
+              <div style={{ fontSize: 13, fontWeight: 600, color: "#1e40af" }}>{r.peso}</div>
+              <div>
+                <button onClick={() => apagar(r.id)} style={{ background: "transparent", border: "0.5px solid #e2e8f0", color: "#b91c1c", borderRadius: 6, padding: "4px 10px", fontSize: 11, cursor: "pointer" }}>Apagar</button>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </>
+  );
+}
+
 function AppPainel({ onSair }) {
   const [processos, setProcessos] = useState([]);
   const [metricas, setMetricas] = useState({});
@@ -399,6 +450,16 @@ function AppPainel({ onSair }) {
         const fd = new FormData();
         fd.append("dados", JSON.stringify({ tipo_ato: tipo }));
         await axios.post(`${API}/processos/${id}/confirmar-tipo`, fd, { headers: { "Content-Type": "multipart/form-data" } });
+        // aprendizado: grava a correcao como regra (identificador + tipo)
+        const proc = pend.find(x => x.id === id);
+        const ident = proc && (proc.identificador_ato || "");
+        if (ident || tipo) {
+          try {
+            const fdA = new FormData();
+            fdA.append("dados", JSON.stringify({ padrao: ident || tipo, classificacao: "principal", tipo_correto: tipo, origem: "confirmacao_adm" }));
+            await axios.post(`${API}/aprendizado/registrar`, fdA, { headers: { "Content-Type": "multipart/form-data" } });
+          } catch (e) { /* aprendizado nao bloqueia a confirmacao */ }
+        }
         await carregarPend();
         carregar();
       } catch (e) { alert("Erro ao confirmar o tipo."); }
@@ -755,6 +816,7 @@ async function excluirProcesso() {
             { key: "cobrancas", icon: "◈", label: "Cobranças" },
             { key: "relatorios", icon: "▦", label: "Relatórios" },
             { key: "grupos", icon: "◉", label: "Grupos" },
+            { key: "aprendizado", icon: "◈", label: "Aprendizado" },
           ].map(({ key, icon, label }) => (
             <button key={key} style={s.nav(tela === key)} onClick={() => { setTela(key); setProcessoSelecionado(null); }}>
               {icon} {label}
@@ -766,7 +828,9 @@ async function excluirProcesso() {
         </div>
 
         <div style={s.main}>
-          {tela === "grupos" ? (
+          {tela === "aprendizado" ? (
+            <TelaAprendizado />
+          ) : tela === "grupos" ? (
             <TelaGrupos />
           ) : processoSelecionado ? (
             <DetalheProcesso p={processoSelecionado} />

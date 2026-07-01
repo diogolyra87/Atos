@@ -2,7 +2,7 @@ from fastapi import FastAPI, Depends, UploadFile, File, Form, HTTPException, Hea
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from sqlalchemy.orm import Session
-from database import get_db, Processo, Grupo, Usuario, EmailGrupo, criar_banco, AuditLog, Codigo2FA, Anexo, RegraAprendizado
+from database import get_db, Processo, Grupo, Usuario, EmailGrupo, criar_banco, AuditLog, Codigo2FA, Anexo, RegraAprendizado, MensagemProcesso
 from datetime import datetime, timedelta
 from openai import OpenAI
 import json, os, uuid, shutil, bcrypt
@@ -510,6 +510,72 @@ def login_verificar(dados: dict, request: Request, db: Session = Depends(get_db)
 
 
 # ===== ANEXOS DO PROCESSO =====
+def notificar_telegram(texto: str):
+    """Envia um aviso ao ADM via Telegram. Silencioso em caso de falha."""
+    try:
+        import os, requests
+        token = os.getenv("TELEGRAM_TOKEN")
+        chat_id = os.getenv("TELEGRAM_CHAT_ID")
+        if not token or not chat_id:
+            return
+        requests.post(
+            f"https://api.telegram.org/bot{token}/sendMessage",
+            data={"chat_id": chat_id, "text": texto},
+            timeout=5,
+        )
+    except Exception:
+        pass
+
+@app.post("/processos/{processo_id}/mensagens")
+async def enviar_mensagem(processo_id: str, dados: str = Form(...), request: Request = None, x_token: str = Header(None), db: Session = Depends(get_db)):
+    if not x_token:
+        raise HTTPException(status_code=401, detail="Token necessario")
+    usuario = validar_token(x_token, db)
+    if not usuario:
+        raise HTTPException(status_code=401, detail="Token invalido ou sessao expirada")
+    p = db.query(Processo).filter(Processo.id == processo_id).first()
+    if not p:
+        raise HTTPException(status_code=404, detail="Processo nao encontrado")
+    if not usuario.is_admin and p.grupo_id != usuario.grupo_id:
+        raise HTTPException(status_code=403, detail="Sem permissao para este processo")
+    info = json.loads(dados)
+    texto = (info.get("texto") or "").strip()
+    if not texto:
+        raise HTTPException(status_code=400, detail="Mensagem vazia")
+    msg = MensagemProcesso(
+        id=str(uuid.uuid4()),
+        processo_id=processo_id,
+        autor_login=usuario.login,
+        autor_tipo=("admin" if usuario.is_admin else "cliente"),
+        texto=texto,
+        status_no_momento=p.status,
+        tipo_ato_no_momento=p.tipo_ato,
+    )
+    db.add(msg)
+    db.commit()
+    _ip = obter_ip(request)
+    registrar_auditoria(db, usuario, "mensagem_processo", processo_id, "", _ip)
+    if not usuario.is_admin:
+        _empresa = p.empresa or "processo"
+        _preview = texto if len(texto) <= 200 else texto[:200] + "..."
+        notificar_telegram(f"ATOS - Nova mensagem no chat\nCliente: {usuario.login}\nEmpresa: {_empresa}\nProcesso: {processo_id}\n\n{_preview}")
+    return {"mensagem": "enviada", "id": msg.id}
+
+@app.get("/processos/{processo_id}/mensagens")
+async def listar_mensagens(processo_id: str, x_token: str = Header(None), db: Session = Depends(get_db)):
+    if not x_token:
+        raise HTTPException(status_code=401, detail="Token necessario")
+    usuario = validar_token(x_token, db)
+    if not usuario:
+        raise HTTPException(status_code=401, detail="Token invalido ou sessao expirada")
+    p = db.query(Processo).filter(Processo.id == processo_id).first()
+    if not p:
+        raise HTTPException(status_code=404, detail="Processo nao encontrado")
+    if not usuario.is_admin and p.grupo_id != usuario.grupo_id:
+        raise HTTPException(status_code=403, detail="Sem permissao para este processo")
+    msgs = db.query(MensagemProcesso).filter(MensagemProcesso.processo_id == processo_id).order_by(MensagemProcesso.criado_em.asc()).all()
+    return [{"id": mm.id, "autor_login": mm.autor_login, "autor_tipo": mm.autor_tipo, "texto": mm.texto, "criado_em": mm.criado_em.isoformat() if mm.criado_em else None} for mm in msgs]
+
 @app.post("/processos/{processo_id}/anexos")
 async def enviar_anexo(processo_id: str, arquivo: UploadFile = File(...), descricao: str = Form(None), request: Request = None, x_token: str = Header(None), db: Session = Depends(get_db)):
     if not x_token:

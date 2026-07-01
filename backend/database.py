@@ -70,6 +70,17 @@ class RegraAprendizado(Base):
     criado_por = Column(String)
     criado_em = Column(DateTime, default=datetime.now)
 
+class MensagemProcesso(Base):
+    __tablename__ = "mensagens_processo"
+    id = Column(String, primary_key=True)
+    processo_id = Column(String, nullable=False)
+    autor_login = Column(String)
+    autor_tipo = Column(String)
+    texto = Column(Text, nullable=False)
+    status_no_momento = Column(String)
+    tipo_ato_no_momento = Column(String)
+    criado_em = Column(DateTime, default=datetime.now)
+
 class AuditLog(Base):
     __tablename__ = "audit_logs"
     id = Column(String, primary_key=True)

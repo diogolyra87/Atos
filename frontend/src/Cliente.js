@@ -150,6 +150,68 @@ export default function Cliente() {
   );
 }
 
+function ChatProcessoCliente({ processoId, token }) {
+  const [aberto, setAberto] = useState(false);
+  const [msgs, setMsgs] = useState([]);
+  const [texto, setTexto] = useState("");
+  const [enviando, setEnviando] = useState(false);
+  async function carregarMsgs() {
+    try { const r = await axios.get(`${API}/processos/${processoId}/mensagens`, { headers: { "x-token": token } }); setMsgs(r.data || []); } catch (e) {}
+  }
+  useEffect(() => { if (aberto) carregarMsgs(); /* eslint-disable-next-line */ }, [aberto]);
+  async function enviar() {
+    const t = texto.trim();
+    if (!t) return;
+    setEnviando(true);
+    try {
+      const fd = new FormData();
+      fd.append("dados", JSON.stringify({ texto: t }));
+      await axios.post(`${API}/processos/${processoId}/mensagens`, fd, { headers: { "x-token": token, "Content-Type": "multipart/form-data" } });
+      setTexto("");
+      await carregarMsgs();
+    } catch (e) { alert("Nao foi possivel enviar a mensagem."); }
+    setEnviando(false);
+  }
+  return (
+    <div style={{ marginTop: 16, marginBottom: 8 }}>
+      <button onClick={() => setAberto(a => !a)}
+        style={{ width: "100%", textAlign: "left", background: "#eff6ff", border: "0.5px solid #bfdbfe", borderRadius: 10, padding: "12px 16px", cursor: "pointer", fontSize: 14, fontWeight: 600, color: "#1e40af", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+        <span>Duvidas sobre o Processo?</span>
+        <span style={{ fontSize: 12, fontWeight: 400, color: "#2563eb" }}>{aberto ? "fechar ▲" : `abrir ▼${msgs.length ? ` (${msgs.length})` : ""}`}</span>
+      </button>
+      {aberto && (
+        <div style={{ border: "0.5px solid #e2e8f0", borderTop: "none", borderRadius: "0 0 10px 10px", padding: 14, background: "#fff" }}>
+          <div style={{ maxHeight: 300, overflowY: "auto", display: "flex", flexDirection: "column", gap: 8, marginBottom: 12 }}>
+            {msgs.length === 0 ? (
+              <div style={{ fontSize: 13, color: "#94a3b8", textAlign: "center", padding: 12 }}>Nenhuma mensagem ainda. Escreva a primeira.</div>
+            ) : msgs.map(mm => {
+              const meu = mm.autor_tipo === "cliente";
+              return (
+                <div key={mm.id} style={{ alignSelf: meu ? "flex-end" : "flex-start", maxWidth: "80%", background: meu ? "#dbeafe" : "#f1f5f9", borderRadius: 10, padding: "8px 12px" }}>
+                  <div style={{ fontSize: 11, color: "#64748b", marginBottom: 2 }}>
+                    {mm.autor_tipo === "admin" ? "Equipe Atos" : mm.autor_login}{mm.criado_em ? ` · ${new Date(mm.criado_em).toLocaleString("pt-BR")}` : ""}
+                  </div>
+                  <div style={{ fontSize: 13, color: "#23282a", whiteSpace: "pre-wrap", wordBreak: "break-word" }}>{mm.texto}</div>
+                </div>
+              );
+            })}
+          </div>
+          <div style={{ display: "flex", gap: 8, alignItems: "flex-end" }}>
+            <textarea value={texto} onChange={e => setTexto(e.target.value)}
+              onKeyDown={e => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); enviar(); } }}
+              placeholder="Escreva sua mensagem..."
+              style={{ flex: 1, minHeight: 40, maxHeight: 120, padding: "8px 12px", border: "0.5px solid #e2e8f0", borderRadius: 8, fontSize: 13, outline: "none", resize: "vertical", fontFamily: "sans-serif" }} />
+            <button onClick={enviar} disabled={enviando}
+              style={{ background: "#1e40af", color: "#fff", border: "none", padding: "10px 18px", borderRadius: 8, fontSize: 13, cursor: "pointer", height: 40 }}>
+              {enviando ? "..." : "Enviar"}
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 export function Painel({ sessao, onSair }) {
   const [processos, setProcessos] = useState([]);
   const [carregando, setCarregando] = useState(true);
@@ -486,6 +548,7 @@ export function Painel({ sessao, onSair }) {
                   ))}
                 </div>
               )}
+              <ChatProcessoCliente processoId={docsAbertos.id} token={sessao.token} />
               <div style={s.modalBtns}>
                 <button style={s.btnFechar} onClick={() => setDocsAbertos(null)}>Fechar</button>
               </div>

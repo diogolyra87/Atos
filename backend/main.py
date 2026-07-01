@@ -666,6 +666,178 @@ def obter_processo(processo_id: str, request: Request = None, x_token: str = Hea
     registrar_auditoria(db, usuario, "visualizar", processo_id, "empresa=" + str(p.empresa), _ip)
     return p
 
+# ===== PARTE 2: deteccao automatica do documento principal =====
+TIPOS_PRINCIPAIS = {
+    "Contrato Social": ["contrato social"],
+    "Alteracao Contratual": ["alteracao do contrato social", "alteracao contratual", "alteração do contrato social", "alteração contratual"],
+    "Ata de Reuniao/Assembleia de Socios": ["ata de reuniao de socios", "ata de assembleia de socios", "reuniao de socios", "ata de reunião de sócios", "ata de assembleia de sócios", "reunião de sócios"],
+    "Distrato/Dissolucao/Liquidacao": ["distrato", "dissolucao", "liquidacao", "dissolução", "liquidação"],
+    "Estatuto Social": ["estatuto social"],
+    "Ata de Assembleia Geral de Constituicao": ["assembleia geral de constituicao", "assembleia geral de constituição"],
+    "Ata de AGO": ["assembleia geral ordinaria", "assembleia geral ordinária"],
+    "Ata de AGE": ["assembleia geral extraordinaria", "assembleia geral extraordinária"],
+    "Ata de Reuniao do Conselho de Administracao": ["reuniao do conselho", "conselho de administra", "reunião do conselho"],
+    "Ata de Reuniao de Diretoria": ["reuniao de diretoria", "reunião de diretoria"],
+    "Escritura de Emissao de Debentures": ["escritura de emissao de debentures", "emissao de debentures", "escritura de emissão de debêntures", "emissão de debêntures"],
+    "Boletim/Lista/Carta de Subscricao": ["boletim de subscricao", "lista de subscricao", "carta de subscricao", "boletim de subscrição", "lista de subscrição", "carta de subscrição"],
+    "Ata de Assembleia Geral": ["ata de assembleia geral", "ata da assembleia geral"],
+}
+MARCADORES_ANEXO = [
+    "requerimento", "ficha de cadastro nacional", "consulta de viabilidade",
+    "documento basico de entrada", "documento básico de entrada",
+    "procuracao", "procuração", "declaracao de desimpedimento", "declaração de desimpedimento",
+    "darf", "gare", "comprovante de pagamento", "comprovante", "certidao", "certidão",
+    "balanco patrimonial", "balanço patrimonial", "sped", "prospecto",
+    "diario oficial", "diário oficial",
+    "carteira de identidade", "documento de identidade", "doc identidade", "identidade",
+    "registro geral", "cnh", "carteira nacional de habilitacao", "carteira nacional de habilitação", "habilitacao", "habilitação",
+]
+EXT_IMAGEM = {".jpg", ".jpeg", ".png"}
+
+def _extrair_texto_bytes(conteudo: bytes, nome: str) -> str:
+    import tempfile
+    nm = (nome or "").lower()
+    texto = ""
+    try:
+        if nm.endswith(".pdf"):
+            import fitz
+            with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as f:
+                f.write(conteudo); tmp = f.name
+            doc = fitz.open(tmp)
+            for page in doc:
+                texto += page.get_text()
+            doc.close(); os.unlink(tmp)
+        elif nm.endswith(".docx"):
+            import docx as docx_lib
+            with tempfile.NamedTemporaryFile(delete=False, suffix=".docx") as f:
+                f.write(conteudo); tmp = f.name
+            doc = docx_lib.Document(tmp)
+            texto = "\n".join([p.text for p in doc.paragraphs if p.text.strip()])
+            os.unlink(tmp)
+        else:
+            texto = conteudo.decode("utf-8", errors="ignore")
+    except Exception:
+        texto = ""
+    return texto
+
+def _classificar(nome: str, texto: str):
+    import os as _os
+    nome_l = (nome or "").lower()
+    texto_l = (texto[:4000] or "").lower()
+    ext = _os.path.splitext(nome_l)[1]
+    score = 0
+    tipo = None
+    # PASSO 1 - nome do arquivo (prioridade)
+    for t, marcs in TIPOS_PRINCIPAIS.items():
+        for m in marcs:
+            if m in nome_l:
+                score += 20
+                if tipo is None:
+                    tipo = t
+    for m in MARCADORES_ANEXO:
+        if m in nome_l:
+            score -= 12
+    # PASSO 2 - conteudo (confirma/desempata)
+    for t, marcs in TIPOS_PRINCIPAIS.items():
+        for m in marcs:
+            if m in texto_l:
+                score += 10
+                if tipo is None:
+                    tipo = t
+    for m in MARCADORES_ANEXO:
+        if m in texto_l:
+            score -= 4
+    # PASSO 3 - imagem inclina a anexo (nao proibe)
+    if ext in EXT_IMAGEM:
+        score -= 6
+    return tipo, score
+
+@app.post("/processos/analisar-pasta")
+async def analisar_pasta(arquivos: list[UploadFile] = File(...), x_token: str = Header(None), db: Session = Depends(get_db)):
+    if not x_token:
+        raise HTTPException(status_code=401, detail="Token necessario")
+    usuario = validar_token(x_token, db)
+    if not usuario:
+        raise HTTPException(status_code=401, detail="Token invalido ou sessao expirada")
+    itens = []
+    for idx, arq in enumerate(arquivos):
+        conteudo = await arq.read()
+        texto = _extrair_texto_bytes(conteudo, arq.filename or "")
+        tipo, score = _classificar(arq.filename or "", texto)
+        itens.append({"indice": idx, "nome": arq.filename or ("arquivo_" + str(idx)), "texto": texto, "tipo": tipo, "score": score})
+    if not itens:
+        raise HTTPException(status_code=400, detail="Nenhum arquivo recebido.")
+    ordenados = sorted(itens, key=lambda x: x["score"], reverse=True)
+    melhor = ordenados[0]
+    maior = melhor["score"]
+    bateram_principal = [i for i in itens if i["tipo"] is not None and i["score"] > 0]
+    empatados_topo = [i for i in ordenados if i["score"] == maior]
+    pendente = (len(bateram_principal) != 1) or (maior <= 0) or (len(empatados_topo) > 1)
+    dados = analisar_ata_ia(melhor["texto"]) if melhor["texto"].strip() else {}
+    if melhor["tipo"]:
+        dados["tipo_ato"] = dados.get("tipo_ato") or melhor["tipo"]
+    anexos = [{"indice": i["indice"], "nome": i["nome"]} for i in itens if i["indice"] != melhor["indice"]]
+    return {
+        "principal": {"indice": melhor["indice"], "nome": melhor["nome"], "tipo_sugerido": melhor["tipo"], "dados": dados, "score": melhor["score"]},
+        "anexos": anexos,
+        "confirmacao_pendente": pendente,
+        "tipos_disponiveis": list(TIPOS_PRINCIPAIS.keys()),
+        "candidatos": [{"indice": i["indice"], "nome": i["nome"], "tipo": i["tipo"], "score": i["score"]} for i in ordenados],
+    }
+
+@app.get("/processos/pendentes")
+async def listar_pendentes(x_token: str = Header(None), db: Session = Depends(get_db)):
+    if not x_token:
+        raise HTTPException(status_code=401, detail="Token necessario")
+    usuario = validar_token(x_token, db)
+    if not usuario or not usuario.is_admin:
+        raise HTTPException(status_code=403, detail="Apenas administrador")
+    ps = db.query(Processo).filter(Processo.confirmacao_pendente == True).all()
+    return [{"id": p.id, "empresa": p.empresa, "tipo_ato": p.tipo_ato, "tipo_ato_sugerido": p.tipo_ato_sugerido, "identificador_ato": p.identificador_ato, "data_ata": p.data_ata} for p in ps]
+
+@app.post("/processos/{processo_id}/confirmar-tipo")
+async def confirmar_tipo(processo_id: str, dados: str = Form(...), request: Request = None, x_token: str = Header(None), db: Session = Depends(get_db)):
+    if not x_token:
+        raise HTTPException(status_code=401, detail="Token necessario")
+    usuario = validar_token(x_token, db)
+    if not usuario or not usuario.is_admin:
+        raise HTTPException(status_code=403, detail="Apenas administrador")
+    p = db.query(Processo).filter(Processo.id == processo_id).first()
+    if not p:
+        raise HTTPException(status_code=404, detail="Processo nao encontrado")
+    info = json.loads(dados)
+    novo_tipo = (info.get("tipo_ato") or "").strip()
+    if novo_tipo:
+        p.tipo_ato = novo_tipo
+    p.confirmacao_pendente = False
+    db.commit()
+    _ip = obter_ip(request)
+    registrar_auditoria(db, usuario, "confirmar_tipo", processo_id, "tipo=" + (novo_tipo or p.tipo_ato or ""), _ip)
+    return {"mensagem": "Tipo confirmado", "id": processo_id, "tipo_ato": p.tipo_ato}
+
+def _norm(s):
+    import unicodedata
+    s = (s or "").strip().lower()
+    s = "".join(c for c in unicodedata.normalize("NFD", s) if unicodedata.category(c) != "Mn")
+    return " ".join(s.split())
+
+@app.get("/processos/checar-duplicidade")
+async def checar_duplicidade(empresa: str = "", tipo_ato: str = "", data_ata: str = "", hora_ata: str = "", identificador_ato: str = "", x_token: str = Header(None), db: Session = Depends(get_db)):
+    if not x_token:
+        raise HTTPException(status_code=401, detail="Token necessario")
+    usuario = validar_token(x_token, db)
+    if not usuario:
+        raise HTTPException(status_code=401, detail="Token invalido ou sessao expirada")
+    q = db.query(Processo)
+    if not usuario.is_admin:
+        q = q.filter(Processo.grupo_id == usuario.grupo_id)
+    alvo = (_norm(empresa), _norm(tipo_ato), _norm(data_ata), _norm(hora_ata), _norm(identificador_ato))
+    for p in q.all():
+        atual = (_norm(p.empresa), _norm(p.tipo_ato), _norm(p.data_ata), _norm(p.hora_ata), _norm(p.identificador_ato))
+        if atual == alvo and any(alvo):
+            return {"duplicado": True, "processo_id": p.id, "empresa": p.empresa, "identificador_ato": p.identificador_ato}
+    return {"duplicado": False}
+
 @app.post("/processos/analisar")
 async def analisar_documento(arquivo: UploadFile = File(...), x_token: str = Header(None), db: Session = Depends(get_db)):
     if not x_token:

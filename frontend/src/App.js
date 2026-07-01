@@ -14,9 +14,11 @@ const STATUS_CONFIG = {
   finalizado: { label: "Finalizado", bg: "#cfe8d8", color: "#15803d" },
 };
 
-function abreviarAto(texto, data) {
+function abreviarAto(texto, data, hora) {
   const t = (texto || "").toUpperCase();
-  const d = data ? ` ${(data || "").replace(/\//g, ".")}` : "";
+  const _dt = data ? `${(data || "").replace(/\//g, ".")}` : "";
+  const _hr = hora ? ` (${hora} HRS)` : "";
+  const d = _dt ? ` ${_dt}${_hr}` : "";
   // Alteracao contratual: "Nª ALTERAÇÃO" (sem data)
   let m = t.match(/(\d+)\s*[ªº°]?\s*ALTERA[ÇC][ÃA]O\s+CONTRATUAL/);
   if (m) return `${m[1]}ª ALTERAÇÃO`;
@@ -191,6 +193,8 @@ function AppPainel({ onSair }) {
   async function criarProcesso() {
     if (!dadosAnalise) return;
     try {
+      const segueDup = await checarDup(dadosAnalise);
+      if (!segueDup) return;
       const form = new FormData();
       if (arquivoSelecionado) form.append("arquivo", arquivoSelecionado);
       form.append("dados", JSON.stringify(dadosAnalise));
@@ -222,6 +226,74 @@ function AppPainel({ onSair }) {
       window.URL.revokeObjectURL(url);
     } catch (e) { alert("Nao foi possivel baixar este arquivo."); }
   }
+  async function processarPastaAdmin(fileList) {
+    if (!upGrupo) { alert("Selecione o cliente antes de subir os arquivos."); return; }
+    const arquivos = Array.from(fileList).filter(f => {
+      const n = f.name.toLowerCase();
+      return n.endsWith(".pdf") || n.endsWith(".docx") || n.endsWith(".png") || n.endsWith(".jpg") || n.endsWith(".jpeg") || n.endsWith(".xml") || n.endsWith(".txt");
+    });
+    if (arquivos.length === 0) { alert("Nenhum arquivo valido na pasta."); return; }
+    if (arquivos.length === 1) { return processarArquivosAdmin(fileList); }
+    setUpSubindo(true);
+    setUpProg({ feitos: 0, total: 1, erros: 0 });
+    try {
+      const fdA = new FormData();
+      arquivos.forEach(a => fdA.append("arquivos", a));
+      const res = await axios.post(`${API}/processos/analisar-pasta`, fdA);
+      const r = res.data || {};
+      const principal = r.principal || {};
+      const idxPrincipal = principal.indice;
+      const dados = principal.dados || {};
+      dados.codigo_grupo = upGrupo;
+      if (!principal.tipo_sugerido) {
+        const ok = window.confirm("AVISO\n\nDocumento Sem Valor Societario!\n\nPossivel Anexo ou Documento Complementar!\n\nDeseja Seguir Com a Insercao?");
+        if (!ok) { setUpSubindo(false); return; }
+        dados.uf = "";
+        if (!dados.empresa) { dados.empresa = "Documento desconhecido"; dados.identificador_ato = "Documento desconhecido"; }
+      }
+      if (r.confirmacao_pendente) { dados.confirmacao_pendente = true; dados.tipo_ato_sugerido = principal.tipo_sugerido || ""; }
+      const segueDup = await checarDup(dados);
+      if (!segueDup) { setUpSubindo(false); return; }
+      const arqPrincipal = arquivos[idxPrincipal];
+      const fd2 = new FormData();
+      fd2.append("arquivo", arqPrincipal);
+      fd2.append("dados", JSON.stringify(dados));
+      const criado = await axios.post(`${API}/processos`, fd2);
+      const novoId = criado.data && (criado.data.id || criado.data.processo_id);
+      let anexErros = 0;
+      if (novoId && Array.isArray(r.anexos)) {
+        for (const ax of r.anexos) {
+          try {
+            const fda = new FormData();
+            fda.append("arquivo", arquivos[ax.indice]);
+            fda.append("descricao", "");
+            await axios.post(`${API}/processos/${novoId}/anexos`, fda, { headers: { "Content-Type": "multipart/form-data" } });
+          } catch (e) { anexErros++; }
+        }
+      }
+      setUpProg({ feitos: 1, total: 1, erros: 0 });
+      setUpSubindo(false);
+      carregar();
+      alert(`Processo criado. Principal: ${principal.nome}. Anexos: ${(r.anexos||[]).length - anexErros}${anexErros ? ` (${anexErros} falharam)` : ""}.`);
+    } catch (e) {
+      setUpSubindo(false);
+      alert("Erro ao processar a pasta.");
+    }
+  }
+  async function checarDup(dados) {
+    try {
+      const params = {
+        empresa: dados.empresa || "", tipo_ato: dados.tipo_ato || "",
+        data_ata: dados.data_ata || "", hora_ata: dados.hora_ata || "",
+        identificador_ato: dados.identificador_ato || "",
+      };
+      const r = await axios.get(`${API}/processos/checar-duplicidade`, { params });
+      if (r.data && r.data.duplicado) {
+        return window.confirm("Possivel Duplicidade de Atos!\n\nDeseja seguir com a insercao?");
+      }
+      return true;
+    } catch (e) { return true; }
+  }
   async function processarArquivosAdmin(fileList) {
     if (!upGrupo) { alert("Selecione o cliente antes de subir os arquivos."); return; }
     const arquivos = Array.from(fileList).filter(f => f.name.toLowerCase().endsWith(".pdf"));
@@ -236,6 +308,8 @@ function AppPainel({ onSair }) {
         const ana = await axios.post(`${API}/processos/analisar`, fd1);
         const dados = ana.data || {};
         dados.codigo_grupo = upGrupo;
+        const segue = await checarDup(dados);
+        if (!segue) { continue; }
         const fd2 = new FormData();
         fd2.append("arquivo", arq);
         fd2.append("dados", JSON.stringify(dados));
@@ -304,6 +378,60 @@ function AppPainel({ onSair }) {
     checklist: { background: "#f8fafc", borderRadius: 8, padding: 14, marginBottom: 16 },
     checkItem: { fontSize: 13, color: "#475569", padding: "4px 0", borderBottom: "0.5px solid #e2e8f0", display: "flex", alignItems: "center", gap: 8 },
   };
+
+  function BannerPendencias() {
+    const [pend, setPend] = useState([]);
+    const [tipos, setTipos] = useState({});
+    const TIPOS = [
+      "Contrato Social","Alteracao Contratual","Ata de Reuniao/Assembleia de Socios",
+      "Distrato/Dissolucao/Liquidacao","Estatuto Social","Ata de Assembleia Geral de Constituicao",
+      "Ata de AGO","Ata de AGE","Ata de Reuniao do Conselho de Administracao",
+      "Ata de Reuniao de Diretoria","Escritura de Emissao de Debentures",
+      "Boletim/Lista/Carta de Subscricao","Ata de Assembleia Geral",
+    ];
+    async function carregarPend() {
+      try { const r = await axios.get(`${API}/processos/pendentes`); setPend(r.data || []); } catch (e) {}
+    }
+    useEffect(() => { carregarPend(); /* eslint-disable-next-line */ }, []);
+    async function confirmar(id) {
+      const tipo = tipos[id] || "";
+      try {
+        const fd = new FormData();
+        fd.append("dados", JSON.stringify({ tipo_ato: tipo }));
+        await axios.post(`${API}/processos/${id}/confirmar-tipo`, fd, { headers: { "Content-Type": "multipart/form-data" } });
+        await carregarPend();
+        carregar();
+      } catch (e) { alert("Erro ao confirmar o tipo."); }
+    }
+    if (pend.length === 0) return null;
+    return (
+      <div style={{ background: "#fef3c7", border: "0.5px solid #fbbf24", borderRadius: 10, padding: 16, marginBottom: 18 }}>
+        <div style={{ fontSize: 14, fontWeight: 600, color: "#92400e", marginBottom: 4 }}>
+          {pend.length} processo(s) aguardando confirmacao do tipo de documento
+        </div>
+        <div style={{ fontSize: 12, color: "#92400e", marginBottom: 12 }}>
+          O sistema nao teve certeza do documento principal. Confirme ou corrija o tipo de ato.
+        </div>
+        {pend.map(p => (
+          <div key={p.id} style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", background: "#fff", borderRadius: 8, padding: "8px 12px", marginBottom: 8 }}>
+            <div style={{ flex: "1 1 200px", minWidth: 160 }}>
+              <div style={{ fontSize: 13, fontWeight: 500, color: "#23282a" }}>{p.empresa || "Documento desconhecido"}</div>
+              <div style={{ fontSize: 11, color: "#94a3b8" }}>
+                Sugestao: {p.tipo_ato_sugerido || p.tipo_ato || "—"}{p.data_ata ? ` · ${p.data_ata}` : ""}
+              </div>
+            </div>
+            <select value={tipos[p.id] || p.tipo_ato_sugerido || ""} onChange={e => setTipos(t => ({ ...t, [p.id]: e.target.value }))}
+              style={{ padding: "8px 10px", border: "0.5px solid #cbd5e1", borderRadius: 8, fontSize: 13, background: "#fff", cursor: "pointer", color: "#475569" }}>
+              <option value="">Selecione o tipo...</option>
+              {TIPOS.map(t => <option key={t} value={t}>{t}</option>)}
+            </select>
+            <button onClick={() => confirmar(p.id)}
+              style={{ background: "#1e40af", color: "#fff", border: "none", padding: "8px 16px", borderRadius: 8, fontSize: 13, cursor: "pointer" }}>Confirmar</button>
+          </div>
+        ))}
+      </div>
+    );
+  }
 
   function DetalheProcesso({ p }) {
     const eventos = JSON.parse(p.eventos || "[]");
@@ -555,6 +683,52 @@ async function excluirProcesso() {
           ))}
         </div>
 
+        <div style={{ fontSize: 13, fontWeight: 500, color: "#23282a", marginTop: 24, marginBottom: 8 }}>
+          Anexos <span style={{ fontSize: 12, color: "#94a3b8", fontWeight: 400 }}>({anexos.length})</span>
+        </div>
+        <div style={{ background: "#f8fafc", borderRadius: 8, padding: 14, marginBottom: 16 }}>
+          {anexos.length === 0 ? (
+            <div style={{ fontSize: 13, color: "#94a3b8", marginBottom: 12 }}>Nenhum anexo enviado ainda.</div>
+          ) : (
+            <div style={{ display: "flex", flexDirection: "column", gap: 8, marginBottom: 12 }}>
+              {anexos.map(ax => (
+                <div key={ax.id} style={{ ...s.uploadItem, alignItems: "flex-start" }}>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ fontSize: 13, color: "#23282a", fontWeight: 500, wordBreak: "break-word" }}>
+                      {ax.nome_original || "anexo"}
+                    </div>
+                    {ax.descricao && (
+                      <div style={{ fontSize: 12, color: "#64748b", marginTop: 2 }}>{ax.descricao}</div>
+                    )}
+                    <div style={{ fontSize: 11, color: "#94a3b8", marginTop: 2 }}>
+                      Enviado por {ax.enviado_por || "\u2014"}
+                      {ax.criado_em && ` \u00b7 ${new Date(ax.criado_em).toLocaleDateString("pt-BR")}`}
+                    </div>
+                  </div>
+                  <div style={{ display: "flex", gap: 6, flexShrink: 0, marginLeft: 10 }}>
+                    <button onClick={() => baixarAnexo(ax.id, ax.nome_original)}
+                      style={{ background: "transparent", border: "0.5px solid #2563eb", color: "#2563eb", borderRadius: 6, padding: "3px 10px", fontSize: 11, cursor: "pointer", fontFamily: "'Inter', sans-serif" }}>\u2193 Baixar</button>
+                    <button onClick={() => excluirAnexo(ax.id)}
+                      style={{ background: "transparent", border: "0.5px solid #e2e8f0", color: "#b91c1c", borderRadius: 6, padding: "3px 10px", fontSize: 11, cursor: "pointer", fontFamily: "'Inter', sans-serif" }}>Excluir</button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+          <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", borderTop: "0.5px solid #e2e8f0", paddingTop: 12 }}>
+            <input style={{ ...s.input, flex: "1 1 200px", minWidth: 160 }} value={descAnexo}
+              onChange={e => setDescAnexo(e.target.value)} placeholder="Descri\u00e7\u00e3o (opcional): ex. procura\u00e7\u00e3o, RG..." />
+            <label style={{ cursor: enviandoAnexo ? "not-allowed" : "pointer" }}>
+              <span style={{ ...s.uploadPend, opacity: enviandoAnexo ? 0.5 : 1 }}>
+                {enviandoAnexo ? "Enviando..." : "+ Enviar anexo"}
+              </span>
+              <input type="file" accept=".pdf,.png,.jpg,.jpeg,.xml,.txt" style={{ display: "none" }}
+                disabled={enviandoAnexo}
+                onChange={e => { if (e.target.files[0]) { enviarAnexo(e.target.files[0]); e.target.value = ""; } }} />
+            </label>
+          </div>
+        </div>
+
         {p.observacoes && (
           <div style={{ background: "#f8fafc", borderRadius: 8, padding: 12, fontSize: 13, color: "#475569" }}>
             <strong>Observações:</strong> {p.observacoes}
@@ -603,6 +777,7 @@ async function excluirProcesso() {
                 <button style={s.btnPrimary} onClick={() => setModalNovo(true)}>+ Novo processo</button>
               </div>
 
+              <BannerPendencias />
               <div style={s.metrics}>
                 <div style={s.metricCard}>
                   <div style={s.metricLabel}>Total</div>
@@ -642,7 +817,7 @@ async function excluirProcesso() {
                     const lerEntry = (entry) => {
                       if (entry.isFile) {
                         pendentes++;
-                        entry.file(f => { arquivos.push(f); pendentes--; if (pendentes === 0) processarArquivosAdmin(arquivos); });
+                        entry.file(f => { arquivos.push(f); pendentes--; if (pendentes === 0) processarPastaAdmin(arquivos); });
                       } else if (entry.isDirectory) {
                         const reader = entry.createReader();
                         reader.readEntries(ents => { ents.forEach(lerEntry); });
@@ -673,7 +848,7 @@ async function excluirProcesso() {
                       Selecionar Pasta
                     </span>
                     <input type="file" webkitdirectory="" directory="" multiple style={{ display: "none" }}
-                      disabled={upSubindo||!upGrupo} onChange={e => processarArquivosAdmin(e.target.files)} />
+                      disabled={upSubindo||!upGrupo} onChange={e => processarPastaAdmin(e.target.files)} />
                   </label>
                   {upSubindo && <span style={{ fontSize: 13, color: "#2563eb" }}>Enviando {upProg.feitos} de {upProg.total}{upProg.erros ? ` (${upProg.erros} erro)` : ""}...</span>}
                 </div>
@@ -725,7 +900,7 @@ async function excluirProcesso() {
                       <div style={s.cnpj}>{p.cnpj} · NIRE {p.nire}</div>
                     </div>
                     <div style={{ ...s.cell, fontWeight: 500, color: "#475569" }}>{p.uf || "—"}</div>
-                    <div style={s.cell}>{abreviarAto(p.identificador_ato, p.data_ata)}</div>
+                    <div style={s.cell}>{abreviarAto(p.identificador_ato, p.data_ata, p.hora_ata)}</div>
                     <div style={{ ...s.cell, fontFamily: "monospace", fontSize: 11 }}>{p.numero_protocolo ? p.numero_protocolo.replace(/\D/g, "") : "—"}</div>
                     <div><span style={s.badge(p.status)}>{STATUS_CONFIG[p.status]?.label || p.status}</span></div>
                     <div><button style={s.btnVer} onClick={e => { e.stopPropagation(); setProcessoSelecionado(p); }}>Ver</button></div>

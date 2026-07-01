@@ -213,6 +213,72 @@ export function Painel({ sessao, onSair }) {
       window.URL.revokeObjectURL(url);
     } catch (e) { alert("Nao foi possivel gerar o relatorio."); }
   }
+  async function processarPasta(fileList) {
+    const arquivos = Array.from(fileList).filter(f => {
+      const n = f.name.toLowerCase();
+      return n.endsWith(".pdf") || n.endsWith(".docx") || n.endsWith(".png") || n.endsWith(".jpg") || n.endsWith(".jpeg") || n.endsWith(".xml") || n.endsWith(".txt");
+    });
+    if (arquivos.length === 0) { alert("Nenhum arquivo valido na pasta."); return; }
+    if (arquivos.length === 1) { return processarArquivos(fileList); }
+    setSubindo(true);
+    setProgresso({ feitos: 0, total: 1, erros: 0 });
+    try {
+      const fdA = new FormData();
+      arquivos.forEach(a => fdA.append("arquivos", a));
+      const res = await axios.post(`${API}/processos/analisar-pasta`, fdA, { headers: { "x-token": sessao.token } });
+      const r = res.data || {};
+      const principal = r.principal || {};
+      const idxPrincipal = principal.indice;
+      const dados = principal.dados || {};
+      if (!principal.tipo_sugerido) {
+        const ok = window.confirm("AVISO\n\nDocumento Sem Valor Societario!\n\nPossivel Anexo ou Documento Complementar!\n\nDeseja Seguir Com a Insercao?");
+        if (!ok) { setSubindo(false); return; }
+        dados.uf = "";
+        if (!dados.empresa) { dados.empresa = "Documento desconhecido"; dados.identificador_ato = "Documento desconhecido - " + (sessao.login || sessao.usuario || ""); }
+      }
+      if (r.confirmacao_pendente) { dados.confirmacao_pendente = true; dados.tipo_ato_sugerido = principal.tipo_sugerido || ""; }
+      const segueDup = await checarDup(dados);
+      if (!segueDup) { setSubindo(false); return; }
+      const arqPrincipal = arquivos[idxPrincipal];
+      const fd2 = new FormData();
+      fd2.append("arquivo", arqPrincipal);
+      fd2.append("dados", JSON.stringify(dados));
+      const criado = await axios.post(`${API}/processos`, fd2, { headers: { "x-token": sessao.token } });
+      const novoId = criado.data && (criado.data.id || criado.data.processo_id);
+      let anexErros = 0;
+      if (novoId && Array.isArray(r.anexos)) {
+        for (const ax of r.anexos) {
+          try {
+            const fda = new FormData();
+            fda.append("arquivo", arquivos[ax.indice]);
+            fda.append("descricao", "");
+            await axios.post(`${API}/processos/${novoId}/anexos`, fda, { headers: { "x-token": sessao.token } });
+          } catch (e) { anexErros++; }
+        }
+      }
+      setProgresso({ feitos: 1, total: 1, erros: 0 });
+      setSubindo(false);
+      await carregar();
+      alert(`Processo criado. Principal: ${principal.nome}. Anexos: ${(r.anexos||[]).length - anexErros}${anexErros ? ` (${anexErros} falharam)` : ""}.`);
+    } catch (e) {
+      setSubindo(false);
+      alert("Erro ao processar a pasta.");
+    }
+  }
+  async function checarDup(dados) {
+    try {
+      const params = {
+        empresa: dados.empresa || "", tipo_ato: dados.tipo_ato || "",
+        data_ata: dados.data_ata || "", hora_ata: dados.hora_ata || "",
+        identificador_ato: dados.identificador_ato || "",
+      };
+      const r = await axios.get(`${API}/processos/checar-duplicidade`, { params, headers: { "x-token": sessao.token } });
+      if (r.data && r.data.duplicado) {
+        return window.confirm("Possivel Duplicidade de Atos!\n\nDeseja seguir com a insercao?");
+      }
+      return true;
+    } catch (e) { return true; }
+  }
   async function processarArquivos(fileList) {
     const arquivos = Array.from(fileList).filter(f => f.name.toLowerCase().endsWith(".pdf"));
     if (arquivos.length === 0) { alert("Nenhum PDF encontrado na pasta."); return; }
@@ -225,6 +291,8 @@ export function Painel({ sessao, onSair }) {
         fd1.append("arquivo", arq);
         const ana = await axios.post(`${API}/processos/analisar`, fd1, { headers: { "x-token": sessao.token } });
         const dados = ana.data || {};
+        const segue = await checarDup(dados);
+        if (!segue) { continue; }
         const fd2 = new FormData();
         fd2.append("arquivo", arq);
         fd2.append("dados", JSON.stringify(dados));
@@ -335,7 +403,7 @@ export function Painel({ sessao, onSair }) {
                     </span>
                     <input type="file" webkitdirectory="" directory="" multiple style={{ display: "none" }}
                       disabled={subindo}
-                      onChange={e => processarArquivos(e.target.files)} />
+                      onChange={e => processarPasta(e.target.files)} />
                   </label>
                 </div>
               </div>

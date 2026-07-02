@@ -55,3 +55,14 @@ backend/limpar_dados.py
 teste_*.pdf
 teste_*.xlsx
 teste_*.docx
+
+# Backups locais (nunca versionar - podem conter segredos)
+*.bak
+*.bak-*
+*.save
+.env.*
+# Scripts de exploracao/debug de automacao (temporarios)
+automacao/explorar_*.py
+automacao/debug_*.py
+backend/_*.py
+backend/_*.txt

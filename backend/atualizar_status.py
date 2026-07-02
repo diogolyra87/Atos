@@ -11,6 +11,7 @@ sys.path.insert(0, "/root/atos/automacao")
 from database import SessionLocal, Processo, Grupo, EmailGrupo
 from consultar_jucesp import consultar
 from consultar_jucerja import consultar_jucerja, classificar_status_rj
+from consultar_juceb import consultar_juceb, classificar_status_ba
 
 load_dotenv("/root/atos/.env")
 
@@ -22,6 +23,8 @@ EMAIL_PORT_SMTP = int(os.getenv("EMAIL_PORT_SMTP", "587"))
 
 JUCERJA_USUARIO = os.getenv("JUCERJA_USUARIO")
 JUCERJA_SENHA = os.getenv("JUCERJA_SENHA")
+JUCEB_LOGIN = os.getenv("JUCEB_LOGIN")
+JUCEB_SENHA = os.getenv("JUCEB_SENHA")
 
 EMAIL_ADMIN = "diogo@realpublicidade.com.br"
 BASE_URL = "https://atos.net.br"
@@ -185,12 +188,42 @@ def processar_rj(db, agora):
         print()
 
 
+def processar_ba(db, agora):
+    processos = db.query(Processo).filter(
+        Processo.uf == "BA",
+        Processo.numero_protocolo.isnot(None),
+        Processo.numero_protocolo != "",
+    ).all()
+    pendentes = [p for p in processos if (p.status or "").lower() != "finalizado"]
+    print("[BA] " + str(len(pendentes)) + " processo(s) com protocolo.\n")
+    if not pendentes:
+        return
+    if not JUCEB_LOGIN or not JUCEB_SENHA:
+        print("   [BA] credenciais JUCEB ausentes no .env - pulando BA.")
+        return
+    for p in pendentes:
+        print("-> [BA] " + str(p.empresa) + " | prot " + str(p.numero_protocolo) + " | status: " + (p.status or ""))
+        try:
+            res = consultar_juceb(p.numero_protocolo, JUCEB_LOGIN, JUCEB_SENHA, headless=True)
+        except Exception as e:
+            print("   ERRO consulta JUCEB (mantem):", e)
+            continue
+        if res.get("erro"):
+            print("   JUCEB erro (mantem status):", res["erro"])
+            continue
+        print("   JUCEB:", res)
+        p.status_jucesp = res.get("status_texto")
+        aplicar_classificacao(db, p, res.get("classificacao", "tramitacao"), agora)
+        print()
+
+
 def processar():
     db = SessionLocal()
     agora = datetime.now()
     print("[" + str(agora) + "] Iniciando consultas autonomas.\n")
     processar_sp(db, agora)
     processar_rj(db, agora)
+    processar_ba(db, agora)
     db.close()
     print("FIM.")
 

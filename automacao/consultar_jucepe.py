@@ -1,0 +1,95 @@
+# -*- coding: utf-8 -*-
+import unicodedata
+from playwright.sync_api import sync_playwright
+
+URL_LOGIN = "https://redesim.jucepe.pe.gov.br/requerimentouniversal/NovoLogin.aspx"
+
+def _norm(txt):
+    if not txt:
+        return ""
+    t = "".join(c for c in unicodedata.normalize("NFD", str(txt)) if unicodedata.category(c) != "Mn")
+    return t.upper().strip()
+
+def classificar_status_pe(status_texto):
+    s = _norm(status_texto)
+    if "EXIGENCIA" in s:
+        return "exigencia"
+    if "FINALIZADO" in s or "DEFERIDO" in s:
+        return "deferido"
+    if "TRAMITACAO" in s:
+        return "tramitacao"
+    if "AGUARDANDO ENVIO" in s or "COMPENSACAO DE PAGAMENTO" in s or "COMPENSACAO" in s:
+        return "tramitacao"
+    return "tramitacao"
+
+def _fechar_cookie(pg):
+    for sel in ["text=Aceito", "button:has-text('Aceito')", "#onetrust-accept-btn-handler"]:
+        try:
+            pg.click(sel, timeout=2500); pg.wait_for_timeout(600); return
+        except Exception:
+            pass
+
+def consultar_jucepe(protocolo, login, senha, headless=True):
+    with sync_playwright() as p:
+        nav = p.chromium.launch(headless=headless)
+        ctx = nav.new_context()
+        pg = ctx.new_page()
+        try:
+            pg.goto(URL_LOGIN, timeout=60000)
+            pg.wait_for_timeout(2500)
+            _fechar_cookie(pg)
+            pg.fill("#_ctl0_MainContent_txtCPFCNPJ", login)
+            pg.fill("#_ctl0_MainContent_txtSenha", senha)
+            try:
+                pg.click("#_ctl0_MainContent_btnEntrar", timeout=8000)
+            except Exception:
+                pg.eval_on_selector("#_ctl0_MainContent_btnEntrar", "el => el.click()")
+            pg.wait_for_timeout(4000)
+
+            # abre "Acompanhamento de Requerimentos" (nova aba)
+            with ctx.expect_page(timeout=10000) as info:
+                try:
+                    pg.click("#_ctl0_MainContent_btnReimpressaoDocumentos", timeout=6000)
+                except Exception:
+                    pg.eval_on_selector("#_ctl0_MainContent_btnReimpressaoDocumentos", "el => el.click()")
+            aba = info.value
+            aba.wait_for_timeout(2500)
+
+            # busca pelo protocolo
+            aba.fill("#ctl00_ContentPlaceHolder_txtRequerimento", str(protocolo))
+            aba.wait_for_timeout(400)
+            aba.click("#ctl00_ContentPlaceHolder_btnBuscar")
+            aba.wait_for_timeout(4000)
+
+            # le a tabela de resultado
+            try:
+                aba.wait_for_selector("table", timeout=15000)
+            except Exception:
+                return {"erro": "tabela de resultado nao apareceu"}
+
+            corpo = aba.inner_text("body")
+            # procura a linha que contem o protocolo
+            for linha in corpo.split("\n"):
+                if str(protocolo) in linha:
+                    # a situacao esta na mesma linha; classifica pelo texto
+                    return {"status_texto": linha.strip()[:200], "classificacao": classificar_status_pe(linha)}
+            # fallback: procura por palavras-chave no corpo todo
+            if _norm("EXIGENCIA") in _norm(corpo):
+                return {"status_texto": "EM EXIGENCIA", "classificacao": "exigencia"}
+            if "FINALIZADO" in _norm(corpo):
+                return {"status_texto": "FINALIZADO", "classificacao": "deferido"}
+            if _norm("TRAMITACAO") in _norm(corpo):
+                return {"status_texto": "EM TRAMITACAO", "classificacao": "tramitacao"}
+            return {"erro": "protocolo nao encontrado no resultado"}
+        except Exception as e:
+            return {"erro": str(e)[:150]}
+        finally:
+            nav.close()
+
+# teste manual
+if __name__ == "__main__":
+    import os
+    from dotenv import load_dotenv
+    load_dotenv("/root/atos/.env")
+    r = consultar_jucepe("267951590", os.getenv("JUCEB_LOGIN"), os.getenv("JUCEB_SENHA"))
+    print(r)

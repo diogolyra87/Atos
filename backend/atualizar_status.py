@@ -12,6 +12,7 @@ from database import SessionLocal, Processo, Grupo, EmailGrupo
 from consultar_jucesp import consultar
 from consultar_jucerja import consultar_jucerja, classificar_status_rj
 from consultar_juceb import consultar_juceb, classificar_status_ba
+from consultar_jucepe import consultar_jucepe, classificar_status_pe
 
 load_dotenv("/root/atos/.env")
 
@@ -217,6 +218,35 @@ def processar_ba(db, agora):
         print()
 
 
+def processar_pe(db, agora):
+    processos = db.query(Processo).filter(
+        Processo.uf == "PE",
+        Processo.numero_protocolo.isnot(None),
+        Processo.numero_protocolo != "",
+    ).all()
+    pendentes = [p for p in processos if (p.status or "").lower() != "finalizado"]
+    print("[PE] " + str(len(pendentes)) + " processo(s) com protocolo.\n")
+    if not pendentes:
+        return
+    if not JUCEB_LOGIN or not JUCEB_SENHA:
+        print("   [PE] credenciais ausentes no .env - pulando PE.")
+        return
+    for p in pendentes:
+        print("-> [PE] " + str(p.empresa) + " | prot " + str(p.numero_protocolo) + " | status: " + (p.status or ""))
+        try:
+            res = consultar_jucepe(p.numero_protocolo, JUCEB_LOGIN, JUCEB_SENHA, headless=True)
+        except Exception as e:
+            print("   ERRO consulta JUCEPE (mantem):", e)
+            continue
+        if res.get("erro"):
+            print("   JUCEPE erro (mantem status):", res["erro"])
+            continue
+        print("   JUCEPE:", res)
+        p.status_jucesp = res.get("status_texto")
+        aplicar_classificacao(db, p, res.get("classificacao", "tramitacao"), agora)
+        print()
+
+
 def processar():
     db = SessionLocal()
     agora = datetime.now()
@@ -224,6 +254,7 @@ def processar():
     processar_sp(db, agora)
     processar_rj(db, agora)
     processar_ba(db, agora)
+    processar_pe(db, agora)
     db.close()
     print("FIM.")
 

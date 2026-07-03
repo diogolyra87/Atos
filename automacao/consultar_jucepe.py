@@ -77,7 +77,7 @@ def consultar_jucepe(protocolo, login, senha, headless=True):
                         val = (b_el.get_attribute("value") or "").strip()
                         if val and "atualizar" not in val.lower() and val not in ("", "\ufffd\"", "\ufffd"):
                             status_final = (txt_tr.strip()[:150] + " | " + val)[:200]
-                            return {"status_texto": status_final, "classificacao": classificar_status_pe(val)}
+                            return {"status_texto": status_final, "classificacao": classificar_status_pe(status_final)}
                     if txt_tr.strip():
                         return {"status_texto": txt_tr.strip()[:200], "classificacao": classificar_status_pe(txt_tr)}
             corpo = aba.inner_text("body")
@@ -96,6 +96,62 @@ def consultar_jucepe(protocolo, login, senha, headless=True):
             return {"erro": "protocolo nao encontrado no resultado"}
         except Exception as e:
             return {"erro": str(e)[:150]}
+        finally:
+            nav.close()
+
+def baixar_documento_jucepe(protocolo, login, senha, destino_path, headless=True):
+    """Loga na JUCEPE, busca o protocolo, e se estiver FINALIZADO baixa o documento
+    de registro (botao da lupa) salvando em destino_path. Retorna True/False."""
+    with sync_playwright() as p:
+        nav = p.chromium.launch(headless=headless)
+        ctx = nav.new_context(accept_downloads=True)
+        pg = ctx.new_page()
+        try:
+            pg.goto(URL_LOGIN, timeout=60000)
+            pg.wait_for_timeout(2500)
+            _fechar_cookie(pg)
+            pg.fill("#_ctl0_MainContent_txtCPFCNPJ", login)
+            pg.fill("#_ctl0_MainContent_txtSenha", senha)
+            try:
+                pg.click("#_ctl0_MainContent_btnEntrar", timeout=8000)
+            except Exception:
+                pg.eval_on_selector("#_ctl0_MainContent_btnEntrar", "el => el.click()")
+            pg.wait_for_timeout(4000)
+
+            with ctx.expect_page(timeout=10000) as info:
+                try:
+                    pg.click("#_ctl0_MainContent_btnReimpressaoDocumentos", timeout=6000)
+                except Exception:
+                    pg.eval_on_selector("#_ctl0_MainContent_btnReimpressaoDocumentos", "el => el.click()")
+            aba = info.value
+            aba.wait_for_timeout(2500)
+
+            aba.fill("#ctl00_ContentPlaceHolder_txtRequerimento", str(protocolo))
+            aba.wait_for_timeout(400)
+            aba.click("#ctl00_ContentPlaceHolder_btnBuscar")
+            aba.wait_for_timeout(4000)
+
+            linhas_tr = aba.query_selector_all("table tr")
+            for tr in linhas_tr:
+                txt_tr = (tr.inner_text() or "")
+                if str(protocolo) not in txt_tr:
+                    continue
+                if "finalizado" not in txt_tr.lower():
+                    return False
+                botoes = tr.query_selector_all("input[type=submit]")
+                for b_el in botoes:
+                    try:
+                        with aba.expect_download(timeout=15000) as dl_info:
+                            b_el.click()
+                        download = dl_info.value
+                        download.save_as(destino_path)
+                        return True
+                    except Exception:
+                        continue
+            return False
+        except Exception as e:
+            print("Erro ao baixar documento JUCEPE:", str(e)[:150])
+            return False
         finally:
             nav.close()
 

@@ -9,10 +9,12 @@ from dotenv import load_dotenv
 sys.path.insert(0, "/root/atos/backend")
 sys.path.insert(0, "/root/atos/automacao")
 from database import SessionLocal, Processo, Grupo, EmailGrupo
+sys.path.insert(0, "/root/atos/backend")
+from main import corpo_status_cliente, enviar_email_anexo, emails_do_grupo, UPLOADS_DIR, recalcular_status
 from consultar_jucesp import consultar
 from consultar_jucerja import consultar_jucerja, classificar_status_rj
-from consultar_juceb import consultar_juceb, classificar_status_ba
-from consultar_jucepe import consultar_jucepe, classificar_status_pe
+from consultar_juceb import consultar_juceb, classificar_status_ba, baixar_documento_juceb
+from consultar_jucepe import consultar_jucepe, classificar_status_pe, baixar_documento_jucepe
 
 load_dotenv("/root/atos/.env")
 
@@ -216,6 +218,28 @@ def processar_ba(db, agora):
         p.status_jucesp = res.get("status_texto")
         aplicar_classificacao(db, p, res.get("classificacao", "tramitacao"), agora)
         print()
+        if res.get("classificacao") == "deferido" and not p.arquivo_registro:
+            try:
+                nome_arquivo = p.id + "_registro_auto.pdf"
+                caminho = os.path.join(UPLOADS_DIR, nome_arquivo)
+                ok_dl = baixar_documento_juceb(p.numero_protocolo, JUCEB_LOGIN, JUCEB_SENHA, caminho, headless=True)
+                if ok_dl and os.path.exists(caminho):
+                    p.arquivo_registro = nome_arquivo
+                    p.status = recalcular_status(p)
+                    db.commit()
+                    print("   [BA] documento baixado e processo atualizado para:", p.status)
+                    if p.status == "finalizado":
+                        try:
+                            corpo = corpo_status_cliente(p, "Finalizado", "Seu Processo foi Finalizado, em Anexo o Registro.")
+                            for em in emails_do_grupo(db, p.grupo_id):
+                                enviar_email_anexo(em, "Processo Finalizado - " + (p.empresa or ""), corpo, caminho, nome_arquivo)
+                            print("   [BA] e-mail de finalizacao enviado.")
+                        except Exception as e:
+                            print("   [BA] erro ao enviar e-mail de finalizacao:", e)
+                else:
+                    print("   [BA] documento ainda nao disponivel para download (aguardando).")
+            except Exception as e:
+                print("   [BA] erro ao baixar documento automaticamente:", e)
 
 
 def processar_pe(db, agora):
@@ -247,6 +271,28 @@ def processar_pe(db, agora):
         print()
 
 
+        if res.get("classificacao") == "deferido" and not p.arquivo_registro:
+            try:
+                nome_arquivo = p.id + "_registro_auto.pdf"
+                caminho = os.path.join(UPLOADS_DIR, nome_arquivo)
+                ok_dl = baixar_documento_jucepe(p.numero_protocolo, JUCEB_LOGIN, JUCEB_SENHA, caminho, headless=True)
+                if ok_dl and os.path.exists(caminho):
+                    p.arquivo_registro = nome_arquivo
+                    p.status = recalcular_status(p)
+                    db.commit()
+                    print("   [PE] documento baixado e processo atualizado para:", p.status)
+                    if p.status == "finalizado":
+                        try:
+                            corpo = corpo_status_cliente(p, "Finalizado", "Seu Processo foi Finalizado, em Anexo o Registro.")
+                            for em in emails_do_grupo(db, p.grupo_id):
+                                enviar_email_anexo(em, "Processo Finalizado - " + (p.empresa or ""), corpo, caminho, nome_arquivo)
+                            print("   [PE] e-mail de finalizacao enviado.")
+                        except Exception as e:
+                            print("   [PE] erro ao enviar e-mail de finalizacao:", e)
+                else:
+                    print("   [PE] documento ainda nao disponivel para download (aguardando).")
+            except Exception as e:
+                print("   [PE] erro ao baixar documento automaticamente:", e)
 def processar():
     db = SessionLocal()
     agora = datetime.now()

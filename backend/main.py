@@ -380,6 +380,7 @@ Retorne APENAS um JSON válido com esta estrutura exata:
   "cnpj": "XX.XXX.XXX/XXXX-XX",
   "nire": "número NIRE se encontrado",
   "uf": "sigla de 2 letras do estado da sede, ex RJ ou SP",
+  "uf_destino_transferencia": "APENAS se a ata tratar de TRANSFERENCIA DE SEDE para outro Estado (mudanca de endereco da sede social de um Estado para outro, nao mudanca de endereco dentro do mesmo Estado): informe a sigla de 2 letras do Estado de DESTINO. Caso contrario deixe vazio.",
   "tipo_sociedade": "SA ou LTDA",
   "tipo_ato": "AGO, AGE, AGOE, RCA, ALTERACAO_CONTRATUAL, ARS etc",
   "identificador_ato": "ex: RCA 25/05/2026, 39ª Alteração Contratual, AGE 10/05/2026",
@@ -767,9 +768,46 @@ MARCADORES_ANEXO = [
     "balanco patrimonial", "balanço patrimonial", "sped", "prospecto",
     "diario oficial", "diário oficial",
     "carteira de identidade", "documento de identidade", "doc identidade", "identidade",
-    "registro geral", "cnh", "carteira nacional de habilitacao", "carteira nacional de habilitação", "habilitacao", "habilitação",
+    "lista de presenca", "lista de presenca de socios", "lista de presenca de acionistas", "registro geral", "cnh", "carteira nacional de habilitacao", "carteira nacional de habilitação", "habilitacao", "habilitação",
 ]
 EXT_IMAGEM = {".jpg", ".jpeg", ".png"}
+
+def _gemini_texto_documento(caminho_pdf):
+    import base64, json, urllib.request
+    if not GEMINI_KEY:
+        return None
+    try:
+        with open(caminho_pdf, "rb") as f:
+            pdf_b64 = base64.b64encode(f.read()).decode()
+        prompt = ("Transcreva todo o texto visivel deste documento (ata, certidao ou comprovante de registro "
+                  "de Junta Comercial), incluindo carimbos, selos e textos de certificacao de registro/arquivamento. "
+                  "Responda APENAS com o texto transcrito, sem comentarios.")
+        body = {"contents": [{"parts": [{"text": prompt}, {"inline_data": {"mime_type": "application/pdf", "data": pdf_b64}}]}]}
+        url = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=" + GEMINI_KEY
+        req = urllib.request.Request(url, data=json.dumps(body).encode(), headers={"Content-Type": "application/json"})
+        resp = urllib.request.urlopen(req, timeout=40)
+        data = json.loads(resp.read().decode())
+        txt = data["candidates"][0]["content"]["parts"][0]["text"].strip()
+        return txt
+    except Exception as e:
+        print("Gemini texto documento falhou:", e)
+        return None
+
+def _tesseract_texto_documento(caminho_pdf):
+    import subprocess, os, glob, tempfile
+    try:
+        d = tempfile.mkdtemp()
+        subprocess.run(["pdftoppm", "-r", "300", "-png", caminho_pdf, os.path.join(d, "pg")], check=True, timeout=90)
+        texto = ""
+        for img in sorted(glob.glob(os.path.join(d, "*.png"))):
+            out = subprocess.run(["tesseract", img, "stdout", "-l", "por"], capture_output=True, text=True, timeout=60)
+            if not out.stdout.strip():
+                out = subprocess.run(["tesseract", img, "stdout"], capture_output=True, text=True, timeout=60)
+            texto += out.stdout + "\n"
+        return texto
+    except Exception as e:
+        print("Tesseract texto documento falhou:", e)
+        return None
 
 def _extrair_texto_bytes(conteudo: bytes, nome: str) -> str:
     import tempfile
@@ -783,7 +821,16 @@ def _extrair_texto_bytes(conteudo: bytes, nome: str) -> str:
             doc = fitz.open(tmp)
             for page in doc:
                 texto += page.get_text()
-            doc.close(); os.unlink(tmp)
+            doc.close()
+            print("DEBUG_EXTRACAO nome=", repr(nome), "| texto_direto_len=", len(texto.strip()), "| trecho=", repr(texto.strip()[:150]))
+            if len(texto.strip()) < 50:
+                texto_extra = _gemini_texto_documento(tmp)
+                if not texto_extra:
+                    texto_extra = _tesseract_texto_documento(tmp)
+                if texto_extra:
+                    texto = texto_extra
+                    print("Texto extraido via OCR/Gemini para:", nome, "| novo_len=", len(texto))
+            os.unlink(tmp)
         elif nm.endswith(".docx"):
             import docx as docx_lib
             with tempfile.NamedTemporaryFile(delete=False, suffix=".docx") as f:
@@ -797,36 +844,51 @@ def _extrair_texto_bytes(conteudo: bytes, nome: str) -> str:
         texto = ""
     return texto
 
+def _ja_registrada(texto_l: str) -> bool:
+    """Detecta se o texto e' de uma ata JA REGISTRADA (comprovante de arquivamento),
+    e portanto nunca deve ser tratada como documento principal (novo ato)."""
+    tem_certifico = ("certifico o registro" in texto_l) or ("certifico o arquivamento" in texto_l)
+    tem_sob_num = "sob o n" in texto_l
+    return tem_certifico and tem_sob_num
+
 def _classificar(nome: str, texto: str):
-    import os as _os
-    nome_l = (nome or "").lower()
-    texto_l = (texto[:4000] or "").lower()
-    ext = _os.path.splitext(nome_l)[1]
+    import os as _os, unicodedata
+    def _sa(s):
+        s = (s or "").lower()
+        return "".join(c for c in unicodedata.normalize("NFD", s) if unicodedata.category(c) != "Mn")
+    nome_l = _sa(nome)
+    texto_l = _sa(texto[:4000])
+    ext = _os.path.splitext((nome or "").lower())[1]
     score = 0
     tipo = None
     # PASSO 1 - nome do arquivo (prioridade)
     for t, marcs in TIPOS_PRINCIPAIS.items():
         for m in marcs:
-            if m in nome_l:
+            if _sa(m) in nome_l:
                 score += 20
                 if tipo is None:
                     tipo = t
     for m in MARCADORES_ANEXO:
-        if m in nome_l:
+        if _sa(m) in nome_l:
             score -= 12
     # PASSO 2 - conteudo (confirma/desempata)
     for t, marcs in TIPOS_PRINCIPAIS.items():
         for m in marcs:
-            if m in texto_l:
+            if _sa(m) in texto_l:
                 score += 10
                 if tipo is None:
                     tipo = t
     for m in MARCADORES_ANEXO:
-        if m in texto_l:
+        if _sa(m) in texto_l:
             score -= 4
     # PASSO 3 - imagem inclina a anexo (nao proibe)
     if ext in EXT_IMAGEM:
         score -= 6
+    _jr = _ja_registrada(texto_l)
+    print("DEBUG_JAREG nome=", repr(nome), "| ja_registrada=", _jr, "| trecho=", repr(texto_l[:300]))
+    if _jr:
+        tipo = None
+        score -= 200
     return tipo, score
 
 # ===== APRENDIZADO POR REGRAS ACUMULADAS =====
@@ -944,6 +1006,102 @@ async def analisar_pasta(arquivos: list[UploadFile] = File(...), x_token: str = 
         "confirmacao_pendente": pendente,
         "tipos_disponiveis": list(TIPOS_PRINCIPAIS.keys()),
         "candidatos": [{"indice": i["indice"], "nome": i["nome"], "tipo": i["tipo"], "score": i["score"]} for i in ordenados],
+    }
+
+def _filtrar_origem_destino(principais_out):
+    """Se dois principais do mesmo lote forem a mesma empresa/ato/data mas UFs diferentes,
+    e um apontar (uf_destino_transferencia) para a UF do outro, mantem so o de ORIGEM
+    (o destino sera criado automaticamente depois, via _criar_processo_transferencia)."""
+    def chave(item):
+        d = item.get("dados") or {}
+        return (_norm(d.get("empresa")), _norm(d.get("identificador_ato")), _norm(d.get("data_ata")))
+    descartar = set()
+    for i, a in enumerate(principais_out):
+        for j, b in enumerate(principais_out):
+            if i == j or i in descartar or j in descartar:
+                continue
+            if chave(a) != chave(b) or not chave(a)[0]:
+                continue
+            da = a.get("dados") or {}
+            db_ = b.get("dados") or {}
+            uf_a = (da.get("uf") or "").upper().strip()
+            uf_b = (db_.get("uf") or "").upper().strip()
+            dest_a = (da.get("uf_destino_transferencia") or "").upper().strip()
+            dest_b = (db_.get("uf_destino_transferencia") or "").upper().strip()
+            if dest_a and dest_a == uf_b:
+                descartar.add(j)  # b e' o destino de a -> descarta b
+            elif dest_b and dest_b == uf_a:
+                descartar.add(i)  # a e' o destino de b -> descarta a
+    return [p for k, p in enumerate(principais_out) if k not in descartar]
+
+def _sa_texto_local(s):
+    import unicodedata
+    s = (s or "").lower()
+    return "".join(c for c in unicodedata.normalize("NFD", s) if unicodedata.category(c) != "Mn")
+
+@app.post("/processos/analisar-pasta-multi")
+async def analisar_pasta_multi(arquivos: list[UploadFile] = File(...), x_token: str = Header(None), db: Session = Depends(get_db)):
+    """Detecta TODOS os documentos principais numa pasta/subpasta (nao so o melhor).
+    Se houver mais de um principal, cada um vira um processo, e os demais arquivos
+    (anexos) sao compartilhados/replicados entre todos os processos gerados."""
+    if not x_token:
+        raise HTTPException(status_code=401, detail="Token necessario")
+    usuario = validar_token(x_token, db)
+    if not usuario:
+        raise HTTPException(status_code=401, detail="Token invalido ou sessao expirada")
+    itens = []
+    for idx, arq in enumerate(arquivos):
+        conteudo = await arq.read()
+        texto = _extrair_texto_bytes(conteudo, arq.filename or "")
+        tipo, score = _classificar(arq.filename or "", texto)
+        regra = consultar_regras(arq.filename or "", texto, db)
+        if regra:
+            if regra.get("classificacao") == "principal":
+                score += 100 + (regra.get("peso") or 1)
+                if regra.get("tipo_correto"):
+                    tipo = regra.get("tipo_correto")
+            elif regra.get("classificacao") == "anexo":
+                score -= 100 + (regra.get("peso") or 1)
+        ja_reg_flag = _ja_registrada(_sa_texto_local(texto[:4000]))
+        itens.append({"indice": idx, "nome": arq.filename or ("arquivo_" + str(idx)), "texto": texto, "tipo": tipo, "score": score, "ja_reg": ja_reg_flag})
+    if not itens:
+        raise HTTPException(status_code=400, detail="Nenhum arquivo recebido.")
+
+    bateram = [i for i in itens if i["tipo"] is not None and i["score"] > 0]
+    pendente = False
+    if len(bateram) >= 1:
+        principais_itens = bateram
+    else:
+        candidatos_fallback = [i for i in itens if not i.get("ja_reg")]
+        if not candidatos_fallback:
+            principais_itens = []
+        else:
+            ordenados = sorted(candidatos_fallback, key=lambda x: x["score"], reverse=True)
+            principais_itens = [ordenados[0]]
+            pendente = True
+
+    indices_principais = {i["indice"] for i in principais_itens}
+    anexos = [{"indice": i["indice"], "nome": i["nome"]} for i in itens if i["indice"] not in indices_principais]
+
+    principais_out = []
+    for i in principais_itens:
+        dados = analisar_ata_ia(i["texto"]) if i["texto"].strip() else {}
+        if i["tipo"]:
+            dados["tipo_ato"] = dados.get("tipo_ato") or i["tipo"]
+        principais_out.append({"indice": i["indice"], "nome": i["nome"], "tipo_sugerido": i["tipo"], "dados": dados, "score": i["score"]})
+
+    for _pp in principais_out:
+        _dd = _pp.get("dados") or {}
+        print("DEBUG_DEDUP antes: nome=", _pp.get("nome"), "| empresa=", _dd.get("empresa"), "| ato=", _dd.get("identificador_ato"), "| data=", _dd.get("data_ata"), "| uf=", _dd.get("uf"), "| uf_destino=", _dd.get("uf_destino_transferencia"))
+    principais_out = _filtrar_origem_destino(principais_out)
+    print("DEBUG_DEDUP depois: total=", len(principais_out))
+
+    return {
+        "principais": principais_out,
+        "anexos": anexos,
+        "multiplo": len(principais_out) > 1,
+        "confirmacao_pendente": pendente,
+        "tipos_disponiveis": list(TIPOS_PRINCIPAIS.keys()),
     }
 
 @app.get("/processos/pendentes")
@@ -1090,7 +1248,8 @@ async def criar_processo(
         observacoes=info.get("observacoes", ""),
         status="aberto",
         arquivo_ata=arquivo_ata,
-        grupo_id=grupo_id
+        grupo_id=grupo_id,
+        uf_destino_transferencia=(info.get("uf_destino_transferencia") or "").upper().strip()[:2] or None
     )
     db.add(p)
     db.commit()
@@ -1101,6 +1260,60 @@ async def criar_processo(
     except Exception as e:
         print("Erro ao notificar abertura:", e)
     return {"id": processo_id, "mensagem": "Processo criado com sucesso"}
+
+def _criar_processo_transferencia(db, p_origem):
+    """Cria automaticamente o processo de destino apos a origem ser finalizada,
+    quando a ata identificou transferencia de sede interestadual."""
+    uf_destino = (p_origem.uf_destino_transferencia or "").strip().upper()
+    if not uf_destino or p_origem.transferencia_criada:
+        return None
+    novo_id = f"MN-{datetime.now().strftime('%Y%m%d%H%M%S')}-{str(uuid.uuid4())[:4].upper()}"
+    obs = f"Processo criado automaticamente apos transferencia de sede. Origem: {p_origem.id} ({p_origem.uf or '-'})."
+    novo = Processo(
+        id=novo_id,
+        empresa=p_origem.empresa,
+        cnpj=p_origem.cnpj,
+        nire=p_origem.nire,
+        uf=uf_destino,
+        tipo_sociedade=p_origem.tipo_sociedade,
+        tipo_ato=p_origem.tipo_ato,
+        identificador_ato=(p_origem.identificador_ato or "") + " - Transferencia de Sede (Destino)",
+        data_ata=p_origem.data_ata,
+        hora_ata=p_origem.hora_ata,
+        email_cliente=p_origem.email_cliente,
+        observacoes=obs,
+        status="aberto",
+        grupo_id=p_origem.grupo_id,
+        processo_origem_id=p_origem.id,
+    )
+    db.add(novo)
+    db.flush()
+    # anexa a ata de origem (ja registrada) como comprovante no processo novo
+    if p_origem.arquivo_ata:
+        try:
+            origem_path = os.path.join(UPLOADS_DIR, p_origem.arquivo_ata)
+            if os.path.exists(origem_path):
+                ext = os.path.splitext(p_origem.arquivo_ata)[1]
+                anexo_id = str(uuid.uuid4())
+                nome_anexo = "anexo_" + anexo_id + ext
+                destino_path = os.path.join(UPLOADS_DIR, nome_anexo)
+                with open(origem_path, "rb") as fr, open(destino_path, "wb") as fw:
+                    fw.write(fr.read())
+                db.add(Anexo(
+                    id=anexo_id, processo_id=novo_id, arquivo=nome_anexo,
+                    nome_original="Ata registrada (origem " + (p_origem.uf or "") + ")",
+                    descricao="Comprovante de registro na Junta de origem, anexado automaticamente.",
+                    enviado_por="sistema",
+                ))
+        except Exception as e:
+            print("Erro ao anexar ata de origem no processo de transferencia:", e)
+    p_origem.transferencia_criada = True
+    db.commit()
+    try:
+        notificar_telegram(f"ATOS - Transferencia de sede\nProcesso de destino criado: {novo_id}\nEmpresa: {p_origem.empresa}\nDestino: {uf_destino}\nAguardando protocolo.")
+    except Exception:
+        pass
+    return novo_id
 
 def recalcular_status(p):
     # Prioridade: registro(finalizado) > exigencia > deferido(automacao) > protocolo(tramitacao) > aberto
@@ -1222,6 +1435,10 @@ async def upload_arquivo(
                 corpo = corpo_status_cliente(p, "Finalizado", "Seu Processo foi Finalizado, em Anexo o Registro.")
                 for em in emails_do_grupo(db, p.grupo_id):
                     enviar_email_anexo(em, "Processo Finalizado - " + (p.empresa or ""), corpo, caminho, nome_arquivo)
+                try:
+                    _criar_processo_transferencia(db, p)
+                except Exception as e:
+                    print("Erro ao criar processo de transferencia:", e)
         except Exception as e:
             print("Erro ao notificar upload:", e)
 

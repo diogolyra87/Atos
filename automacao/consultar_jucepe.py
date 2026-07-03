@@ -67,6 +67,19 @@ def consultar_jucepe(protocolo, login, senha, headless=True):
             except Exception:
                 return {"erro": "tabela de resultado nao apareceu"}
 
+            # tenta achar botao de exigencia na linha do protocolo (a JUCEPE mostra "EM EXIGENCIA" como botao, nao texto)
+            linhas_tr = aba.query_selector_all("table tr")
+            for tr in linhas_tr:
+                txt_tr = (tr.inner_text() or "")
+                if str(protocolo) in txt_tr:
+                    botoes = tr.query_selector_all("input[type=submit]")
+                    for b_el in botoes:
+                        val = (b_el.get_attribute("value") or "").strip()
+                        if val and "atualizar" not in val.lower() and val not in ("", "\ufffd\"", "\ufffd"):
+                            status_final = (txt_tr.strip()[:150] + " | " + val)[:200]
+                            return {"status_texto": status_final, "classificacao": classificar_status_pe(val)}
+                    if txt_tr.strip():
+                        return {"status_texto": txt_tr.strip()[:200], "classificacao": classificar_status_pe(txt_tr)}
             corpo = aba.inner_text("body")
             # procura a linha que contem o protocolo
             for linha in corpo.split("\n"):

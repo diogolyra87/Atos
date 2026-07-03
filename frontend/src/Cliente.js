@@ -281,6 +281,60 @@ export function Painel({ sessao, onSair }) {
       window.URL.revokeObjectURL(url);
     } catch (e) { alert("Nao foi possivel gerar o relatorio."); }
   }
+  function agruparPorPasta(arquivos) {
+    const grupos = {};
+    for (const f of arquivos) {
+      const rel = f.webkitRelativePath || f._relPath || f.name;
+      const partes = rel.split("/");
+      partes.pop();
+      const chave = partes.join("/") || "(raiz)";
+      if (!grupos[chave]) grupos[chave] = [];
+      grupos[chave].push(f);
+    }
+    return grupos;
+  }
+
+  async function processarGrupoPasta(arquivos, extras) {
+    extras = extras || [];
+    const fdA = new FormData();
+    arquivos.forEach(a => fdA.append("arquivos", a));
+    const res = await axios.post(`${API}/processos/analisar-pasta-multi`, fdA, { headers: { "x-token": sessao.token } });
+    const r = res.data || {};
+    const principais = r.principais || [];
+    const anexosGrupo = (r.anexos || []).map(ax => arquivos[ax.indice]).concat(extras);
+    let criados = 0, anexosOk = 0, anexosErro = 0;
+    for (const principal of principais) {
+      const dados = principal.dados || {};
+      if (!principal.tipo_sugerido) {
+        const ok = window.confirm("AVISO\n\nDocumento Sem Valor Societario!\n\nPossivel Anexo ou Documento Complementar!\n\n(" + principal.nome + ")\n\nDeseja Seguir Com a Insercao?");
+        if (!ok) { continue; }
+        dados.uf = "";
+        if (!dados.empresa) { dados.empresa = "Documento desconhecido"; dados.identificador_ato = "Documento desconhecido - " + (sessao.login || sessao.usuario || ""); }
+      }
+      if (r.confirmacao_pendente) { dados.confirmacao_pendente = true; dados.tipo_ato_sugerido = principal.tipo_sugerido || ""; }
+      const segueDup = await checarDup(dados);
+      if (!segueDup) { continue; }
+      const fd2 = new FormData();
+      fd2.append("arquivo", arquivos[principal.indice]);
+      fd2.append("dados", JSON.stringify(dados));
+      const criado = await axios.post(`${API}/processos`, fd2, { headers: { "x-token": sessao.token } });
+      const novoId = criado.data && (criado.data.id || criado.data.processo_id);
+      criados++;
+      if (novoId) {
+        for (const arqAnexo of anexosGrupo) {
+          try {
+            const fda = new FormData();
+            fda.append("arquivo", arqAnexo);
+            fda.append("descricao", "");
+            await axios.post(`${API}/processos/${novoId}/anexos`, fda, { headers: { "x-token": sessao.token } });
+            anexosOk++;
+          } catch (e) { anexosErro++; }
+        }
+      }
+    }
+    return { criados, anexosOk, anexosErro };
+  }
+
   async function processarPasta(fileList) {
     const arquivos = Array.from(fileList).filter(f => {
       const n = f.name.toLowerCase();
@@ -288,50 +342,47 @@ export function Painel({ sessao, onSair }) {
     });
     if (arquivos.length === 0) { alert("Nenhum arquivo valido na pasta."); return; }
     if (arquivos.length === 1) { return processarArquivos(fileList); }
-    setSubindo(true);
-    setProgresso({ feitos: 0, total: 1, erros: 0 });
-    try {
-      const fdA = new FormData();
-      arquivos.forEach(a => fdA.append("arquivos", a));
-      const res = await axios.post(`${API}/processos/analisar-pasta`, fdA, { headers: { "x-token": sessao.token } });
-      const r = res.data || {};
-      const principal = r.principal || {};
-      const idxPrincipal = principal.indice;
-      const dados = principal.dados || {};
-      if (!principal.tipo_sugerido) {
-        const ok = window.confirm("AVISO\n\nDocumento Sem Valor Societario!\n\nPossivel Anexo ou Documento Complementar!\n\nDeseja Seguir Com a Insercao?");
-        if (!ok) { setSubindo(false); return; }
-        dados.uf = "";
-        if (!dados.empresa) { dados.empresa = "Documento desconhecido"; dados.identificador_ato = "Documento desconhecido - " + (sessao.login || sessao.usuario || ""); }
-      }
-      if (r.confirmacao_pendente) { dados.confirmacao_pendente = true; dados.tipo_ato_sugerido = principal.tipo_sugerido || ""; }
-      const segueDup = await checarDup(dados);
-      if (!segueDup) { setSubindo(false); return; }
-      const arqPrincipal = arquivos[idxPrincipal];
-      const fd2 = new FormData();
-      fd2.append("arquivo", arqPrincipal);
-      fd2.append("dados", JSON.stringify(dados));
-      const criado = await axios.post(`${API}/processos`, fd2, { headers: { "x-token": sessao.token } });
-      const novoId = criado.data && (criado.data.id || criado.data.processo_id);
-      let anexErros = 0;
-      if (novoId && Array.isArray(r.anexos)) {
-        for (const ax of r.anexos) {
-          try {
-            const fda = new FormData();
-            fda.append("arquivo", arquivos[ax.indice]);
-            fda.append("descricao", "");
-            await axios.post(`${API}/processos/${novoId}/anexos`, fda, { headers: { "x-token": sessao.token } });
-          } catch (e) { anexErros++; }
+    const grupos = agruparPorPasta(arquivos);
+    let chaves = Object.keys(grupos);
+    let extrasDaRaiz = [];
+    const temSubpastas = chaves.some(k => k !== "(raiz)");
+    if (temSubpastas && grupos["(raiz)"]) {
+      const raizArquivos = grupos["(raiz)"];
+      try {
+        const fdR = new FormData();
+        raizArquivos.forEach(a => fdR.append("arquivos", a));
+        const resR = await axios.post(`${API}/processos/analisar-pasta-multi`, fdR, { headers: { "x-token": sessao.token } });
+        const rR = resR.data || {};
+        const principaisRaiz = rR.principais || [];
+        const anexosRaiz = rR.anexos || [];
+        extrasDaRaiz = anexosRaiz.map(ax => raizArquivos[ax.indice]);
+        if (principaisRaiz.length > 0) {
+          grupos["(raiz-principal)"] = principaisRaiz.map(pr => raizArquivos[pr.indice]);
         }
+      } catch (e) {
+        extrasDaRaiz = grupos["(raiz)"];
       }
-      setProgresso({ feitos: 1, total: 1, erros: 0 });
-      setSubindo(false);
-      await carregar();
-      alert(`Processo criado. Principal: ${principal.nome}. Anexos: ${(r.anexos||[]).length - anexErros}${anexErros ? ` (${anexErros} falharam)` : ""}.`);
-    } catch (e) {
-      setSubindo(false);
-      alert("Erro ao processar a pasta.");
+      delete grupos["(raiz)"];
+      chaves = Object.keys(grupos);
     }
+    setSubindo(true);
+    setProgresso({ feitos: 0, total: chaves.length, erros: 0 });
+    let totalCriados = 0, totalAnexosOk = 0, totalAnexosErro = 0, gruposErro = 0;
+    for (let i = 0; i < chaves.length; i++) {
+      try {
+        const extras = chaves[i] === "(raiz-principal)" ? [] : extrasDaRaiz;
+        const res = await processarGrupoPasta(grupos[chaves[i]], extras);
+        totalCriados += res.criados;
+        totalAnexosOk += res.anexosOk;
+        totalAnexosErro += res.anexosErro;
+      } catch (e) {
+        gruposErro++;
+      }
+      setProgresso({ feitos: i + 1, total: chaves.length, erros: gruposErro });
+    }
+    setSubindo(false);
+    await carregar();
+    alert(`Concluido: ${totalCriados} processo(s) criado(s) em ${chaves.length} pasta(s). Anexos: ${totalAnexosOk}${totalAnexosErro ? ` (${totalAnexosErro} falharam)` : ""}.${gruposErro ? ` ${gruposErro} pasta(s) com erro.` : ""}`);
   }
   async function checarDup(dados) {
     try {
@@ -433,13 +484,25 @@ export function Painel({ sessao, onSair }) {
                   if (items && items.length && items[0].webkitGetAsEntry) {
                     const arquivos = [];
                     let pendentes = 0;
+                    let lendoDiretorios = 0;
+                    const finalizarSeVazio = () => { if (pendentes === 0 && lendoDiretorios === 0) processarPasta(arquivos); };
+                    const lerDiretorioCompleto = (dirEntry, callback) => {
+                      const reader = dirEntry.createReader();
+                      let todos = [];
+                      const lerLote = () => { reader.readEntries(ents => { if (ents.length === 0) { callback(todos); return; } todos = todos.concat(ents); lerLote(); }); };
+                      lerLote();
+                    };
                     const lerEntry = (entry) => {
                       if (entry.isFile) {
                         pendentes++;
-                        entry.file(f => { arquivos.push(f); pendentes--; if (pendentes === 0) processarArquivos(arquivos); });
+                        entry.file(f => {
+                          const rel = (entry.fullPath || ("/" + f.name)).replace(/^\//, "");
+                          try { Object.defineProperty(f, "webkitRelativePath", { value: rel, configurable: true }); } catch (err) { f._relPath = rel; }
+                          arquivos.push(f); pendentes--; finalizarSeVazio();
+                        });
                       } else if (entry.isDirectory) {
-                        const reader = entry.createReader();
-                        reader.readEntries(ents => { ents.forEach(lerEntry); });
+                        lendoDiretorios++;
+                        lerDiretorioCompleto(entry, (ents) => { lendoDiretorios--; ents.forEach(lerEntry); finalizarSeVazio(); });
                       }
                     };
                     for (let i = 0; i < items.length; i++) {
@@ -487,7 +550,7 @@ export function Painel({ sessao, onSair }) {
                       <div key={p.id} style={s.row}>
                         <div>
                           <div style={s.empresa}>{p.empresa}</div>
-                          <div style={s.metaEmp}>{p.cnpj}{p.nire ? ` · NIRE ${p.nire}` : ""}</div>
+                          <div style={s.metaEmp}>CNPJ {p.cnpj}{p.nire ? ` · NIRE ${p.nire}` : ""}</div>
                         </div>
                         <div style={s.cell}>{p.uf || "—"}</div>
                         <div style={s.cell}>{abreviarAto(p.identificador_ato, p.data_ata)}</div>

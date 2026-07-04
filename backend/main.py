@@ -1,4 +1,4 @@
-from fastapi import FastAPI, Depends, UploadFile, File, Form, HTTPException, Header, BackgroundTasks, Request
+﻿from fastapi import FastAPI, Depends, UploadFile, File, Form, HTTPException, Header, BackgroundTasks, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from sqlalchemy.orm import Session
@@ -273,7 +273,7 @@ def corpo_status_cliente(p, status_label, frase_final):
 def rodape_atos():
     return (
         '<div style="border-top:1px solid #eef1f5;padding:18px 24px;background:#f7f9fc;">'
-        '<div style="font-size:26px;font-weight:bold;color:#111111;letter-spacing:-1px;line-height:1;">atos<span style="color:#d85a30;">.</span></div>'
+        '<div style="font-size:26px;font-weight:bold;color:#111111;letter-spacing:-1px;line-height:1;">atos<span style="color:#2d6cdf;">.</span></div>'
         '<div style="font-size:11px;color:#5a7088;letter-spacing:1px;margin-top:2px;">Gestao Societaria</div>'
         '<div style="font-size:11px;color:#9aa4b2;margin-top:8px;">contato@atos.net.br &middot; atos.net.br</div>'
         '</div>'
@@ -314,7 +314,7 @@ def _disparar_convites(nome, link, emails):
     )
     corpo_html = (
         '<div style="font-family:Arial,Helvetica,sans-serif;max-width:480px;margin:0 auto;color:#241b4a;">'
-        '<h2 style="color:#111111;margin:0 0 4px;">atos<span style="color:#d85a30;">.</span></h2>'
+        '<h2 style="color:#111111;margin:0 0 4px;">atos<span style="color:#2d6cdf;">.</span></h2>'
         '<p style="font-size:12px;color:#7a7790;margin:0 0 18px;">Gestao Societaria</p>'
         '<p>Ola!</p>'
         '<p>Voce foi cadastrado para acessar o sistema <strong>Atos - Gestao Societaria</strong>, no grupo <strong>' + nome + '</strong>.</p>'

@@ -809,6 +809,23 @@ def _tesseract_texto_documento(caminho_pdf):
         print("Tesseract texto documento falhou:", e)
         return None
 
+def _texto_parece_valido(texto: str) -> bool:
+    """Detecta texto corrompido (fonte de PDF sem mapeamento Unicode correto).
+    Um texto extraido corretamente deve ter alta proporcao de caracteres validos
+    e conter palavras comuns em portugues."""
+    import re
+    if not texto or len(texto.strip()) < 50:
+        return False
+    validos = re.findall(r"[a-z0-9\u00e1\u00e0\u00e2\u00e3\u00e9\u00ea\u00ed\u00f3\u00f4\u00f5\u00fa\u00fc\u00e7A-Z\s.,;:()\-/\u00ba\u00aa%]", texto)
+    proporcao_valida = len(validos) / max(len(texto), 1)
+    if proporcao_valida < 0.85:
+        return False
+    t = texto.lower()
+    palavras_comuns = [" de ", " da ", " do ", " que ", " para ", " com ", " em ", " uma ", " os ", " as ", " e "]
+    if not any(p in t for p in palavras_comuns):
+        return False
+    return True
+
 def _extrair_texto_bytes(conteudo: bytes, nome: str) -> str:
     import tempfile
     nm = (nome or "").lower()
@@ -823,7 +840,7 @@ def _extrair_texto_bytes(conteudo: bytes, nome: str) -> str:
                 texto += page.get_text()
             doc.close()
             print("DEBUG_EXTRACAO nome=", repr(nome), "| texto_direto_len=", len(texto.strip()), "| trecho=", repr(texto.strip()[:150]))
-            if len(texto.strip()) < 50:
+            if not _texto_parece_valido(texto):
                 texto_extra = _gemini_texto_documento(tmp)
                 if not texto_extra:
                     texto_extra = _tesseract_texto_documento(tmp)
@@ -1164,33 +1181,10 @@ async def analisar_documento(arquivo: UploadFile = File(...), x_token: str = Hea
     usuario = validar_token(x_token, db)
     if not usuario:
         raise HTTPException(status_code=401, detail="Token invalido ou sessao expirada")
-    import fitz
-    import docx as docx_lib
 
     conteudo = await arquivo.read()
-    nome = arquivo.filename.lower()
-    texto = ""
-
-    if nome.endswith(".pdf"):
-        import tempfile
-        with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as f:
-            f.write(conteudo)
-            tmp = f.name
-        doc = fitz.open(tmp)
-        for page in doc:
-            texto += page.get_text()
-        doc.close()
-        os.unlink(tmp)
-    elif nome.endswith(".docx"):
-        import tempfile
-        with tempfile.NamedTemporaryFile(delete=False, suffix=".docx") as f:
-            f.write(conteudo)
-            tmp = f.name
-        doc = docx_lib.Document(tmp)
-        texto = "\n".join([p.text for p in doc.paragraphs if p.text.strip()])
-        os.unlink(tmp)
-    else:
-        texto = conteudo.decode("utf-8", errors="ignore")
+    nome = arquivo.filename or ""
+    texto = _extrair_texto_bytes(conteudo, nome)
 
     dados = analisar_ata_ia(texto)
     return dados
@@ -1210,6 +1204,17 @@ async def criar_processo(
     usuario_tok = validar_token(x_token, db)
     if not usuario_tok:
         raise HTTPException(status_code=401, detail="Token invalido ou sessao expirada")
+
+    obrigatorios = {
+        "empresa": (info.get("empresa") or "").strip(),
+        "tipo_ato": (info.get("tipo_ato") or "").strip(),
+        "uf": (info.get("uf") or "").strip(),
+        "data_ata": (info.get("data_ata") or "").strip(),
+    }
+    faltando = [campo for campo, valor in obrigatorios.items() if not valor]
+    if faltando:
+        raise HTTPException(status_code=400, detail="Nao foi possivel identificar os campos obrigatorios: " + ", ".join(faltando) + ". Revise o documento manualmente antes de criar o processo.")
+
     grupo_id = None
     if usuario_tok.is_admin:
         codigo_grupo = info.get("codigo_grupo", "").strip()

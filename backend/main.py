@@ -1208,7 +1208,6 @@ async def criar_processo(
     obrigatorios = {
         "empresa": (info.get("empresa") or "").strip(),
         "tipo_ato": (info.get("tipo_ato") or "").strip(),
-        "uf": (info.get("uf") or "").strip(),
         "data_ata": (info.get("data_ata") or "").strip(),
     }
     faltando = [campo for campo, valor in obrigatorios.items() if not valor]

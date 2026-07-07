@@ -401,7 +401,20 @@ Retorne APENAS um JSON válido com esta estrutura exata:
     )
     texto = resposta.choices[0].message.content
     texto_limpo = texto.replace("```json", "").replace("```", "").strip()
-    return json.loads(texto_limpo)
+    dados = json.loads(texto_limpo)
+
+    # Fallback: se a UF nao foi identificada pelo endereco da ata, infere pelo prefixo do NIRE
+    # 333/332 = RJ | 353/352 = SP
+    # (lista sera expandida com mais UFs futuramente)
+    if not (dados.get("uf") or "").strip():
+        nire_digitos = "".join(c for c in (dados.get("nire") or "") if c.isdigit())
+        prefixo_nire = nire_digitos[:3]
+        if prefixo_nire in ("333", "332"):
+            dados["uf"] = "RJ"
+        elif prefixo_nire in ("353", "352"):
+            dados["uf"] = "SP"
+
+    return dados
 
 # ============================================================
 # ROTAS

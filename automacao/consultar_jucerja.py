@@ -1,6 +1,16 @@
 ﻿# -*- coding: utf-8 -*-
 import unicodedata
+import re
 from playwright.sync_api import sync_playwright
+
+def _formatar_protocolo_jucerja(protocolo):
+    """Normaliza o numero de protocolo para o formato YYYY/NNNNNNNN-N exigido
+    pelo campo de busca da JUCERJA, independente de como esta salvo no banco
+    (com ou sem barra/traco)."""
+    digitos = re.sub(r"\D", "", protocolo or "")
+    if len(digitos) == 13:
+        return digitos[:4] + "/" + digitos[4:12] + "-" + digitos[12]
+    return protocolo
 
 URL_LOGIN = "https://www.jucerja.rj.gov.br/Conta/Entrar?returnUrl=%2FServicos%2FProtocolo%2FTermoUtilizacaoProtocolo"
 URL_CONSULTA = "https://www.jucerja.rj.gov.br/Servicos/Protocolo/ProtocoloConsultas"
@@ -25,6 +35,7 @@ def classificar_status_rj(status_texto):
     return "tramitacao"
 
 def consultar_jucerja(protocolo, usuario, senha, headless=True):
+    protocolo = _formatar_protocolo_jucerja(protocolo)
     with sync_playwright() as p:
         navegador = p.chromium.launch(headless=headless)
         pagina = navegador.new_page()
@@ -79,6 +90,7 @@ def consultar_jucerja(protocolo, usuario, senha, headless=True):
             navegador.close()
 
 def baixar_documento_jucerja(protocolo, usuario, senha, destino_path, headless=True):
+    protocolo = _formatar_protocolo_jucerja(protocolo)
     """Loga na JUCERJA, busca o protocolo, e se estiver DEFERIDO/FINALIZADO baixa
     o Documento Digital (.p7s), extrai o PDF real de dentro do envelope PKCS#7
     via openssl, e salva o PDF final em destino_path. Retorna True/False."""

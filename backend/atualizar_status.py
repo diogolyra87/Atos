@@ -1,4 +1,4 @@
-# -*- coding: utf-8 -*-
+﻿# -*- coding: utf-8 -*-
 import sys, os
 import smtplib
 from email.mime.multipart import MIMEMultipart
@@ -12,7 +12,7 @@ from database import SessionLocal, Processo, Grupo, EmailGrupo
 sys.path.insert(0, "/root/atos/backend")
 from main import corpo_status_cliente, enviar_email_anexo, emails_do_grupo, UPLOADS_DIR, recalcular_status
 from consultar_jucesp import consultar
-from consultar_jucerja import consultar_jucerja, classificar_status_rj
+from consultar_jucerja import consultar_jucerja, classificar_status_rj, baixar_documento_jucerja
 from consultar_juceb import consultar_juceb, classificar_status_ba, baixar_documento_juceb
 from consultar_jucepe import consultar_jucepe, classificar_status_pe, baixar_documento_jucepe
 
@@ -189,6 +189,28 @@ def processar_rj(db, agora):
         p.status_jucesp = res.get("status_texto")
         aplicar_classificacao(db, p, res.get("classificacao", "tramitacao"), agora)
         print()
+        if res.get("classificacao") == "deferido" and not p.arquivo_registro:
+            try:
+                nome_arquivo = p.id + "_registro_auto.pdf"
+                caminho = os.path.join(UPLOADS_DIR, nome_arquivo)
+                ok_dl = baixar_documento_jucerja(p.numero_protocolo, JUCERJA_USUARIO, JUCERJA_SENHA, caminho, headless=True)
+                if ok_dl and os.path.exists(caminho):
+                    p.arquivo_registro = nome_arquivo
+                    p.status = recalcular_status(p)
+                    db.commit()
+                    print("   [RJ] documento baixado e processo atualizado para:", p.status)
+                    if p.status == "finalizado":
+                        try:
+                            corpo = corpo_status_cliente(p, "Finalizado", "Seu Processo foi Finalizado, em Anexo o Registro.")
+                            for em in emails_do_grupo(db, p.grupo_id):
+                                enviar_email_anexo(em, "Processo Finalizado - " + (p.empresa or ""), corpo, caminho, nome_arquivo)
+                            print("   [RJ] e-mail de finalizacao enviado.")
+                        except Exception as e:
+                            print("   [RJ] erro ao enviar e-mail de finalizacao:", e)
+                else:
+                    print("   [RJ] documento ainda nao disponivel para download (aguardando).")
+            except Exception as e:
+                print("   [RJ] erro ao baixar documento automaticamente:", e)
 
 
 def processar_ba(db, agora):

@@ -738,7 +738,11 @@ def listar_processos(codigo_grupo: str = None, x_token: str = Header(None), db: 
                 query = query.filter(Processo.grupo_id == grupo.id)
     else:
         query = query.filter(Processo.grupo_id == usuario.grupo_id)
-    processos = query.order_by(Processo.criado_em.desc()).all()
+    from sqlalchemy import case
+    processos = query.order_by(
+        case((Processo.status == "finalizado", 1), else_=0),
+        case((Processo.status == "finalizado", Processo.atualizado_em), else_=Processo.criado_em).desc()
+    ).all()
     return processos
 
 @app.get("/processos/{processo_id}")
@@ -1622,7 +1626,11 @@ def gerar_relatorio(status: str = "todos", x_token: str = Header(None), db: Sess
     query = db.query(Processo).filter(Processo.grupo_id == usuario.grupo_id)
     if status and status != "todos":
         query = query.filter(Processo.status == status)
-    processos = query.order_by(Processo.criado_em.desc()).all()
+    from sqlalchemy import case
+    processos = query.order_by(
+        case((Processo.status == "finalizado", 1), else_=0),
+        case((Processo.status == "finalizado", Processo.atualizado_em), else_=Processo.criado_em).desc()
+    ).all()
     rotulos = {"recebido": "Aberto", "tramitacao": "Tramitacao", "exigencia": "Exigencia", "aprovado": "Deferido"}
     wb = openpyxl.Workbook()
     ws = wb.active

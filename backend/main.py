@@ -1439,7 +1439,7 @@ async def upload_arquivo(
     if tipo in campo_map:
         status_antes_up = (p.status or "").lower()
         setattr(p, campo_map[tipo], nome_arquivo)
-        if tipo == "protocolo" and not (p.numero_protocolo or "").strip():
+        if tipo == "protocolo":
             _num = extrair_protocolo_ocr(caminho)
             if _num:
                 p.numero_protocolo = _num

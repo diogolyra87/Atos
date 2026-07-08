@@ -237,7 +237,39 @@ def _tesseract_protocolo(caminho_pdf):
         print("Tesseract protocolo falhou:", e)
         return None
 
+def _extrair_protocolo_barcode(caminho_pdf):
+    """Tenta ler o codigo de barras do protocolo direto da imagem do PDF.
+    Muito mais confiavel que OCR/IA: leitura deterministica, sem risco de
+    confundir digitos visualmente (ex: 6 lido como 0)."""
+    import subprocess, tempfile, os, glob, re as _re
+    try:
+        from pyzbar.pyzbar import decode as _zbar_decode
+        from PIL import Image as _PILImage
+    except Exception:
+        return None
+    try:
+        d = tempfile.mkdtemp()
+        subprocess.run(["pdftoppm", "-r", "200", "-jpeg", caminho_pdf, os.path.join(d, "pg")], check=True, timeout=60)
+        for img_path in sorted(glob.glob(os.path.join(d, "*.jpg"))):
+            img = _PILImage.open(img_path)
+            for r in _zbar_decode(img):
+                digitos = _re.sub(r"\D", "", r.data.decode("utf-8", errors="ignore"))
+                if len(digitos) == 10:
+                    return digitos[0] + "." + digitos[1:4] + "." + digitos[4:7] + "/" + digitos[7:9] + "-" + digitos[9]
+                if len(digitos) == 13:
+                    return digitos[:4] + "/" + digitos[4:12] + "-" + digitos[12]
+        return None
+    except Exception as e:
+        print("Erro ao ler codigo de barras:", str(e)[:150])
+        return None
+
+
 def extrair_protocolo_ocr(caminho_pdf):
+    # 0) Codigo de barras: deterministico, mais confiavel que qualquer OCR/IA
+    num = _extrair_protocolo_barcode(caminho_pdf)
+    if num:
+        print("protocolo via codigo de barras:", num)
+        return num
     # 1) PDF editavel: texto direto (gratis, instantaneo)
     texto = _texto_pdf(caminho_pdf)
     if len(texto.strip()) > 30:

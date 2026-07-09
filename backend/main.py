@@ -211,7 +211,7 @@ def _gemini_protocolo(caminho_pdf):
                 {"inline_data": {"mime_type": "application/pdf", "data": pdf_b64}}
             ]}]
         }
-        url = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=" + GEMINI_KEY
+        url = "https://generativelanguage.googleapis.com/v1beta/models/gemini-flash-latest:generateContent?key=" + GEMINI_KEY
         req = urllib.request.Request(url, data=json.dumps(body).encode(), headers={"Content-Type": "application/json"})
         resp = urllib.request.urlopen(req, timeout=40)
         data = json.loads(resp.read().decode())
@@ -832,7 +832,7 @@ def _gemini_texto_documento(caminho_pdf):
                   "de Junta Comercial), incluindo carimbos, selos e textos de certificacao de registro/arquivamento. "
                   "Responda APENAS com o texto transcrito, sem comentarios.")
         body = {"contents": [{"parts": [{"text": prompt}, {"inline_data": {"mime_type": "application/pdf", "data": pdf_b64}}]}]}
-        url = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=" + GEMINI_KEY
+        url = "https://generativelanguage.googleapis.com/v1beta/models/gemini-flash-latest:generateContent?key=" + GEMINI_KEY
         req = urllib.request.Request(url, data=json.dumps(body).encode(), headers={"Content-Type": "application/json"})
         resp = urllib.request.urlopen(req, timeout=40)
         data = json.loads(resp.read().decode())

@@ -189,7 +189,7 @@ def processar_rj(db, agora):
         p.status_jucesp = res.get("status_texto")
         aplicar_classificacao(db, p, res.get("classificacao", "tramitacao"), agora)
         print()
-        if res.get("classificacao") == "deferido" and not p.arquivo_registro:
+        if "FINALIZADO" in (res.get("status_texto") or "").upper() and not p.arquivo_registro:
             try:
                 nome_arquivo = p.id + "_registro_auto.pdf"
                 caminho = os.path.join(UPLOADS_DIR, nome_arquivo)
@@ -240,7 +240,7 @@ def processar_ba(db, agora):
         p.status_jucesp = res.get("status_texto")
         aplicar_classificacao(db, p, res.get("classificacao", "tramitacao"), agora)
         print()
-        if res.get("classificacao") == "deferido" and not p.arquivo_registro:
+        if "FINALIZADO" in (res.get("status_texto") or "").upper() and not p.arquivo_registro:
             try:
                 nome_arquivo = p.id + "_registro_auto.pdf"
                 caminho = os.path.join(UPLOADS_DIR, nome_arquivo)
@@ -293,7 +293,7 @@ def processar_pe(db, agora):
         print()
 
 
-        if res.get("classificacao") == "deferido" and not p.arquivo_registro:
+        if "FINALIZADO" in (res.get("status_texto") or "").upper() and not p.arquivo_registro:
             try:
                 nome_arquivo = p.id + "_registro_auto.pdf"
                 caminho = os.path.join(UPLOADS_DIR, nome_arquivo)

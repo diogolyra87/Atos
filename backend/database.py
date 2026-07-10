@@ -1,4 +1,4 @@
-from sqlalchemy import create_engine, Column, String, DateTime, Text, Float, Boolean, Integer
+﻿from sqlalchemy import create_engine, Column, String, DateTime, Text, Float, Boolean, Integer
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker
 from datetime import datetime
@@ -148,6 +148,8 @@ class Processo(Base):
     aguardando_cliente = Column(Boolean, default=False)
     avisado_deferido = Column(Boolean, default=False)
     atualizado_em = Column(DateTime, default=datetime.now, onupdate=datetime.now)
+    deferido_em = Column(DateTime, nullable=True)
+    alertado_atraso_deferido = Column(Boolean, default=False)
 
 
 def criar_banco():

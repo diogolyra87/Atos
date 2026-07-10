@@ -15,6 +15,7 @@ from consultar_jucesp import consultar
 from consultar_jucerja import consultar_jucerja, classificar_status_rj, baixar_documento_jucerja
 from consultar_juceb import consultar_juceb, classificar_status_ba, baixar_documento_juceb
 from consultar_jucepe import consultar_jucepe, classificar_status_pe, baixar_documento_jucepe
+from bot import enviar as enviar_telegram, ADMIN_CHAT_ID
 
 load_dotenv("/root/atos/.env")
 
@@ -105,6 +106,7 @@ def aplicar_classificacao(db, p, classificacao, agora):
             p.status = "deferido"
             p.exigencia_ativa = False
             p.ultimo_alerta_em = agora
+            p.deferido_em = agora
             db.commit()
             enviar_email(EMAIL_ADMIN, "[Atos] Deferido - " + str(p.empresa), corpo_admin(p, "Deferido") + "\n\nAguardando a Junta Comercial disponibilizar o Registro.")
             if not p.avisado_deferido:
@@ -315,6 +317,44 @@ def processar_pe(db, agora):
                     print("   [PE] documento ainda nao disponivel para download (aguardando).")
             except Exception as e:
                 print("   [PE] erro ao baixar documento automaticamente:", e)
+
+
+def verificar_atrasos_deferido(db, agora):
+    """Verifica processos parados em deferido ha mais de 24h (UFs com download
+    automatico) e alerta o admin via bot + email, uma unica vez por processo."""
+    from datetime import timedelta as _td
+    limite = agora - _td(hours=24)
+    processos = db.query(Processo).filter(
+        Processo.uf.in_(["RJ", "BA", "PE"]),
+        Processo.status == "deferido",
+        Processo.deferido_em.isnot(None),
+        Processo.deferido_em < limite,
+        Processo.alertado_atraso_deferido == False,
+    ).all()
+    if not processos:
+        return
+    for p in processos:
+        try:
+            horas = int((agora - p.deferido_em).total_seconds() // 3600)
+            texto = (
+                "ATENCAO: processo parado em DEFERIDO ha mais de 24h sem finalizar.\n\n"
+                "Empresa: " + str(p.empresa) + "\n"
+                "UF: " + str(p.uf) + "\n"
+                "Protocolo: " + str(p.numero_protocolo) + "\n"
+                "Deferido ha aproximadamente " + str(horas) + "h.\n"
+                "Verificar manualmente."
+            )
+            enviar_email(EMAIL_ADMIN, "[Atos] ALERTA - Processo travado ha 24h+ - " + str(p.empresa), texto)
+            try:
+                enviar_telegram(ADMIN_CHAT_ID, texto)
+            except Exception as e:
+                print("   erro ao enviar alerta via bot:", e)
+            p.alertado_atraso_deferido = True
+            db.commit()
+            print("   [ALERTA 24H] enviado para:", p.empresa)
+        except Exception as e:
+            print("   erro ao processar alerta de atraso:", e)
+
 def processar():
     db = SessionLocal()
     agora = datetime.now()
@@ -323,6 +363,7 @@ def processar():
     processar_rj(db, agora)
     processar_ba(db, agora)
     processar_pe(db, agora)
+    verificar_atrasos_deferido(db, agora)
     db.close()
     print("FIM.")
 

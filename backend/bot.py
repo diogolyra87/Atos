@@ -5,6 +5,9 @@ load_dotenv("/root/atos/.env")
 
 import requests
 from database import SessionLocal, Processo, MensagemProcesso, TelegramVinculo, Usuario
+import sys as _sys
+_sys.path.insert(0, os.path.dirname(__file__))
+from main import extrair_protocolo_ocr, recalcular_status
 
 TOKEN = os.getenv("TELEGRAM_TOKEN")
 ADMIN_CHAT_ID = str(os.getenv("TELEGRAM_CHAT_ID") or "")
@@ -169,6 +172,111 @@ def processar_reply(msg):
     finally:
         db.close()
 
+_PENDENTES_ANEXO = {}
+
+def _baixar_arquivo_telegram(file_id, destino_path):
+    r = requests.get(f"{API}/getFile", params={"file_id": file_id}, timeout=20)
+    caminho_remoto = r.json()["result"]["file_path"]
+    url_download = f"https://api.telegram.org/file/bot{TOKEN}/{caminho_remoto}"
+    resp = requests.get(url_download, timeout=30)
+    with open(destino_path, "wb") as f:
+        f.write(resp.content)
+    return destino_path
+
+def processar_anexo_protocolo(chat_id, msg):
+    if chat_id != ADMIN_CHAT_ID:
+        return
+    import tempfile, img2pdf as _img2pdf
+
+    file_id = None
+    eh_foto = False
+    if msg.get("photo"):
+        file_id = msg["photo"][-1]["file_id"]
+        eh_foto = True
+    elif msg.get("document"):
+        file_id = msg["document"]["file_id"]
+        nome_doc = (msg["document"].get("file_name") or "").lower()
+        eh_foto = not nome_doc.endswith(".pdf")
+
+    if not file_id:
+        return
+
+    enviar(chat_id, "Recebido, analisando o protocolo...")
+    tmpdir = tempfile.mkdtemp()
+    try:
+        ext = ".jpg" if eh_foto else ".pdf"
+        caminho_bruto = os.path.join(tmpdir, "anexo" + ext)
+        _baixar_arquivo_telegram(file_id, caminho_bruto)
+
+        if eh_foto:
+            caminho_pdf = os.path.join(tmpdir, "anexo.pdf")
+            with open(caminho_pdf, "wb") as f:
+                f.write(_img2pdf.convert(caminho_bruto))
+        else:
+            caminho_pdf = caminho_bruto
+
+        numero = extrair_protocolo_ocr(caminho_pdf)
+        if not numero:
+            enviar(chat_id, "Nao consegui identificar o numero do protocolo neste documento. Envie uma foto/PDF mais nitido, ou digite o numero manualmente pelo sistema.")
+            return
+
+        db = SessionLocal()
+        try:
+            candidatos = db.query(Processo).filter(
+                Processo.status == "aberto"
+            ).order_by(Processo.criado_em.desc()).limit(8).all()
+        finally:
+            db.close()
+
+        if not candidatos:
+            enviar(chat_id, f"Protocolo identificado: {numero}\n\nMas nao ha nenhum processo em aberto (sem protocolo) no sistema no momento para vincular.")
+            return
+
+        linhas = [f"Protocolo identificado: *{numero}*\n", "A qual processo pertence? Responda esta mensagem com o numero:\n"]
+        opcoes = {}
+        for i, p in enumerate(candidatos, start=1):
+            linhas.append(f"{i}. {p.empresa} ({p.uf or '-'}) - {p.tipo_ato or ''}")
+            opcoes[str(i)] = p.id
+        texto_msg = "\n".join(linhas)
+
+        r = requests.post(f"{API}/sendMessage", data={"chat_id": chat_id, "text": texto_msg, "parse_mode": "Markdown"}, timeout=10)
+        message_id_enviado = r.json()["result"]["message_id"]
+        _PENDENTES_ANEXO[message_id_enviado] = {"numero_protocolo": numero, "opcoes": opcoes}
+    except Exception as e:
+        print("erro processar_anexo_protocolo:", e)
+        enviar(chat_id, "Erro ao processar o anexo: " + str(e))
+
+def processar_confirmacao_anexo(chat_id, msg):
+    reply = msg.get("reply_to_message")
+    if not reply:
+        return False
+    mid = reply["message_id"]
+    pendente = _PENDENTES_ANEXO.get(mid)
+    if not pendente:
+        return False
+    escolha = (msg.get("text") or "").strip()
+    processo_id = pendente["opcoes"].get(escolha)
+    if not processo_id:
+        enviar(chat_id, "Numero invalido. Responda com um dos numeros da lista, ou ignore para cancelar.")
+        return True
+    db = SessionLocal()
+    try:
+        p = db.query(Processo).filter(Processo.id == processo_id).first()
+        if not p:
+            enviar(chat_id, "Processo nao encontrado (pode ter sido alterado nesse meio tempo).")
+            return True
+        p.numero_protocolo = pendente["numero_protocolo"]
+        p.status = recalcular_status(p)
+        db.commit()
+        enviar(chat_id, f"Protocolo {pendente['numero_protocolo']} vinculado ao processo de {p.empresa}. Status atualizado para: {p.status}.")
+    except Exception as e:
+        print("erro processar_confirmacao_anexo:", e)
+        enviar(chat_id, "Erro ao vincular o protocolo.")
+    finally:
+        db.close()
+    del _PENDENTES_ANEXO[mid]
+    return True
+
 AJUDA = (
     "Comandos do ATOS:\n"
     "/resumo - totais por status\n"
@@ -299,8 +407,13 @@ def main():
                 msg = upd.get("message")
                 if not msg:
                     continue
-                if msg.get("reply_to_message"):
-                    processar_reply(msg)
+                if msg.get("photo") or msg.get("document"):
+                    _cid = str(msg["chat"]["id"])
+                    processar_anexo_protocolo(_cid, msg)
+                elif msg.get("reply_to_message"):
+                    _cid = str(msg["chat"]["id"])
+                    if not processar_confirmacao_anexo(_cid, msg):
+                        processar_reply(msg)
                 else:
                     _cid = str(msg["chat"]["id"])
                     _texto_msg = (msg.get("text") or "").strip()

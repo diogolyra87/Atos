@@ -1,4 +1,4 @@
-import os, time, sys, uuid
+﻿import os, time, sys, uuid
 sys.path.insert(0, os.path.dirname(__file__))
 from dotenv import load_dotenv
 load_dotenv("/root/atos/.env")
@@ -9,6 +9,111 @@ from database import SessionLocal, Processo, MensagemProcesso, TelegramVinculo, 
 TOKEN = os.getenv("TELEGRAM_TOKEN")
 ADMIN_CHAT_ID = str(os.getenv("TELEGRAM_CHAT_ID") or "")
 API = f"https://api.telegram.org/bot{TOKEN}"
+
+# ===== Integracao do agente Mane (execucao autonoma via Telegram) =====
+import subprocess as _subprocess
+import anthropic as _anthropic
+
+_ANTHROPIC_KEY = os.getenv("ANTHROPIC_API_KEY")
+_mane_client = _anthropic.Anthropic(api_key=_ANTHROPIC_KEY) if _ANTHROPIC_KEY else None
+
+def _mane_carregar_conhecimento():
+    partes = []
+    for nome in ["ATOS_registro_problemas_corrigidos.md", "ATOS_ESTADO_COMPLETO.md"]:
+        caminho = os.path.join(os.path.dirname(__file__), nome)
+        if os.path.exists(caminho):
+            with open(caminho, "r", encoding="utf-8") as f:
+                partes.append("=== " + nome + " ===\n" + f.read())
+    return "\n\n".join(partes)
+
+_MANE_CONHECIMENTO = _mane_carregar_conhecimento()
+
+_MANE_SYSTEM_PROMPT = """Voce e o Mane, agente de IA do sistema ATOS, respondendo pelo bot do Telegram.
+
+IMPORTANTE - LIMITE DE ESCOPO NESTA INTERFACE (Telegram):
+Voce esta rodando DIRETO NO SERVIDOR de producao. Por isso, nesta interface, voce NAO deve
+editar nenhum arquivo de codigo (.py, .js) do sistema - essas mudancas devem sempre partir
+do PC do usuario (via o Mane local, outra interface), seguindo o fluxo de deploy padrao
+documentado na base de conhecimento (commit no PC -> push -> pull no servidor).
+
+Nesta interface (Telegram) voce PODE, com seguranca:
+- Consultar o banco de dados (sqlite3, somente leitura preferencialmente)
+- Verificar status de servicos (systemctl status)
+- Ver logs (journalctl)
+- Rodar consultas de automacao ja existentes (ex: processar_rj, processar_ba, processar_pe)
+- Reiniciar servicos quando fizer sentido e for seguro
+- Responder perguntas sobre o sistema usando a base de conhecimento abaixo
+
+Se o usuario pedir uma mudanca de CODIGO, explique educadamente que essa tarefa deve ser
+feita pelo Mane local (no PC), nao por aqui, e sugira a mensagem que ele pode usar la.
+
+Seja direto e conciso nas respostas - isso e um chat do Telegram, nao um terminal.
+
+BASE DE CONHECIMENTO DO SISTEMA:
+
+""" + _MANE_CONHECIMENTO
+
+_MANE_TOOLS = [
+    {
+        "name": "executar_bash",
+        "description": "Executa um comando bash diretamente no servidor (voce ja esta rodando nele) e retorna a saida.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "comando": {"type": "string", "description": "O comando bash a executar"}
+            },
+            "required": ["comando"]
+        }
+    }
+]
+
+def _mane_executar_bash(comando):
+    try:
+        resultado = _subprocess.run(
+            ["bash", "-c", comando],
+            capture_output=True, text=True, timeout=120
+        )
+        saida = (resultado.stdout or "") + (resultado.stderr or "")
+        saida = saida.strip()
+        if len(saida) > 3500:
+            saida = saida[:3500] + "\n...(saida truncada)..."
+        return saida if saida else "(comando executado sem saida)"
+    except _subprocess.TimeoutExpired:
+        return "ERRO: comando excedeu o tempo limite de 120 segundos"
+    except Exception as e:
+        return "ERRO ao executar: " + str(e)
+
+def processar_pedido_mane(chat_id, texto):
+    if not _mane_client:
+        enviar(chat_id, "Mane indisponivel: ANTHROPIC_API_KEY nao configurada no .env do servidor.")
+        return
+    enviar(chat_id, "Processando...")
+    mensagens = [{"role": "user", "content": texto}]
+    try:
+        while True:
+            resposta = _mane_client.messages.create(
+                model="claude-sonnet-5",
+                max_tokens=2048,
+                system=_MANE_SYSTEM_PROMPT,
+                tools=_MANE_TOOLS,
+                messages=mensagens
+            )
+            mensagens.append({"role": "assistant", "content": resposta.content})
+            blocos_ferramenta = [b for b in resposta.content if b.type == "tool_use"]
+            blocos_texto = [b.text for b in resposta.content if b.type == "text"]
+            for t in blocos_texto:
+                if t.strip():
+                    enviar(chat_id, t)
+            if not blocos_ferramenta:
+                break
+            resultados = []
+            for bloco in blocos_ferramenta:
+                if bloco.name == "executar_bash":
+                    saida = _mane_executar_bash(bloco.input.get("comando", ""))
+                    resultados.append({"type": "tool_result", "tool_use_id": bloco.id, "content": saida})
+            mensagens.append({"role": "user", "content": resultados})
+    except Exception as e:
+        enviar(chat_id, "Erro no Mane: " + str(e))
 
 def enviar(chat_id, texto, reply_to=None):
     data = {"chat_id": chat_id, "text": texto}
@@ -198,8 +303,11 @@ def main():
                     processar_reply(msg)
                 else:
                     _cid = str(msg["chat"]["id"])
-                    if _cid == ADMIN_CHAT_ID and (msg.get("text") or "").strip().startswith("/"):
+                    _texto_msg = (msg.get("text") or "").strip()
+                    if _cid == ADMIN_CHAT_ID and _texto_msg.startswith("/"):
                         processar_comando(_cid, msg.get("text"))
+                    elif _cid == ADMIN_CHAT_ID and _texto_msg:
+                        processar_pedido_mane(_cid, _texto_msg)
         except Exception as e:
             print("erro loop:", e)
             time.sleep(5)

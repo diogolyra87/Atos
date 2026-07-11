@@ -363,7 +363,6 @@ def processar():
     processar_rj(db, agora)
     processar_ba(db, agora)
     processar_pe(db, agora)
-    verificar_atrasos_deferido(db, agora)
     db.close()
     print("FIM.")
 

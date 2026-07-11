@@ -436,7 +436,7 @@ Retorne APENAS um JSON válido com esta estrutura exata:
     dados = json.loads(texto_limpo)
 
     # Fallback: se a UF nao foi identificada pelo endereco da ata, infere pelo prefixo do NIRE
-    # 333/332 = RJ | 353/352 = SP
+    # 333/332 = RJ | 353/352 = SP | 292/293 = BA | 262/263 = PE
     # (lista sera expandida com mais UFs futuramente)
     if not (dados.get("uf") or "").strip():
         nire_digitos = "".join(c for c in (dados.get("nire") or "") if c.isdigit())
@@ -445,6 +445,10 @@ Retorne APENAS um JSON válido com esta estrutura exata:
             dados["uf"] = "RJ"
         elif prefixo_nire in ("353", "352"):
             dados["uf"] = "SP"
+        elif prefixo_nire in ("292", "293"):
+            dados["uf"] = "BA"
+        elif prefixo_nire in ("262", "263"):
+            dados["uf"] = "PE"
 
     return dados
 

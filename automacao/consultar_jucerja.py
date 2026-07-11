@@ -100,10 +100,12 @@ def baixar_documento_jucerja(protocolo, usuario, senha, destino_path, headless=T
         ctx = navegador.new_context(accept_downloads=True)
         pagina = ctx.new_page()
         try:
+            print("   [RJ-DL] checkpoint: indo para login")
             pagina.goto(URL_LOGIN, timeout=60000)
             pagina.wait_for_timeout(2000)
             pagina.fill("#campoUsuario", usuario)
             pagina.fill("#campoSenhaUsuario", senha)
+            print("   [RJ-DL] checkpoint: login preenchido")
             try:
                 with pagina.expect_navigation(timeout=15000):
                     pagina.eval_on_selector("#campoSenhaUsuario", "el => el.form.submit()")
@@ -121,6 +123,7 @@ def baixar_documento_jucerja(protocolo, usuario, senha, destino_path, headless=T
                     pass
                 pagina.wait_for_timeout(2000)
 
+            print("   [RJ-DL] checkpoint: indo para consulta")
             pagina.goto(URL_CONSULTA, timeout=60000)
             pagina.wait_for_timeout(2500)
             campo = "#Prow-Consultas-ProtocoloNumero-field"
@@ -130,6 +133,7 @@ def baixar_documento_jucerja(protocolo, usuario, senha, destino_path, headless=T
             pagina.click("#Prow-Consultas-PesquisarProtocolos-Btn")
             pagina.wait_for_selector("tbody tr", timeout=15000)
             pagina.wait_for_timeout(1500)
+            print("   [RJ-DL] checkpoint: resultado da busca carregado")
 
             linhas = pagina.query_selector_all("tbody tr")
             proto_norm = protocolo.replace(" ", "")
@@ -149,12 +153,16 @@ def baixar_documento_jucerja(protocolo, usuario, senha, destino_path, headless=T
             if classificar_status_rj(status_texto) != "deferido":
                 return False
 
+            print("   [RJ-DL] checkpoint: linha do processo encontrada, status:", status_texto)
             linha_ok.click()
             pagina.wait_for_timeout(2000)
+            print("   [RJ-DL] checkpoint: linha clicada")
 
             botao_doc = pagina.query_selector("#Prow-Consultas-DocDigital-Btn")
             if not botao_doc:
+                print("   [RJ-DL] checkpoint: botao Documento Digital NAO encontrado")
                 return False
+            print("   [RJ-DL] checkpoint: botao Documento Digital encontrado, clicando")
 
             try:
                 with pagina.expect_navigation(timeout=15000):
@@ -162,15 +170,21 @@ def baixar_documento_jucerja(protocolo, usuario, senha, destino_path, headless=T
             except Exception:
                 pass
             pagina.wait_for_timeout(2000)
+            print("   [RJ-DL] checkpoint: apos clicar Documento Digital, url:", pagina.url)
 
             botao_pesquisar = pagina.query_selector("text=Pesquisar")
             if botao_pesquisar:
+                print("   [RJ-DL] checkpoint: botao Pesquisar encontrado, clicando")
                 botao_pesquisar.click()
                 pagina.wait_for_timeout(3000)
+            else:
+                print("   [RJ-DL] checkpoint: botao Pesquisar NAO encontrado nesta tela")
 
             try:
                 pagina.wait_for_selector("text=Faça download", timeout=15000)
+                print("   [RJ-DL] checkpoint: link Faca download apareceu")
             except Exception:
+                print("   [RJ-DL] checkpoint: link Faca download NAO apareceu (timeout 15s)")
                 return False
 
             with tempfile.TemporaryDirectory() as tmpdir:

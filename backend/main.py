@@ -1264,8 +1264,8 @@ async def criar_processo(
         "data_ata": (info.get("data_ata") or "").strip(),
     }
     faltando = [campo for campo, valor in obrigatorios.items() if not valor]
-    if faltando:
-        raise HTTPException(status_code=400, detail="Nao foi possivel identificar os campos obrigatorios: " + ", ".join(faltando) + ". Revise o documento manualmente antes de criar o processo.")
+    # URGENTE - NUNCA bloquear a insercao do processo por falta de campo extraido.
+    # Sempre insere o processo, marca para revisao manual, e avisa o administrador.
 
     grupo_id = None
     if usuario_tok.is_admin:
@@ -1316,6 +1316,14 @@ async def criar_processo(
             enviar_email(em, "Processo inserido no Atos - " + (p.empresa or ""), corpo)
     except Exception as e:
         print("Erro ao notificar abertura:", e)
+    if faltando:
+        try:
+            p.confirmacao_pendente = True
+            db.commit()
+            enviar_email(EMAIL_ADMIN, "[Atos] ATENCAO - Processo inserido com campos incompletos - " + (p.empresa or processo_id),
+                "O processo " + processo_id + " (" + (p.empresa or "sem nome") + ") foi inserido no sistema, mas a extracao automatica nao conseguiu identificar: " + ", ".join(faltando) + ".\n\nRevise manualmente e complete os dados faltantes o quanto antes.")
+        except Exception as e:
+            print("Erro ao notificar campos incompletos:", e)
     return {"id": processo_id, "mensagem": "Processo criado com sucesso"}
 
 def _criar_processo_transferencia(db, p_origem):

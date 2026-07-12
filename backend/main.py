@@ -1142,7 +1142,9 @@ async def analisar_pasta_multi(arquivos: list[UploadFile] = File(...), x_token: 
     # CORRECAO CRITICA: documentos nao reconhecidos pelo classificador NUNCA mais
     # viram anexo automatico de outro documento - sempre viram processo proprio,
     # marcado para revisao manual. Evita fundir documentos de empresas diferentes.
-    nao_reconhecidos = [i for i in itens if i not in bateram and not i.get("ja_reg")]
+    # so trata como candidato a processo proprio se a pontuacao NAO for negativa
+    # (negativo = ja tem sinal claro de ser anexo, ex: CNH, certidao, comprovante - nao promove a principal)
+    nao_reconhecidos = [i for i in itens if i not in bateram and not i.get("ja_reg") and i["score"] >= 0]
     principais_itens = list(bateram) + nao_reconhecidos
     if nao_reconhecidos:
         pendente = True

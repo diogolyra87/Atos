@@ -30,7 +30,7 @@ JUCERJA_SENHA = os.getenv("JUCERJA_SENHA")
 JUCEB_LOGIN = os.getenv("JUCEB_LOGIN")
 JUCEB_SENHA = os.getenv("JUCEB_SENHA")
 
-EMAIL_ADMIN = "diogo@realpublicidade.com.br"
+EMAIL_ADMIN = os.getenv("ADMIN_EMAIL")
 BASE_URL = "https://atos.net.br"
 
 INTERVALO_NORMAL = timedelta(hours=24)

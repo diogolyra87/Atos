@@ -377,6 +377,7 @@ os.makedirs(UPLOADS_DIR, exist_ok=True)
 # app.mount("/uploads", StaticFiles(directory=UPLOADS_DIR), name="uploads")  # desativado: arquivos agora so via /download protegido
 
 GEMINI_KEY = os.getenv("GEMINI_KEY")
+EMAIL_ADMIN = os.getenv("ADMIN_EMAIL")
 DEEPSEEK_KEY = os.getenv("DEEPSEEK_KEY")
 client = OpenAI(api_key=DEEPSEEK_KEY, base_url="https://api.deepseek.com")
 
@@ -1104,6 +1105,52 @@ def _filtrar_origem_destino(principais_out):
                 descartar.add(i)  # a e' o destino de b -> descarta a
     return [p for k, p in enumerate(principais_out) if k not in descartar]
 
+
+def _classificar_lote_ia(itens):
+    """Classifica TODOS os documentos de um lote em uma unica chamada de IA,
+    substituindo o antigo sistema de palavras-chave (fragil, quebra com qualquer
+    variacao de titulo de documento nao prevista). Retorna dict {indice: {"principal": bool, "tipo_ato": str|None}}."""
+    import json as _json, urllib.request
+    if not GEMINI_KEY or not itens:
+        return {}
+    partes_doc = []
+    for i in itens:
+        trecho = (i["texto"] or "")[:3000]
+        partes_doc.append(f"--- DOCUMENTO indice={i['indice']} nome=\"{i['nome']}\" ---\n{trecho}\n")
+    prompt = (
+        "Voce esta analisando um lote de documentos enviados para um sistema de gestao "
+        "societaria brasileiro (Juntas Comerciais). Para CADA documento abaixo, determine:\n"
+        "1) Se e um ATO PRINCIPAL (um documento que representa um ato societario formal que "
+        "vira um processo proprio - ex: ata de assembleia/reuniao, alteracao contratual, "
+        "contrato social, estatuto, distrato, protocolo de incorporacao, ata de resolucao de "
+        "socio(a), qualquer documento assinado que registra uma deliberacao societaria) OU um "
+        "ANEXO (documento de apoio - ex: identidade/CNH/RG de uma pessoa, procuracao, certidao, "
+        "comprovante de pagamento, balanco, ficha cadastral, protocolo de junta comercial de "
+        "OUTRO processo ja existente).\n"
+        "2) Se for ANEXO, qual empresa/CNPJ ele parece se referir (para associa-lo ao ato principal certo).\n"
+        "3) Se for PRINCIPAL, qual empresa/CNPJ esse documento se refere.\n\n"
+        "Responda APENAS com um JSON no formato exato:\n"
+        '{"classificacoes": [{"indice": 0, "principal": true, "empresa_ou_cnpj": "texto"}, '
+        '{"indice": 1, "principal": false, "empresa_ou_cnpj": "texto"}]}\n\n'
+        "Documentos:\n\n" + "\n".join(partes_doc)
+    )
+    body = {"contents": [{"parts": [{"text": prompt}]}]}
+    url = "https://generativelanguage.googleapis.com/v1beta/models/gemini-flash-latest:generateContent?key=" + GEMINI_KEY
+    try:
+        req = urllib.request.Request(url, data=_json.dumps(body).encode(), headers={"Content-Type": "application/json"})
+        resp = urllib.request.urlopen(req, timeout=60)
+        data = _json.loads(resp.read().decode())
+        txt = data["candidates"][0]["content"]["parts"][0]["text"].strip()
+        txt = txt.replace("```json", "").replace("```", "").strip()
+        resultado = _json.loads(txt)
+        saida = {}
+        for c in resultado.get("classificacoes", []):
+            saida[c["indice"]] = {"principal": bool(c.get("principal")), "empresa_ou_cnpj": c.get("empresa_ou_cnpj") or ""}
+        return saida
+    except Exception as e:
+        print("Erro na classificacao por IA do lote:", str(e)[:200])
+        return {}
+
 def _sa_texto_local(s):
     import unicodedata
     s = (s or "").lower()
@@ -1123,31 +1170,26 @@ async def analisar_pasta_multi(arquivos: list[UploadFile] = File(...), x_token: 
     for idx, arq in enumerate(arquivos):
         conteudo = await arq.read()
         texto = _extrair_texto_bytes(conteudo, arq.filename or "")
-        tipo, score = _classificar(arq.filename or "", texto)
-        regra = consultar_regras(arq.filename or "", texto, db)
-        if regra:
-            if regra.get("classificacao") == "principal":
-                score += 100 + (regra.get("peso") or 1)
-                if regra.get("tipo_correto"):
-                    tipo = regra.get("tipo_correto")
-            elif regra.get("classificacao") == "anexo":
-                score -= 100 + (regra.get("peso") or 1)
         ja_reg_flag = _ja_registrada(_sa_texto_local(texto[:4000]))
-        itens.append({"indice": idx, "nome": arq.filename or ("arquivo_" + str(idx)), "texto": texto, "tipo": tipo, "score": score, "ja_reg": ja_reg_flag})
+        itens.append({"indice": idx, "nome": arq.filename or ("arquivo_" + str(idx)), "texto": texto, "ja_reg": ja_reg_flag})
     if not itens:
         raise HTTPException(status_code=400, detail="Nenhum arquivo recebido.")
 
-    bateram = [i for i in itens if i["tipo"] is not None and i["score"] > 0]
+    # CLASSIFICACAO POR IA (uma chamada para o lote inteiro) - substitui o antigo
+    # sistema de palavras-chave, que quebrava com qualquer variacao de titulo nao
+    # prevista. Documentos ja registrados nunca sao candidatos.
+    candidatos_ia = [i for i in itens if not i.get("ja_reg")]
+    classificacao_ia = _classificar_lote_ia(candidatos_ia)
+
+    principais_itens = []
     pendente = False
-    # CORRECAO CRITICA: documentos nao reconhecidos pelo classificador NUNCA mais
-    # viram anexo automatico de outro documento - sempre viram processo proprio,
-    # marcado para revisao manual. Evita fundir documentos de empresas diferentes.
-    # so trata como candidato a processo proprio se a pontuacao NAO for negativa
-    # (negativo = ja tem sinal claro de ser anexo, ex: CNH, certidao, comprovante - nao promove a principal)
-    nao_reconhecidos = [i for i in itens if i not in bateram and not i.get("ja_reg") and i["score"] >= 0]
-    principais_itens = list(bateram) + nao_reconhecidos
-    if nao_reconhecidos:
-        pendente = True
+    for i in candidatos_ia:
+        c = classificacao_ia.get(i["indice"])
+        if c is None:
+            principais_itens.append(i)
+            pendente = True
+        elif c.get("principal"):
+            principais_itens.append(i)
 
     indices_principais = {i["indice"] for i in principais_itens}
     anexos = [{"indice": i["indice"], "nome": i["nome"]} for i in itens if i["indice"] not in indices_principais]
@@ -1155,9 +1197,7 @@ async def analisar_pasta_multi(arquivos: list[UploadFile] = File(...), x_token: 
     principais_out = []
     for i in principais_itens:
         dados = analisar_ata_ia(i["texto"]) if i["texto"].strip() else {}
-        if i["tipo"]:
-            dados["tipo_ato"] = dados.get("tipo_ato") or i["tipo"]
-        principais_out.append({"indice": i["indice"], "nome": i["nome"], "tipo_sugerido": i["tipo"], "dados": dados, "score": i["score"]})
+        principais_out.append({"indice": i["indice"], "nome": i["nome"], "tipo_sugerido": dados.get("tipo_ato"), "dados": dados, "score": 0})
 
     for _pp in principais_out:
         _dd = _pp.get("dados") or {}

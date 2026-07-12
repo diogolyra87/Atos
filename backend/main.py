@@ -800,7 +800,7 @@ def obter_processo(processo_id: str, request: Request = None, x_token: str = Hea
 # ===== PARTE 2: deteccao automatica do documento principal =====
 TIPOS_PRINCIPAIS = {
     "Contrato Social": ["contrato social"],
-    "Alteracao Contratual": ["alteracao do contrato social", "alteracao contratual", "alteração do contrato social", "alteração contratual"],
+    "Alteracao Contratual": ["alteracao do contrato social", "alteracao contratual", "alteração do contrato social", "alteração contratual", "alteracao e consolidacao do contrato social", "alteração e consolidação do contrato social", "alteracao e consolidacao de contrato social", "alteração e consolidação de contrato social", "consolidacao do contrato social", "consolidação do contrato social"],
     "Ata de Reuniao/Assembleia de Socios": ["ata de reuniao de socios", "ata de assembleia de socios", "reuniao de socios", "ata de reunião de sócios", "ata de assembleia de sócios", "reunião de sócios"],
     "Distrato/Dissolucao/Liquidacao": ["distrato", "dissolucao", "liquidacao", "dissolução", "liquidação"],
     "Estatuto Social": ["estatuto social"],
@@ -1139,16 +1139,13 @@ async def analisar_pasta_multi(arquivos: list[UploadFile] = File(...), x_token: 
 
     bateram = [i for i in itens if i["tipo"] is not None and i["score"] > 0]
     pendente = False
-    if len(bateram) >= 1:
-        principais_itens = bateram
-    else:
-        candidatos_fallback = [i for i in itens if not i.get("ja_reg")]
-        if not candidatos_fallback:
-            principais_itens = []
-        else:
-            ordenados = sorted(candidatos_fallback, key=lambda x: x["score"], reverse=True)
-            principais_itens = [ordenados[0]]
-            pendente = True
+    # CORRECAO CRITICA: documentos nao reconhecidos pelo classificador NUNCA mais
+    # viram anexo automatico de outro documento - sempre viram processo proprio,
+    # marcado para revisao manual. Evita fundir documentos de empresas diferentes.
+    nao_reconhecidos = [i for i in itens if i not in bateram and not i.get("ja_reg")]
+    principais_itens = list(bateram) + nao_reconhecidos
+    if nao_reconhecidos:
+        pendente = True
 
     indices_principais = {i["indice"] for i in principais_itens}
     anexos = [{"indice": i["indice"], "nome": i["nome"]} for i in itens if i["indice"] not in indices_principais]

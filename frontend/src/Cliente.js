@@ -298,52 +298,71 @@ function DetalheProcessoCliente({ p, sessao, onVoltar }) {
     } catch (e) { alert("Nao foi possivel baixar o anexo."); }
   }
 
-  const s2 = {
-    voltar: { background: "transparent", border: "none", color: "#2563eb", cursor: "pointer", fontSize: 13, marginBottom: 16, padding: 0, fontFamily: "'\''Inter'\'', sans-serif" },
-    card: { background: "#fff", border: "0.5px solid #e2e8f0", borderRadius: 12, padding: 20, marginBottom: 16 },
-    label: { fontSize: 11, color: "#94a3b8", marginBottom: 4 },
-    valor: { fontSize: 14, color: "#23282a", marginBottom: 12 },
+  const sD = {
+    detalhe: { background: "#fff", border: "0.5px solid #e2e8f0", borderRadius: 12, padding: 24 },
+    detalheHeader: { display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 20 },
+    detalheTitle: { fontSize: 18, fontWeight: 500, color: "#23282a" },
+    btnSecondary: { background: "none", border: "0.5px solid #e2e8f0", borderRadius: 8, padding: "9px 18px", fontSize: 13, cursor: "pointer", color: "#475569" },
+    statusRow: { display: "flex", gap: 8, marginBottom: 20, flexWrap: "wrap" },
+    btnStatus: (ativo) => ({ padding: "6px 14px", borderRadius: 20, fontSize: 12, border: ativo ? "2px solid #1e40af" : "0.5px solid #e2e8f0", background: ativo ? "#dbeafe" : "#fff", color: ativo ? "#1e40af" : "#475569", fontWeight: ativo ? 500 : 400 }),
+    detalheGrid: { display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16, marginBottom: 20 },
+    detalheItem: { background: "#f8fafc", borderRadius: 8, padding: 12 },
+    detalheItemLabel: { fontSize: 11, color: "#94a3b8", marginBottom: 4 },
+    detalheItemValue: { fontSize: 13, color: "#23282a", fontWeight: 500 },
     anexoRow: { display: "flex", justifyContent: "space-between", alignItems: "center", padding: "8px 0", borderBottom: "0.5px solid #f1f5f9" },
   };
 
   return (
-    <div style={{ padding: "0 4px" }}>
-      <button style={s2.voltar} onClick={onVoltar}>&larr; Voltar para Meus Processos</button>
-      <div style={s2.card}>
-        <div style={s2.label}>Empresa</div>
-        <div style={s2.valor}>{p.empresa}</div>
-        <div style={s2.label}>CNPJ / NIRE</div>
-        <div style={s2.valor}>{p.cnpj}{p.nire ? " . " + p.nire : ""}</div>
-        <div style={s2.label}>Ato</div>
-        <div style={s2.valor}>{p.identificador_ato || p.tipo_ato}</div>
-        <div style={s2.label}>Status</div>
-        <div style={s2.valor}>{STATUS_CONFIG[p.status]?.label || p.status}</div>
-        <div style={s2.label}>Processo criado em</div>
-        <div style={s2.valor}>{p.criado_em ? new Date(p.criado_em).toLocaleString("pt-BR") : "-"}</div>
-      </div>
-      <div style={s2.card}>
-        <div style={{ fontSize: 13, fontWeight: 500, color: "#23282a", marginBottom: 12 }}>Anexos</div>
-        {anexos.length === 0 ? (
-          <div style={{ fontSize: 13, color: "#94a3b8", marginBottom: 12 }}>Nenhum anexo enviado ainda.</div>
-        ) : (
-          anexos.map(a => (
-            <div key={a.id} style={s2.anexoRow}>
-              <span style={{ fontSize: 13 }}>{a.nome_original}</span>
-              <button onClick={() => baixarAnexo(a.id, a.nome_original)}
-                style={{ background: "transparent", border: "0.5px solid #2563eb", color: "#2563eb", borderRadius: 6, padding: "4px 10px", fontSize: 12, cursor: "pointer" }}>
-                Baixar
-              </button>
-            </div>
-          ))
-        )}
-        <div style={{ marginTop: 16 }}>
-          <label style={{ cursor: enviando ? "default" : "pointer" }}>
-            <span style={{ display: "inline-block", padding: "9px 16px", background: enviando ? "#e2e8f0" : "#2563eb", color: enviando ? "#94a3b8" : "#fff", borderRadius: 8, fontSize: 13, fontFamily: "'\''Inter'\'', sans-serif" }}>
-              {enviando ? "Enviando..." : "+ Anexar arquivo"}
-            </span>
-            <input type="file" style={{ display: "none" }} disabled={enviando} onChange={e => enviarAnexo(e.target.files[0])} />
-          </label>
+    <div style={sD.detalhe}>
+      <div style={sD.detalheHeader}>
+        <div>
+          <div style={sD.detalheTitle}>{p.empresa}</div>
+          <div style={{ fontFamily: "monospace", fontSize: 12, color: "#94a3b8", marginTop: 4 }}>
+            CNPJ {p.cnpj} - NIRE {p.nire}
+          </div>
         </div>
+        <button style={sD.btnSecondary} onClick={onVoltar}>Voltar</button>
+      </div>
+
+      <div style={{ fontSize: 13, color: "#64748b", marginBottom: 12 }}>Status:</div>
+      <div style={sD.statusRow}>
+        {["aberto", "tramitacao", "exigencia", "deferido", "finalizado"].map((key) => (
+          <div key={key} style={sD.btnStatus(p.status === key)}>
+            {STATUS_CONFIG[key] ? STATUS_CONFIG[key].label : key}
+          </div>
+        ))}
+      </div>
+
+      <div style={sD.detalheGrid}>
+        <div style={sD.detalheItem}><div style={sD.detalheItemLabel}>Tipo de ato</div><div style={sD.detalheItemValue}>{p.tipo_ato}</div></div>
+        <div style={sD.detalheItem}><div style={sD.detalheItemLabel}>Identificador</div><div style={sD.detalheItemValue}>{p.identificador_ato}</div></div>
+        <div style={sD.detalheItem}><div style={sD.detalheItemLabel}>Data da ata</div><div style={sD.detalheItemValue}>{p.data_ata} {p.hora_ata ? "- " + p.hora_ata : ""}</div></div>
+        <div style={sD.detalheItem}><div style={sD.detalheItemLabel}>Protocolo</div><div style={sD.detalheItemValue}>{p.numero_protocolo || "-"}</div></div>
+        <div style={sD.detalheItem}><div style={sD.detalheItemLabel}>Recebido em</div><div style={sD.detalheItemValue}>{p.data_recebimento ? new Date(p.data_recebimento).toLocaleDateString("pt-BR") : "-"}</div></div>
+        <div style={sD.detalheItem}><div style={sD.detalheItemLabel}>Processo criado em</div><div style={sD.detalheItemValue}>{p.criado_em ? new Date(p.criado_em).toLocaleString("pt-BR") : "-"}</div></div>
+      </div>
+
+      <div style={{ fontSize: 13, fontWeight: 500, color: "#23282a", marginBottom: 12 }}>Anexos</div>
+      {anexos.length === 0 ? (
+        <div style={{ fontSize: 13, color: "#94a3b8", marginBottom: 12 }}>Nenhum anexo enviado ainda.</div>
+      ) : (
+        anexos.map(a => (
+          <div key={a.id} style={sD.anexoRow}>
+            <span style={{ fontSize: 13 }}>{a.nome_original}</span>
+            <button onClick={() => baixarAnexo(a.id, a.nome_original)}
+              style={{ background: "transparent", border: "0.5px solid #2563eb", color: "#2563eb", borderRadius: 6, padding: "4px 10px", fontSize: 12, cursor: "pointer" }}>
+              Baixar
+            </button>
+          </div>
+        ))
+      )}
+      <div style={{ marginTop: 16 }}>
+        <label style={{ cursor: enviando ? "default" : "pointer" }}>
+          <span style={{ display: "inline-block", padding: "9px 16px", background: enviando ? "#e2e8f0" : "#2563eb", color: enviando ? "#94a3b8" : "#fff", borderRadius: 8, fontSize: 13, fontFamily: "Inter, sans-serif" }}>
+            {enviando ? "Enviando..." : "+ Anexar arquivo"}
+          </span>
+          <input type="file" style={{ display: "none" }} disabled={enviando} onChange={e => enviarAnexo(e.target.files[0])} />
+        </label>
       </div>
     </div>
   );

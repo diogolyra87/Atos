@@ -31,6 +31,18 @@ JUCEB_LOGIN = os.getenv("JUCEB_LOGIN")
 JUCEB_SENHA = os.getenv("JUCEB_SENHA")
 
 EMAIL_ADMIN = os.getenv("ADMIN_EMAIL")
+
+def aplicar_nomenclatura_junta(nome_base):
+    """Regra padrao de nomenclatura para documentos de registro baixados
+    automaticamente das Juntas Comerciais (RJ, BA, PE, e futuras). Se o nome
+    contiver 'Sec-Manifesto', troca por 'Sec-Junta'. Caso contrario, adiciona
+    '-Junta' antes da extensao. Aplicada uma unica vez, usada tanto no
+    salvamento do arquivo quanto no nome do anexo enviado por email - qualquer
+    automacao nova que reutilizar essa funcao ja herda a regra automaticamente."""
+    if "Sec-Manifesto" in nome_base:
+        return nome_base.replace("Sec-Manifesto", "Sec-Junta")
+    nome, ext = os.path.splitext(nome_base)
+    return nome + "-Junta" + ext
 BASE_URL = "https://atos.net.br"
 
 INTERVALO_NORMAL = timedelta(hours=24)
@@ -193,7 +205,7 @@ def processar_rj(db, agora):
         print()
         if "FINALIZADO" in (res.get("status_texto") or "").upper() and not p.arquivo_registro:
             try:
-                nome_arquivo = p.id + "_registro_auto.pdf"
+                nome_arquivo = aplicar_nomenclatura_junta(p.id + "_registro_auto.pdf")
                 caminho = os.path.join(UPLOADS_DIR, nome_arquivo)
                 ok_dl = baixar_documento_jucerja(p.numero_protocolo, JUCERJA_USUARIO, JUCERJA_SENHA, caminho, headless=True)
                 if ok_dl and os.path.exists(caminho):
@@ -244,7 +256,7 @@ def processar_ba(db, agora):
         print()
         if "FINALIZADO" in (res.get("status_texto") or "").upper() and not p.arquivo_registro:
             try:
-                nome_arquivo = p.id + "_registro_auto.pdf"
+                nome_arquivo = aplicar_nomenclatura_junta(p.id + "_registro_auto.pdf")
                 caminho = os.path.join(UPLOADS_DIR, nome_arquivo)
                 ok_dl = baixar_documento_juceb(p.numero_protocolo, JUCEB_LOGIN, JUCEB_SENHA, caminho, headless=True)
                 if ok_dl and os.path.exists(caminho):
@@ -297,7 +309,7 @@ def processar_pe(db, agora):
 
         if "FINALIZADO" in (res.get("status_texto") or "").upper() and not p.arquivo_registro:
             try:
-                nome_arquivo = p.id + "_registro_auto.pdf"
+                nome_arquivo = aplicar_nomenclatura_junta(p.id + "_registro_auto.pdf")
                 caminho = os.path.join(UPLOADS_DIR, nome_arquivo)
                 ok_dl = baixar_documento_jucepe(p.numero_protocolo, JUCEB_LOGIN, JUCEB_SENHA, caminho, headless=True)
                 if ok_dl and os.path.exists(caminho):

@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+﻿import { useState, useEffect } from "react";
 import { useSearchParams } from "react-router-dom";
 import axios from "axios";
 
@@ -108,20 +108,66 @@ export default function Cliente() {
         @keyframes atosLogoIn { 0%,6% { opacity:0; transform: translateY(16px); } 26%,60% { opacity:1; transform: translateY(0); } 76%,100% { opacity:0; transform: translateY(-8px); } }
         @keyframes atosSubIn { 0%,28% { opacity:0; transform: translateY(10px); } 44%,60% { opacity:1; transform: translateY(0); } 76%,100% { opacity:0; transform: translateY(-6px); } }
         @keyframes atosFormIn { 0%,66% { opacity:0; transform: translateY(12px); } 86%,100% { opacity:1; transform: translateY(0); } }
-        .atos-splash { position:fixed; inset:0; z-index:50; background:linear-gradient(180deg,#dff3f0 0%,#7fd0d8 38%,#3b82f6 72%,#1e3a8a 100%); display:flex; flex-direction:column; align-items:center; justify-content:center; animation: atosSplashOut 3s ease-in-out forwards; pointer-events:none; }
+        .atos-splash { position:fixed; inset:0; z-index:50; background:linear-gradient(180deg,#dff3f0 0%,#7fd0d8 38%,#3b82f6 72%,#1e3a8a 100%); display:flex; flex-direction:column; align-items:center; justify-content:center; animation: atosSplashOut 5s ease-in-out forwards; pointer-events:none; }
         .atos-splash-wave { position:absolute; top:-35%; left:-30%; width:80%; height:130%; filter:blur(24px); border-radius:45%; background: radial-gradient(circle at 30% 30%, #2dd4bf, transparent 60%), radial-gradient(circle at 60% 60%, #3b82f6, transparent 55%); animation: atosWaveMove 9s ease-in-out infinite; }
-        .atos-splash-logo { position:relative; z-index:2; margin:0; font-family:Inter,sans-serif; font-size:68px; font-weight:800; color:#111; line-height:1; letter-spacing:-2px; animation: atosLogoIn 3s ease-in-out forwards; }
-        .atos-splash-sub { position:relative; z-index:2; margin:12px 0 0; font-size:22px; color:#163a6b; letter-spacing:0.5px; animation: atosSubIn 3s ease-in-out forwards; }
+        .atos-splash-frame { position:relative; z-index:4; -webkit-backdrop-filter:blur(14px); backdrop-filter:blur(14px); border:1px solid rgba(255,255,255,0.5); border-radius:24px; padding:36px 60px; display:flex; flex-direction:column; align-items:center; background:rgba(255,255,255,0.28); opacity:0; transform:scale(0.85); animation: atosFrameIn 5s ease-in-out forwards; }
+        .atos-splash-glow { position:absolute; z-index:3; width:260px; height:260px; border-radius:50%; background:radial-gradient(circle, rgba(255,255,255,0.55), transparent 70%); animation: atosGlowPulse 4s ease-in-out infinite; }
+        @keyframes atosGlowPulse { 0%,100% { transform:scale(1); opacity:0.6; } 50% { transform:scale(1.15); opacity:0.9; } }
+        .atos-splash-cloud { position:absolute; left:-220px; z-index:2; animation-name:atosCloudDrift; animation-timing-function:linear; animation-iteration-count:infinite; }
+        .atos-cloud-base, .atos-cloud-bump { position:absolute; background:#ffffff; border-radius:50%; filter:blur(1px); }
+        .atos-cloud-base { border-radius:100px; }
+        @keyframes atosCloudDrift { 0% { left:-220px; } 100% { left:110%; } }
+        .atos-splash-logo { position:relative; z-index:2; margin:0; font-family:Inter,sans-serif; font-size:68px; font-weight:800; color:#111; line-height:1; letter-spacing:-2px; animation: atosLogoIn 5s ease-in-out forwards; }
+        .atos-splash-sub { position:relative; z-index:2; margin:12px 0 0; font-size:22px; color:#163a6b; letter-spacing:0.5px; animation: atosSubIn 5s ease-in-out forwards; }
         .atos-login-card { animation: atosFormIn 3s ease-in-out forwards; }
       `}</style>
       <div className="atos-splash">
-        <div className="atos-splash-wave"></div>
-        <div className="atos-splash-logo">atos<span style={{ color: "#d85a30" }}>.</span></div>
+        
+        <div className="atos-splash-cloud" style={{ top: "14%", opacity: 0.75, transform: "scale(1.15)", animationDuration: "36s" }}>
+          <div className="atos-cloud-base" style={{ width: 170, height: 56 }}></div>
+          <div className="atos-cloud-bump" style={{ width: 80, height: 80, left: 16, top: -34 }}></div>
+          <div className="atos-cloud-bump" style={{ width: 100, height: 100, left: 58, top: -46 }}></div>
+          <div className="atos-cloud-bump" style={{ width: 70, height: 70, left: 108, top: -28 }}></div>
+        </div>
+        <div className="atos-splash-cloud" style={{ top: "62%", opacity: 0.6, transform: "scale(0.85)", animationDuration: "44s", animationDelay: "-12s" }}>
+          <div className="atos-cloud-base" style={{ width: 170, height: 56 }}></div>
+          <div className="atos-cloud-bump" style={{ width: 80, height: 80, left: 16, top: -34 }}></div>
+          <div className="atos-cloud-bump" style={{ width: 100, height: 100, left: 58, top: -46 }}></div>
+          <div className="atos-cloud-bump" style={{ width: 70, height: 70, left: 108, top: -28 }}></div>
+        </div>
+        <div className="atos-splash-cloud" style={{ top: "35%", opacity: 0.45, transform: "scale(0.6)", animationDuration: "52s", animationDelay: "-28s" }}>
+          <div className="atos-cloud-base" style={{ width: 170, height: 56 }}></div>
+          <div className="atos-cloud-bump" style={{ width: 80, height: 80, left: 16, top: -34 }}></div>
+          <div className="atos-cloud-bump" style={{ width: 100, height: 100, left: 58, top: -46 }}></div>
+          <div className="atos-cloud-bump" style={{ width: 70, height: 70, left: 108, top: -28 }}></div>
+        </div>
+        <div className="atos-splash-glow"></div>
+        <div className="atos-splash-frame">
+          <div className="atos-splash-logo" style={{ fontFamily: "AtosBrand" }}>atos<span style={{ color: "#2d6cdf" }}>.</span></div>
         <div className="atos-splash-sub">Gestao Societaria</div>
+        </div>
       </div>
       <div style={s.wrap}>
+        <div className="atos-splash-cloud" style={{ top: "14%", opacity: 0.75, transform: "scale(1.15)", animationDuration: "36s" }}>
+          <div className="atos-cloud-base" style={{ width: 170, height: 56 }}></div>
+          <div className="atos-cloud-bump" style={{ width: 80, height: 80, left: 16, top: -34 }}></div>
+          <div className="atos-cloud-bump" style={{ width: 100, height: 100, left: 58, top: -46 }}></div>
+          <div className="atos-cloud-bump" style={{ width: 70, height: 70, left: 108, top: -28 }}></div>
+        </div>
+        <div className="atos-splash-cloud" style={{ top: "62%", opacity: 0.6, transform: "scale(0.85)", animationDuration: "44s", animationDelay: "-12s" }}>
+          <div className="atos-cloud-base" style={{ width: 170, height: 56 }}></div>
+          <div className="atos-cloud-bump" style={{ width: 80, height: 80, left: 16, top: -34 }}></div>
+          <div className="atos-cloud-bump" style={{ width: 100, height: 100, left: 58, top: -46 }}></div>
+          <div className="atos-cloud-bump" style={{ width: 70, height: 70, left: 108, top: -28 }}></div>
+        </div>
+        <div className="atos-splash-cloud" style={{ top: "35%", opacity: 0.45, transform: "scale(0.6)", animationDuration: "52s", animationDelay: "-28s" }}>
+          <div className="atos-cloud-base" style={{ width: 170, height: 56 }}></div>
+          <div className="atos-cloud-bump" style={{ width: 80, height: 80, left: 16, top: -34 }}></div>
+          <div className="atos-cloud-bump" style={{ width: 100, height: 100, left: 58, top: -46 }}></div>
+          <div className="atos-cloud-bump" style={{ width: 70, height: 70, left: 108, top: -28 }}></div>
+        </div>
         <div className="atos-login-card" style={s.card}>
-          <div style={s.logo}>atos<span style={{ color: "#d85a30" }}>.</span></div>
+          <div style={{...s.logo, fontFamily: "AtosBrand"}}>atos<span style={{ color: "#2d6cdf" }}>.</span></div>
           <div style={s.sub}>Gestão Societária — {ehCadastro ? "Crie Seu Login e Senha" : "Área do cliente"}</div>
           {erro && <div style={s.erro}>{erro}</div>}
           {aviso && <div style={s.aviso}>{aviso}</div>}
@@ -218,8 +264,94 @@ function ChatProcessoCliente({ processoId, token }) {
   );
 }
 
+function DetalheProcessoCliente({ p, sessao, onVoltar }) {
+  const [anexos, setAnexos] = useState([]);
+  const [enviando, setEnviando] = useState(false);
+
+  async function carregarAnexos() {
+    try {
+      const r = await axios.get(API + "/processos/" + p.id + "/anexos", { headers: { "x-token": sessao.token } });
+      setAnexos(r.data || []);
+    } catch (e) { /* silencioso */ }
+  }
+  useEffect(() => { carregarAnexos(); /* eslint-disable-next-line */ }, []);
+
+  async function enviarAnexo(arquivo) {
+    if (!arquivo) return;
+    setEnviando(true);
+    try {
+      const fd = new FormData();
+      fd.append("arquivo", arquivo);
+      await axios.post(API + "/processos/" + p.id + "/anexos", fd, { headers: { "x-token": sessao.token, "Content-Type": "multipart/form-data" } });
+      await carregarAnexos();
+    } catch (e) { alert("Nao foi possivel enviar o anexo."); }
+    setEnviando(false);
+  }
+
+  async function baixarAnexo(anexoId, nome) {
+    try {
+      const res = await axios.get(API + "/anexos/" + anexoId + "/download", { headers: { "x-token": sessao.token }, responseType: "blob" });
+      const url = window.URL.createObjectURL(new Blob([res.data]));
+      const a = document.createElement("a");
+      a.href = url; a.download = nome || "anexo";
+      document.body.appendChild(a); a.click(); a.remove();
+    } catch (e) { alert("Nao foi possivel baixar o anexo."); }
+  }
+
+  const s2 = {
+    voltar: { background: "transparent", border: "none", color: "#2563eb", cursor: "pointer", fontSize: 13, marginBottom: 16, padding: 0, fontFamily: "'\''Inter'\'', sans-serif" },
+    card: { background: "#fff", border: "0.5px solid #e2e8f0", borderRadius: 12, padding: 20, marginBottom: 16 },
+    label: { fontSize: 11, color: "#94a3b8", marginBottom: 4 },
+    valor: { fontSize: 14, color: "#23282a", marginBottom: 12 },
+    anexoRow: { display: "flex", justifyContent: "space-between", alignItems: "center", padding: "8px 0", borderBottom: "0.5px solid #f1f5f9" },
+  };
+
+  return (
+    <div style={{ padding: "0 4px" }}>
+      <button style={s2.voltar} onClick={onVoltar}>&larr; Voltar para Meus Processos</button>
+      <div style={s2.card}>
+        <div style={s2.label}>Empresa</div>
+        <div style={s2.valor}>{p.empresa}</div>
+        <div style={s2.label}>CNPJ / NIRE</div>
+        <div style={s2.valor}>{p.cnpj}{p.nire ? " . " + p.nire : ""}</div>
+        <div style={s2.label}>Ato</div>
+        <div style={s2.valor}>{p.identificador_ato || p.tipo_ato}</div>
+        <div style={s2.label}>Status</div>
+        <div style={s2.valor}>{STATUS_CONFIG[p.status]?.label || p.status}</div>
+        <div style={s2.label}>Processo criado em</div>
+        <div style={s2.valor}>{p.criado_em ? new Date(p.criado_em).toLocaleString("pt-BR") : "-"}</div>
+      </div>
+      <div style={s2.card}>
+        <div style={{ fontSize: 13, fontWeight: 500, color: "#23282a", marginBottom: 12 }}>Anexos</div>
+        {anexos.length === 0 ? (
+          <div style={{ fontSize: 13, color: "#94a3b8", marginBottom: 12 }}>Nenhum anexo enviado ainda.</div>
+        ) : (
+          anexos.map(a => (
+            <div key={a.id} style={s2.anexoRow}>
+              <span style={{ fontSize: 13 }}>{a.nome_original}</span>
+              <button onClick={() => baixarAnexo(a.id, a.nome_original)}
+                style={{ background: "transparent", border: "0.5px solid #2563eb", color: "#2563eb", borderRadius: 6, padding: "4px 10px", fontSize: 12, cursor: "pointer" }}>
+                Baixar
+              </button>
+            </div>
+          ))
+        )}
+        <div style={{ marginTop: 16 }}>
+          <label style={{ cursor: enviando ? "default" : "pointer" }}>
+            <span style={{ display: "inline-block", padding: "9px 16px", background: enviando ? "#e2e8f0" : "#2563eb", color: enviando ? "#94a3b8" : "#fff", borderRadius: 8, fontSize: 13, fontFamily: "'\''Inter'\'', sans-serif" }}>
+              {enviando ? "Enviando..." : "+ Anexar arquivo"}
+            </span>
+            <input type="file" style={{ display: "none" }} disabled={enviando} onChange={e => enviarAnexo(e.target.files[0])} />
+          </label>
+        </div>
+      </div>
+    </div>
+  );
+}
 export function Painel({ sessao, onSair }) {
   const [processos, setProcessos] = useState([]);
+  const [metricas, setMetricas] = useState({});
+  const [processoSelecionado, setProcessoSelecionado] = useState(null);
   const [carregando, setCarregando] = useState(true);
   const [erro, setErro] = useState("");
   const [exigenciaAberta, setExigenciaAberta] = useState(null);
@@ -251,6 +383,8 @@ export function Painel({ sessao, onSair }) {
     try {
       const res = await axios.get(`${API}/processos`, { headers: { "x-token": sessao.token } });
       setProcessos(res.data);
+      const m = await axios.get(API + "/metricas", { headers: { "x-token": sessao.token } });
+      setMetricas(m.data);
     } catch (e) {
       if (e.response && e.response.status === 401) { onSair(); return; }
       setErro("Erro ao carregar processos.");
@@ -435,12 +569,12 @@ export function Painel({ sessao, onSair }) {
     <>
       <div style={s.appCliente}>
         <aside style={s.sidebar}>
-          <div style={s.brandBox}>
-            <div style={s.logoSide}>atos<span style={{ color: "#d85a30" }}>.</span></div>
+          <div style={{ ...s.brandBox, cursor: "pointer" }} onClick={() => { setTela("processos"); setProcessoSelecionado(null); }}>
+            <div style={{...s.logoSide, fontFamily: "AtosBrand"}}>atos<span style={{ color: "#2d6cdf" }}>.</span></div>
             <div style={s.tagSide}>Gestão Societária</div>
           </div>
           <nav style={s.navBox}>
-            <button style={s.navItem(tela === "processos")} onClick={() => setTela("processos")}>Processos</button>
+            <button style={s.navItem(tela === "processos")} onClick={() => { setTela("processos"); setProcessoSelecionado(null); }}>Processos</button>
             <button style={s.navItem(tela === "relatorios")} onClick={() => setTela("relatorios")}>Relatorios</button>
           </nav>
           <div style={s.sideFoot}>
@@ -449,9 +583,31 @@ export function Painel({ sessao, onSair }) {
           </div>
         </aside>
         <main style={s.mainCliente}>
-          {tela === "processos" ? (
+          {processoSelecionado ? (
+            <div style={s.conteudo}>
+              <DetalheProcessoCliente p={processoSelecionado} sessao={sessao} onVoltar={() => setProcessoSelecionado(null)} />
+            </div>
+          ) : tela === "processos" ? (
             <div style={s.conteudo}>
               <div style={s.h1}>Meus Processos</div>
+              <div style={s.metrics}>
+                <div style={s.metricCard} onClick={() => setFStatus("")}>
+                  <div style={s.metricLabel}>Total</div>
+                  <div style={s.metricValue}>{metricas.total || 0}</div>
+                </div>
+                <div style={s.metricCard} onClick={() => setFStatus("tramitacao")}>
+                  <div style={s.metricLabel}>Em tramitação</div>
+                  <div style={{ ...s.metricValue, color: "#c98a4b" }}>{metricas.tramitacao || 0}</div>
+                </div>
+                <div style={s.metricCard} onClick={() => setFStatus("exigencia")}>
+                  <div style={s.metricLabel}>Com exigência</div>
+                  <div style={{ ...s.metricValue, color: "#a8492a" }}>{metricas.exigencia || 0}</div>
+                </div>
+                <div style={s.metricCard} onClick={() => setFStatus("deferido")}>
+                  <div style={s.metricLabel}>Deferidos</div>
+                  <div style={{ ...s.metricValue, color: "#2563eb" }}>{metricas.deferido || 0}</div>
+                </div>
+              </div>
               <div style={{ display: "flex", gap: 10, marginBottom: 16, flexWrap: "wrap", alignItems: "center" }}>
                 <input value={fBusca} onChange={e => setFBusca(e.target.value)} placeholder="Buscar empresa..."
                   style={{ flex: "1 1 200px", minWidth: 160, padding: "9px 12px", border: "0.5px solid #e6e0d2", borderRadius: 8, fontSize: 13, outline: "none", fontFamily: "'Inter', sans-serif" }} />
@@ -563,6 +719,12 @@ export function Painel({ sessao, onSair }) {
                             {p.status === "exigencia" ? " ›" : " ↓"}
                           </span>
                         </div>
+                        <div>
+                          <button onClick={() => setProcessoSelecionado(p)}
+                            style={{ background: "transparent", border: "0.5px solid #2563eb", color: "#2563eb", borderRadius: 6, padding: "5px 12px", fontSize: 12, cursor: "pointer", fontFamily: "'Inter', sans-serif" }}>
+                            Ver processo
+                          </button>
+                        </div>
                       </div>
                     ))}
                   </div>
@@ -648,7 +810,7 @@ export function Painel({ sessao, onSair }) {
 function estilos() {
   return {
     appCliente: { display: "grid", gridTemplateColumns: "240px 1fr", minHeight: "100vh", fontFamily: "'Inter', sans-serif", background: "#f4f2ec" },
-    sidebar: { background: "#2563eb", display: "flex", flexDirection: "column" },
+    sidebar: { background: "linear-gradient(165deg,#0e2a6e,#2563eb)", display: "flex", flexDirection: "column" },
     brandBox: { margin: "20px 18px 10px", padding: "16px 18px", background: "#f4f2ec", borderRadius: 12 },
     logoSide: { fontFamily: "'Inter', sans-serif", fontSize: 30, fontWeight: 800, color: "#16151a", letterSpacing: -1.5, lineHeight: 1 },
     tagSide: { fontSize: 11, color: "#6b6c66", marginTop: 4 },
@@ -658,7 +820,7 @@ function estilos() {
     sideGrupo: { fontSize: 13, color: "#fff", fontWeight: 500 },
     sideLogin: { fontSize: 12, color: "#cfe8f0", marginBottom: 10 },
     mainCliente: { overflowY: "auto" },
-    wrap: { minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", background: "linear-gradient(180deg,#dff3f0 0%,#7fd0d8 38%,#3b82f6 72%,#1e3a8a 100%)", fontFamily: "'Inter', sans-serif" },
+    wrap: { minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", background: "linear-gradient(180deg,#dff3f0 0%,#7fd0d8 38%,#3b82f6 72%,#1e3a8a 100%)", fontFamily: "'Inter', sans-serif", position: "relative", overflow: "hidden" },
     card: { background: "#fff", borderRadius: 12, padding: 36, width: 340, boxShadow: "0 10px 40px rgba(0,0,0,0.3)" },
     logo: { fontFamily: "'DM Serif Display', serif", fontSize: 52, color: "#2563eb", textAlign: "center", lineHeight: 1 },
     sub: { textAlign: "center", fontSize: 13, color: "#64748b", marginBottom: 24 },
@@ -671,11 +833,15 @@ function estilos() {
     btnSair: { background: "none", border: "0.5px solid #334155", color: "#94a3b8", borderRadius: 6, padding: "5px 12px", fontSize: 12, cursor: "pointer" },
     conteudo: { padding: 28, maxWidth: 920, margin: "0 auto" },
     h1: { fontSize: 18, fontWeight: 500, color: "#23282a", marginBottom: 18 },
+    metrics: { display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 12, marginBottom: 24 },
+    metricCard: { background: "#fff", border: "0.5px solid #e2e8f0", borderRadius: 10, padding: 16, cursor: "pointer" },
+    metricLabel: { fontSize: 12, color: "#64748b", marginBottom: 6 },
+    metricValue: { fontFamily: "'DM Serif Display', serif", fontSize: 40, fontWeight: 400, color: "#23282a", lineHeight: 1 },
     vazio: { background: "#fff", border: "0.5px solid #e2e8f0", borderRadius: 12, padding: "40px 16px", textAlign: "center", color: "#94a3b8", fontSize: 14 },
     tabela: { background: "#fff", border: "0.5px solid #e2e8f0", borderRadius: 12, overflow: "hidden" },
     thead: { display: "grid", gridTemplateColumns: "2.5fr 0.5fr 1.3fr 1.2fr 1fr", padding: "10px 16px", background: "#f1f5f9", borderBottom: "0.5px solid #e2e8f0" },
     th: { fontSize: 11, fontWeight: 500, color: "#64748b" },
-    row: { display: "grid", gridTemplateColumns: "2.5fr 0.5fr 1.3fr 1.2fr 1fr", padding: "13px 16px", borderBottom: "0.5px solid #f1f5f9", alignItems: "center" },
+    row: { display: "grid", gridTemplateColumns: "2.2fr 0.5fr 1.2fr 1fr 0.9fr 0.9fr", padding: "13px 16px", borderBottom: "0.5px solid #f1f5f9", alignItems: "center" },
     empresa: { fontSize: 13, fontWeight: 500, color: "#23282a" },
     metaEmp: { fontFamily: "monospace", fontSize: 11, color: "#94a3b8", marginTop: 2 },
     cell: { fontSize: 12, color: "#475569" },

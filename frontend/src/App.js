@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+﻿import { useState, useEffect } from "react";
 import axios from "axios";
 import { Painel as PainelCliente } from "./Cliente";
 
@@ -742,6 +742,22 @@ async function excluirProcesso() {
       }
       setSalvandoProt(false);
     }
+    async function excluirProtocolo() {
+      if (!window.confirm("Tem certeza que deseja excluir o protocolo deste processo? O processo voltara para o status Aberto.")) return;
+      setSalvandoProt(true);
+      try {
+        await axios.patch(`${API}/processos/${p.id}`, { numero_protocolo: "", arquivo_protocolo: null });
+        setNumProtocolo("");
+        if (processoSelecionado?.id === p.id) {
+          const res = await axios.get(`${API}/processos/${p.id}`);
+          setProcessoSelecionado(res.data);
+        }
+        carregar();
+      } catch (e) {
+        alert("Erro ao excluir o protocolo.");
+      }
+      setSalvandoProt(false);
+    }
 
     return (
       <div style={s.detalhe}>
@@ -776,6 +792,7 @@ async function excluirProcesso() {
           <div style={s.detalheItem}><div style={s.detalheItemLabel}>Data da ata</div><div style={s.detalheItemValue}>{p.data_ata} {p.hora_ata && `· ${p.hora_ata}`}</div></div>
           <div style={s.detalheItem}><div style={s.detalheItemLabel}>Tipo de sociedade</div><div style={s.detalheItemValue}>{p.tipo_sociedade}</div></div>
           <div style={s.detalheItem}><div style={s.detalheItemLabel}>Recebido em</div><div style={s.detalheItemValue}>{new Date(p.data_recebimento).toLocaleDateString("pt-BR")}</div></div>
+          <div style={s.detalheItem}><div style={s.detalheItemLabel}>Processo criado em</div><div style={s.detalheItemValue}>{p.criado_em ? new Date(p.criado_em).toLocaleString("pt-BR") : "—"}</div></div>
           <div style={s.detalheItem}><div style={s.detalheItemLabel}>Protocolo</div><div style={s.detalheItemValue}>{p.numero_protocolo || "—"}</div></div>
         </div>
 
@@ -837,6 +854,9 @@ async function excluirProcesso() {
           <button style={{ ...s.btnPrimary, height: 38 }} onClick={salvarProtocolo} disabled={salvandoProt}>
             {salvandoProt ? "Salvando..." : "Salvar"}
           </button>
+          <button style={{ ...s.btnSecondary, height: 38, borderColor: "#fca5a5", color: "#b91c1c" }} onClick={excluirProtocolo} disabled={salvandoProt}>
+            Excluir protocolo
+          </button>
         </div>
         <div style={s.uploadRow}>
           {[
@@ -853,6 +873,12 @@ async function excluirProcesso() {
                     <span style={s.uploadOk}>✓ Anexado</span>
                     <button onClick={() => baixarArquivo(p.id, tipo, (p.empresa||"documento").replace(/[^a-zA-Z0-9]/g,"_"))}
                       style={{ background: "transparent", border: "0.5px solid #2563eb", color: "#2563eb", borderRadius: 6, padding: "3px 10px", fontSize: 11, cursor: "pointer", fontFamily: "'Inter', sans-serif" }}>↓ Baixar</button>
+                    { tipo === "protocolo" && (
+                      <label style={{ cursor: "pointer" }}>
+                        <span style={{ ...s.uploadPend, fontSize: 11 }}>Trocar</span>
+                        <input type="file" style={{ display: "none" }} onChange={e => uploadProtocoloLocal(tipo, e.target.files[0])} />
+                      </label>
+                    )}
                   </span>
                 : <label style={{ cursor: "pointer" }}>
                     <span style={s.uploadPend}>+ Anexar</span>
@@ -927,7 +953,7 @@ async function excluirProcesso() {
       <div style={s.layout}>
         <div style={s.sidebar}>
           <div style={{ margin: "20px 16px 14px", padding: "16px 18px", background: "#f4f2ec", borderRadius: 12 }}>
-            <div style={{ ...s.logo, cursor: "pointer" }} onClick={() => { setTela("processos"); setProcessoSelecionado(null); }}>atos<span style={{ color: "#d85a30" }}>.</span></div>
+            <div style={{ ...s.logo, cursor: "pointer" , fontFamily: "AtosBrand" , fontSize: 42}} onClick={() => { setTela("processos"); setProcessoSelecionado(null); }}>atos<span style={{ color: "#2d6cdf" }}>.</span></div>
             <div style={{ fontSize: 11, color: "#6b6c66", marginTop: 4 }}>Gestão Societária</div>
           </div>
           {[
@@ -963,27 +989,27 @@ async function excluirProcesso() {
 
               <BannerPendencias />
               <div style={s.metrics}>
-                <div style={s.metricCard}>
+                <div style={{ ...s.metricCard, cursor: "pointer" }} onClick={() => setFStatus("")}>
                   <div style={s.metricLabel}>Total</div>
                   <div style={s.metricValue}>{metricas.total || 0}</div>
 
                 </div>
-                <div style={s.metricCard}>
+                <div style={{ ...s.metricCard, cursor: "pointer" }} onClick={() => setFStatus("tramitacao")}>
                   <div style={s.metricLabel}>Em tramitação</div>
                   <div style={{ ...s.metricValue, color: "#c98a4b" }}>{metricas.tramitacao || 0}</div>
 
                 </div>
-                <div style={s.metricCard}>
+                <div style={{ ...s.metricCard, cursor: "pointer" }} onClick={() => setFStatus("exigencia")}>
                   <div style={s.metricLabel}>Com exigência</div>
                   <div style={{ ...s.metricValue, color: "#a8492a" }}>{metricas.exigencia || 0}</div>
 
                 </div>
-                <div style={s.metricCard}>
+                <div style={{ ...s.metricCard, cursor: "pointer" }} onClick={() => setFStatus("deferido")}>
                   <div style={s.metricLabel}>Deferidos</div>
                   <div style={{ ...s.metricValue, color: "#2563eb" }}>{metricas.deferido || 0}</div>
 
                 </div>
-                <div style={s.metricCard}>
+                <div style={{ ...s.metricCard, cursor: "pointer" }} onClick={() => setFStatus("finalizado")}>
                   <div style={s.metricLabel}>Finalizados</div>
                   <div style={{ ...s.metricValue, color: "#15803d" }}>{metricas.finalizado || 0}</div>
                 </div>
@@ -1248,22 +1274,51 @@ export default function App() {
         @keyframes atosLogoIn { 0%,6% { opacity:0; transform: translateY(16px); } 26%,60% { opacity:1; transform: translateY(0); } 76%,100% { opacity:0; transform: translateY(-8px); } }
         @keyframes atosSubIn { 0%,28% { opacity:0; transform: translateY(10px); } 44%,60% { opacity:1; transform: translateY(0); } 76%,100% { opacity:0; transform: translateY(-6px); } }
         @keyframes atosFormIn { 0%,66% { opacity:0; transform: translateY(12px); } 86%,100% { opacity:1; transform: translateY(0); } }
-        .atos-splash { position:fixed; inset:0; z-index:50; background:linear-gradient(180deg,#dff3f0 0%,#7fd0d8 38%,#3b82f6 72%,#1e3a8a 100%); display:flex; flex-direction:column; align-items:center; justify-content:center; animation: atosSplashOut 3s ease-in-out forwards; pointer-events:none; }
+        .atos-splash { position:fixed; inset:0; z-index:50; background:linear-gradient(180deg,#dff3f0 0%,#7fd0d8 38%,#3b82f6 72%,#1e3a8a 100%); display:flex; flex-direction:column; align-items:center; justify-content:center; animation: atosSplashOut 5s ease-in-out forwards; pointer-events:none; }
         .atos-splash-wave { position:absolute; top:-35%; left:-30%; width:80%; height:130%; filter:blur(24px); border-radius:45%; background: radial-gradient(circle at 30% 30%, #2dd4bf, transparent 60%), radial-gradient(circle at 60% 60%, #3b82f6, transparent 55%); animation: atosWaveMove 9s ease-in-out infinite; }
-        .atos-splash-logo { position:relative; z-index:2; margin:0; font-size:68px; font-weight:800; color:#111; line-height:1; letter-spacing:-2px; animation: atosLogoIn 3s ease-in-out forwards; }
-        .atos-splash-sub { position:relative; z-index:2; margin:12px 0 0; font-size:22px; color:#163a6b; letter-spacing:0.5px; animation: atosSubIn 3s ease-in-out forwards; }
+        @keyframes atosFrameIn { 0% { opacity:0; transform:scale(0.85); } 16% { opacity:1; transform:scale(1); } 80% { opacity:1; transform:scale(1); } 100% { opacity:0; transform:scale(1.03); } }
+        .atos-splash-frame { position:relative; z-index:4; -webkit-backdrop-filter:blur(14px); backdrop-filter:blur(14px); border:1px solid rgba(255,255,255,0.5); border-radius:24px; padding:36px 60px; display:flex; flex-direction:column; align-items:center; background:rgba(255,255,255,0.28); opacity:0; transform:scale(0.85); animation: atosFrameIn 5s ease-in-out forwards; }
+        .atos-splash-glow { position:absolute; z-index:3; width:260px; height:260px; border-radius:50%; background:radial-gradient(circle, rgba(255,255,255,0.55), transparent 70%); animation: atosGlowPulse 4s ease-in-out infinite; }
+        @keyframes atosGlowPulse { 0%,100% { transform:scale(1); opacity:0.6; } 50% { transform:scale(1.15); opacity:0.9; } }
+        .atos-splash-cloud { position:absolute; left:-220px; z-index:2; animation-name:atosCloudDrift; animation-timing-function:linear; animation-iteration-count:infinite; }
+        .atos-cloud-base, .atos-cloud-bump { position:absolute; background:#ffffff; border-radius:50%; filter:blur(1px); }
+        .atos-cloud-base { border-radius:100px; }
+        @keyframes atosCloudDrift { 0% { left:-220px; } 100% { left:110%; } }
+        .atos-splash-logo { position:relative; z-index:2; margin:0; font-size:68px; font-weight:800; color:#111; line-height:1; letter-spacing:-2px; animation: atosLogoIn 5s ease-in-out forwards; }
+        .atos-splash-sub { position:relative; z-index:2; margin:12px 0 0; font-size:22px; color:#163a6b; letter-spacing:0.5px; animation: atosSubIn 5s ease-in-out forwards; }
         .atos-login-card { animation: atosFormIn 3s ease-in-out forwards; }
         .atos-bgwave { position:absolute; top:-50%; left:-20%; width:70%; height:120%; filter:blur(40px); border-radius:45%; background: radial-gradient(circle at 40% 40%, rgba(45,212,191,0.45), transparent 62%), radial-gradient(circle at 60% 60%, rgba(59,130,246,0.4), transparent 55%); pointer-events:none; }
       `}</style>
       <div className="atos-splash">
-        <div className="atos-splash-wave"></div>
-        <div className="atos-splash-logo">atos<span style={{ color: "#d85a30" }}>.</span></div>
+        
+        <div className="atos-splash-cloud" style={{ top: "14%", opacity: 0.75, transform: "scale(1.15)", animationDuration: "36s" }}>
+          <div className="atos-cloud-base" style={{ width: 170, height: 56 }}></div>
+          <div className="atos-cloud-bump" style={{ width: 80, height: 80, left: 16, top: -34 }}></div>
+          <div className="atos-cloud-bump" style={{ width: 100, height: 100, left: 58, top: -46 }}></div>
+          <div className="atos-cloud-bump" style={{ width: 70, height: 70, left: 108, top: -28 }}></div>
+        </div>
+        <div className="atos-splash-cloud" style={{ top: "62%", opacity: 0.6, transform: "scale(0.85)", animationDuration: "44s", animationDelay: "-12s" }}>
+          <div className="atos-cloud-base" style={{ width: 170, height: 56 }}></div>
+          <div className="atos-cloud-bump" style={{ width: 80, height: 80, left: 16, top: -34 }}></div>
+          <div className="atos-cloud-bump" style={{ width: 100, height: 100, left: 58, top: -46 }}></div>
+          <div className="atos-cloud-bump" style={{ width: 70, height: 70, left: 108, top: -28 }}></div>
+        </div>
+        <div className="atos-splash-cloud" style={{ top: "35%", opacity: 0.45, transform: "scale(0.6)", animationDuration: "52s", animationDelay: "-28s" }}>
+          <div className="atos-cloud-base" style={{ width: 170, height: 56 }}></div>
+          <div className="atos-cloud-bump" style={{ width: 80, height: 80, left: 16, top: -34 }}></div>
+          <div className="atos-cloud-bump" style={{ width: 100, height: 100, left: 58, top: -46 }}></div>
+          <div className="atos-cloud-bump" style={{ width: 70, height: 70, left: 108, top: -28 }}></div>
+        </div>
+        <div className="atos-splash-glow"></div>
+        <div className="atos-splash-frame">
+          <div className="atos-splash-logo" style={{ fontFamily: "AtosBrand" }}>atos<span style={{ color: "#2d6cdf" }}>.</span></div>
         <div className="atos-splash-sub">Gestão Societária</div>
+        </div>
       </div>
       <div style={{ minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", background: "linear-gradient(180deg,#dff3f0 0%,#7fd0d8 38%,#3b82f6 72%,#1e3a8a 100%)", fontFamily: "Inter, sans-serif", position: "relative", overflow: "hidden", padding: "16px" }}>
         <div className="atos-bgwave"></div>
         <div className="atos-login-card" style={{ background: "#fff", borderRadius: 16, padding: 32, width: "100%", maxWidth: 360, boxShadow: "0 10px 50px rgba(20,10,50,0.45)", position: "relative", zIndex: 2, boxSizing: "border-box" }}>
-          <div style={{ fontSize: 34, fontWeight: 800, color: "#111111", letterSpacing: -1.5, textAlign: "center" }}>atos<span style={{ color: "#d85a30" }}>.</span></div>
+          <div style={{ fontSize: 34, fontWeight: 800, color: "#111111", fontFamily: "AtosBrand", letterSpacing: -1.5, textAlign: "center" }}>atos<span style={{ color: "#2d6cdf" }}>.</span></div>
           <div style={{ textAlign: "center", fontSize: 13, color: "#7a7790", marginBottom: 4 }}>Gestão Societária</div>
           <div style={{ textAlign: "center", fontSize: 12, color: "#a09dba", marginBottom: 24 }}>Painel do Administrador</div>
           {erro && <div style={{ background: "#fee2e2", color: "#991b1b", borderRadius: 8, padding: "8px 12px", fontSize: 13, marginBottom: 14 }}>{erro}</div>}

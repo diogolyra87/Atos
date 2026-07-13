@@ -1582,7 +1582,8 @@ async def registrar_exigencia(
         try:
             cam = os.path.join(UPLOADS_DIR, p.arquivo_exigencia)
             for em in emails_do_grupo(db, p.grupo_id):
-                enviar_email_anexo(em, "Exigencia no seu processo - " + (p.empresa or ""), "Seu processo recebeu uma exigencia, segue em anexo o documento", cam, p.arquivo_exigencia)
+                corpo_exig = corpo_status_cliente(p, "Exigencia", "Segue em anexo o documento da exigencia.")
+                enviar_email_anexo(em, "Exigencia no seu processo - " + (p.empresa or ""), corpo_exig, cam, p.arquivo_exigencia)
         except Exception as e:
             print("Erro ao notificar exigencia ao cliente:", e)
     return {"mensagem": "Exigencia registrada", "status": p.status}

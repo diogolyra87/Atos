@@ -123,7 +123,7 @@ def aplicar_classificacao(db, p, classificacao, agora):
             enviar_email(EMAIL_ADMIN, "[Atos] Deferido - " + str(p.empresa), corpo_admin(p, "Deferido") + "\n\nAguardando a Junta Comercial disponibilizar o Registro.")
             if not p.avisado_deferido:
                 for em in emails_do_grupo(db, p.grupo_id):
-                    enviar_email(em, "Atualizacao do seu processo - " + str(p.empresa), "Documento Deferido, aguardando liberacao do Registro.")
+                    enviar_email(em, "Atualizacao do seu processo - " + str(p.empresa), corpo_status_cliente(p, "Deferido", "Aguardando liberacao do Registro."))
                 p.avisado_deferido = True
                 db.commit()
             print("   -> mudou para DEFERIDO + alertou admin e cliente")

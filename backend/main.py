@@ -885,6 +885,10 @@ def _extrair_texto_bytes(conteudo: bytes, nome: str) -> str:
     nm = (nome or "").lower()
     texto = ""
     try:
+        if nm.endswith((".jpg", ".jpeg", ".png")):
+            import img2pdf
+            conteudo = img2pdf.convert(conteudo)
+            nm = "convertida.pdf"
         if nm.endswith(".pdf"):
             import fitz
             with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as f:
@@ -1058,7 +1062,7 @@ async def analisar_pasta(arquivos: list[UploadFile] = File(...), x_token: str = 
                     tipo = regra.get("tipo_correto")
             elif regra.get("classificacao") == "anexo":
                 score -= 100 + (regra.get("peso") or 1)
-        itens.append({"indice": idx, "nome": arq.filename or ("arquivo_" + str(idx)), "texto": texto, "tipo": tipo, "score": score, "regra_aplicada": regra_aplicada})
+        itens.append({"indice": idx, "nome": arq.filename or ("arquivo_" + str(idx)), "texto": texto, "tipo": tipo, "score": score, "regra_aplicada": regra_aplicada, "conteudo": conteudo})
     if not itens:
         raise HTTPException(status_code=400, detail="Nenhum arquivo recebido.")
     ordenados = sorted(itens, key=lambda x: x["score"], reverse=True)
@@ -1070,6 +1074,9 @@ async def analisar_pasta(arquivos: list[UploadFile] = File(...), x_token: str = 
     dados = analisar_ata_ia(melhor["texto"]) if melhor["texto"].strip() else {}
     if melhor["tipo"]:
         dados["tipo_ato"] = dados.get("tipo_ato") or melhor["tipo"]
+    numero_prot = _tentar_extrair_protocolo(melhor["conteudo"], melhor["nome"])
+    if numero_prot:
+        dados["numero_protocolo"] = numero_prot
     anexos = [{"indice": i["indice"], "nome": i["nome"]} for i in itens if i["indice"] != melhor["indice"]]
     return {
         "principal": {"indice": melhor["indice"], "nome": melhor["nome"], "tipo_sugerido": melhor["tipo"], "dados": dados, "score": melhor["score"]},
@@ -1151,6 +1158,25 @@ def _classificar_lote_ia(itens):
         print("Erro na classificacao por IA do lote:", str(e)[:200])
         return {}
 
+def _tentar_extrair_protocolo(conteudo: bytes, nome: str):
+    """Tenta extrair o numero de protocolo de um arquivo (PDF ou imagem), usando o
+    mesmo pipeline robusto (codigo de barras + texto + Gemini + Tesseract) ja usado
+    no upload de protocolo para processo existente. Nunca lanca excecao para fora."""
+    import tempfile
+    nm = (nome or "").lower()
+    try:
+        if nm.endswith((".jpg", ".jpeg", ".png")):
+            import img2pdf
+            conteudo = img2pdf.convert(conteudo)
+        with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as f:
+            f.write(conteudo)
+            tmp = f.name
+        numero = extrair_protocolo_ocr(tmp)
+        os.unlink(tmp)
+        return numero
+    except Exception as e:
+        print("Erro ao tentar extrair protocolo no upload de pasta:", str(e)[:150])
+        return None
 def _sa_texto_local(s):
     import unicodedata
     s = (s or "").lower()
@@ -1171,7 +1197,7 @@ async def analisar_pasta_multi(arquivos: list[UploadFile] = File(...), x_token: 
         conteudo = await arq.read()
         texto = _extrair_texto_bytes(conteudo, arq.filename or "")
         ja_reg_flag = _ja_registrada(_sa_texto_local(texto[:4000]))
-        itens.append({"indice": idx, "nome": arq.filename or ("arquivo_" + str(idx)), "texto": texto, "ja_reg": ja_reg_flag})
+        itens.append({"indice": idx, "nome": arq.filename or ("arquivo_" + str(idx)), "texto": texto, "ja_reg": ja_reg_flag, "conteudo": conteudo})
     if not itens:
         raise HTTPException(status_code=400, detail="Nenhum arquivo recebido.")
 
@@ -1197,6 +1223,9 @@ async def analisar_pasta_multi(arquivos: list[UploadFile] = File(...), x_token: 
     principais_out = []
     for i in principais_itens:
         dados = analisar_ata_ia(i["texto"]) if i["texto"].strip() else {}
+        numero_prot = _tentar_extrair_protocolo(i["conteudo"], i["nome"])
+        if numero_prot:
+            dados["numero_protocolo"] = numero_prot
         principais_out.append({"indice": i["indice"], "nome": i["nome"], "tipo_sugerido": dados.get("tipo_ato"), "dados": dados, "score": 0})
 
     for _pp in principais_out:
@@ -1337,6 +1366,7 @@ async def criar_processo(
         identificador_ato=info.get("identificador_ato", ""),
         data_ata=info.get("data_ata", ""),
         hora_ata=info.get("hora_ata", ""),
+        numero_protocolo=info.get("numero_protocolo", ""),
         email_cliente=info.get("email_cliente", ""),
         eventos=json.dumps(info.get("eventos", []), ensure_ascii=False),
         checklist=json.dumps(info.get("checklist", []), ensure_ascii=False),

@@ -1553,7 +1553,7 @@ async def upload_arquivo(
         status_antes_up = (p.status or "").lower()
         setattr(p, campo_map[tipo], nome_arquivo)
         if tipo == "protocolo":
-            _num = extrair_protocolo_ocr(caminho)
+            _num = _tentar_extrair_protocolo(conteudo, nome_arquivo)
             if _num:
                 p.numero_protocolo = _num
                 print("OCR protocolo detectado:", _num)

@@ -298,6 +298,17 @@ function DetalheProcessoCliente({ p, sessao, onVoltar }) {
     } catch (e) { alert("Nao foi possivel baixar o anexo."); }
   }
 
+  async function baixarRegistro() {
+    try {
+      const res = await axios.get(API + "/download/" + p.id + "/registro", { headers: { "x-token": sessao.token }, responseType: "blob" });
+      const url = window.URL.createObjectURL(new Blob([res.data]));
+      const a = document.createElement("a");
+      a.href = url; a.download = (p.empresa || "registro").replace(/[^a-zA-Z0-9]/g, "_") + "_registro.pdf";
+      document.body.appendChild(a); a.click(); a.remove();
+      window.URL.revokeObjectURL(url);
+    } catch (e) { alert("Nao foi possivel baixar o registro."); }
+  }
+
   const sD = {
     detalhe: { background: "#fff", border: "0.5px solid #e2e8f0", borderRadius: 12, padding: 24 },
     detalheHeader: { display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 20 },
@@ -321,7 +332,14 @@ function DetalheProcessoCliente({ p, sessao, onVoltar }) {
             CNPJ {p.cnpj} - NIRE {p.nire}
           </div>
         </div>
-        <button style={sD.btnSecondary} onClick={onVoltar}>Voltar</button>
+        <div style={{ display: "flex", gap: 8 }}>
+          {p.arquivo_registro && (
+            <button style={{ background: "#2563eb", color: "#fff", border: "none", borderRadius: 8, padding: "9px 18px", fontSize: 13, cursor: "pointer" }} onClick={baixarRegistro}>
+              Baixar registro
+            </button>
+          )}
+          <button style={sD.btnSecondary} onClick={onVoltar}>Voltar</button>
+        </div>
       </div>
 
       <div style={{ fontSize: 13, color: "#64748b", marginBottom: 12 }}>Status:</div>

@@ -302,6 +302,66 @@ def corpo_status_cliente(p, status_label, frase_final):
         linhas.append(frase_final)
     return "\n".join(linhas)
 
+def notificar_tramitacao_cliente(db, p, status_antes):
+    """Avisa o cliente por email quando o processo entra em tramitacao (protocolo +
+    arquivo do protocolo ja presentes). Compartilhada entre PATCH manual, upload de
+    arquivo (Trocar/Salvar) e o Mane via Telegram, para nunca faltar aviso dependendo
+    de qual caminho foi usado para inserir o protocolo."""
+    if (status_antes or "").lower() == "tramitacao" or (p.status or "").lower() != "tramitacao":
+        return
+    tem_numero = bool((p.numero_protocolo or "").strip())
+    tem_pdf = bool((p.arquivo_protocolo or "").strip())
+    if tem_numero and tem_pdf:
+        try:
+            corpo = corpo_status_cliente(p, "Tramitacao", "Aguardando analise da Junta Comercial.")
+            cam = os.path.join(UPLOADS_DIR, p.arquivo_protocolo)
+            for em in emails_do_grupo(db, p.grupo_id):
+                enviar_email_anexo(em, "Atualizacao do seu processo - " + (p.empresa or ""), corpo, cam, p.arquivo_protocolo)
+        except Exception as e:
+            print("Erro ao notificar tramitacao:", e)
+    else:
+        print("Tramitacao sem email - falta numero ou pdf. numero:", tem_numero, "pdf:", tem_pdf)
+
+def notificar_tramitacao_cliente(db, p, status_antes):
+    """Avisa o cliente por email quando o processo entra em tramitacao (protocolo +
+    arquivo do protocolo ja presentes). Compartilhada entre PATCH manual, upload de
+    arquivo (Trocar/Salvar) e o Mane via Telegram, para nunca faltar aviso dependendo
+    de qual caminho foi usado para inserir o protocolo."""
+    if (status_antes or "").lower() == "tramitacao" or (p.status or "").lower() != "tramitacao":
+        return
+    tem_numero = bool((p.numero_protocolo or "").strip())
+    tem_pdf = bool((p.arquivo_protocolo or "").strip())
+    if tem_numero and tem_pdf:
+        try:
+            corpo = corpo_status_cliente(p, "Tramitacao", "Aguardando analise da Junta Comercial.")
+            cam = os.path.join(UPLOADS_DIR, p.arquivo_protocolo)
+            for em in emails_do_grupo(db, p.grupo_id):
+                enviar_email_anexo(em, "Atualizacao do seu processo - " + (p.empresa or ""), corpo, cam, p.arquivo_protocolo)
+        except Exception as e:
+            print("Erro ao notificar tramitacao:", e)
+    else:
+        print("Tramitacao sem email - falta numero ou pdf. numero:", tem_numero, "pdf:", tem_pdf)
+
+def notificar_tramitacao_cliente(db, p, status_antes):
+    """Avisa o cliente por email quando o processo entra em tramitacao (protocolo +
+    arquivo do protocolo ja presentes). Compartilhada entre PATCH manual, upload de
+    arquivo (Trocar/Salvar) e o Mane via Telegram, para nunca faltar aviso dependendo
+    de qual caminho foi usado para inserir o protocolo."""
+    if (status_antes or "").lower() == "tramitacao" or (p.status or "").lower() != "tramitacao":
+        return
+    tem_numero = bool((p.numero_protocolo or "").strip())
+    tem_pdf = bool((p.arquivo_protocolo or "").strip())
+    if tem_numero and tem_pdf:
+        try:
+            corpo = corpo_status_cliente(p, "Tramitacao", "Aguardando analise da Junta Comercial.")
+            cam = os.path.join(UPLOADS_DIR, p.arquivo_protocolo)
+            for em in emails_do_grupo(db, p.grupo_id):
+                enviar_email_anexo(em, "Atualizacao do seu processo - " + (p.empresa or ""), corpo, cam, p.arquivo_protocolo)
+        except Exception as e:
+            print("Erro ao notificar tramitacao:", e)
+    else:
+        print("Tramitacao sem email - falta numero ou pdf. numero:", tem_numero, "pdf:", tem_pdf)
+
 def rodape_atos():
     return (
         '<div style="border-top:1px solid #eef1f5;padding:18px 24px;background:#f7f9fc;">'
@@ -1486,19 +1546,7 @@ def atualizar_processo(processo_id: str, dados: dict, request: Request = None, x
     p.status = recalcular_status(p)
     p.atualizado_em = datetime.now()
     db.commit()
-    if status_antes_patch != "tramitacao" and (p.status or "").lower() == "tramitacao":
-        tem_numero = bool((p.numero_protocolo or "").strip())
-        tem_pdf = bool((p.arquivo_protocolo or "").strip())
-        if tem_numero and tem_pdf:
-            try:
-                corpo = corpo_status_cliente(p, "Tramitacao", "Aguardando analise da Junta Comercial.")
-                cam = os.path.join(UPLOADS_DIR, p.arquivo_protocolo)
-                for em in emails_do_grupo(db, p.grupo_id):
-                    enviar_email_anexo(em, "Atualizacao do seu processo - " + (p.empresa or ""), corpo, cam, p.arquivo_protocolo)
-            except Exception as e:
-                print("Erro ao notificar tramitacao:", e)
-        else:
-            print("Tramitacao sem email - falta numero ou pdf. numero:", tem_numero, "pdf:", tem_pdf)
+    notificar_tramitacao_cliente(db, p, status_antes_patch)
     return {"mensagem": "Atualizado com sucesso"}
 
 @app.post("/processos/{processo_id}/upload/{tipo}")
@@ -1559,8 +1607,7 @@ async def upload_arquivo(
                 print("OCR protocolo detectado:", _num)
         if tipo == "protocolo" and getattr(p, "exigencia_ativa", False):
             p.exigencia_ativa = False
-        if tipo != "protocolo":
-            p.status = recalcular_status(p)
+        p.status = recalcular_status(p)
         p.atualizado_em = datetime.now()
         db.commit()
         try:
@@ -1573,6 +1620,8 @@ async def upload_arquivo(
                     _criar_processo_transferencia(db, p)
                 except Exception as e:
                     print("Erro ao criar processo de transferencia:", e)
+            if tipo == "protocolo":
+                notificar_tramitacao_cliente(db, p, status_antes_up)
         except Exception as e:
             print("Erro ao notificar upload:", e)
 

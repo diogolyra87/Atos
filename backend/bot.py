@@ -7,7 +7,7 @@ import requests
 from database import SessionLocal, Processo, MensagemProcesso, TelegramVinculo, Usuario
 import sys as _sys
 _sys.path.insert(0, os.path.dirname(__file__))
-from main import extrair_protocolo_ocr, recalcular_status, UPLOADS_DIR, GEMINI_KEY
+from main import extrair_protocolo_ocr, recalcular_status, UPLOADS_DIR, GEMINI_KEY, notificar_tramitacao_cliente
 
 TOKEN = os.getenv("TELEGRAM_TOKEN")
 ADMIN_CHAT_ID = str(os.getenv("TELEGRAM_CHAT_ID") or "")
@@ -314,6 +314,7 @@ def processar_confirmacao_anexo(chat_id, msg):
         if not p:
             enviar(chat_id, "Processo nao encontrado (pode ter sido alterado nesse meio tempo).")
             return True
+        status_antes_bot = (p.status or "").lower()
         nome_arquivo = p.id + "_protocolo.pdf"
         caminho = os.path.join(UPLOADS_DIR, nome_arquivo)
         with open(caminho, "wb") as f:
@@ -322,6 +323,10 @@ def processar_confirmacao_anexo(chat_id, msg):
         p.numero_protocolo = pendente["numero_protocolo"]
         p.status = recalcular_status(p)
         db.commit()
+        try:
+            notificar_tramitacao_cliente(db, p, status_antes_bot)
+        except Exception as e:
+            print("erro ao notificar tramitacao (bot):", e)
         enviar(chat_id, "Protocolo " + pendente["numero_protocolo"] + " vinculado ao processo de " + str(p.empresa) + ". Documento salvo. Status atualizado para: " + str(p.status) + ".")
     except Exception as e:
         print("erro processar_confirmacao_anexo:", e)

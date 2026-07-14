@@ -7,7 +7,7 @@ import requests
 from database import SessionLocal, Processo, MensagemProcesso, TelegramVinculo, Usuario
 import sys as _sys
 _sys.path.insert(0, os.path.dirname(__file__))
-from main import extrair_protocolo_ocr, recalcular_status
+from main import extrair_protocolo_ocr, recalcular_status, UPLOADS_DIR, GEMINI_KEY
 
 TOKEN = os.getenv("TELEGRAM_TOKEN")
 ADMIN_CHAT_ID = str(os.getenv("TELEGRAM_CHAT_ID") or "")
@@ -172,6 +172,35 @@ def processar_reply(msg):
     finally:
         db.close()
 
+AUTORIZADOS_ANEXO = set([ADMIN_CHAT_ID]) | set(x.strip() for x in (os.getenv("TELEGRAM_AUTORIZADOS_ANEXO") or "").split(",") if x.strip())
+
+def _extrair_empresa_ato_ia(caminho_pdf):
+    """Le o nome empresarial e o(s) ato(s) descritos na capa do protocolo (JUCESP/JUCERJA
+    etc), via Gemini. Funciona com texto impresso e manuscrito legivel. Nunca lanca excecao."""
+    import base64, json as _json, urllib.request
+    if not GEMINI_KEY:
+        return None, None
+    try:
+        with open(caminho_pdf, "rb") as f:
+            pdf_b64 = base64.b64encode(f.read()).decode()
+        prompt = (
+            "Esta e uma capa de protocolo de Junta Comercial brasileira. Leia o campo "
+            "NOME EMPRESARIAL (nome da empresa) e o campo ATO(S) (pode estar escrito a mao, "
+            "ex: 7a Alteracao Contratual, AGE, etc). Responda APENAS com um JSON no formato "
+            '{"empresa": "...", "ato": "..."}. Se nao conseguir ler algum campo, deixe como string vazia.'
+        )
+        body = {"contents": [{"parts": [{"text": prompt}, {"inline_data": {"mime_type": "application/pdf", "data": pdf_b64}}]}]}
+        url = "https://generativelanguage.googleapis.com/v1beta/models/gemini-flash-latest:generateContent?key=" + GEMINI_KEY
+        req = urllib.request.Request(url, data=_json.dumps(body).encode(), headers={"Content-Type": "application/json"})
+        resp = urllib.request.urlopen(req, timeout=40)
+        data = _json.loads(resp.read().decode())
+        txt = data["candidates"][0]["content"]["parts"][0]["text"].strip()
+        txt = txt.replace("```json", "").replace("```", "").strip()
+        resultado = _json.loads(txt)
+        return (resultado.get("empresa") or None), (resultado.get("ato") or None)
+    except Exception as e:
+        print("Erro ao extrair empresa/ato do protocolo:", str(e)[:150])
+        return None, None
 _PENDENTES_ANEXO = {}
 
 def _baixar_arquivo_telegram(file_id, destino_path):
@@ -184,7 +213,7 @@ def _baixar_arquivo_telegram(file_id, destino_path):
     return destino_path
 
 def processar_anexo_protocolo(chat_id, msg):
-    if chat_id != ADMIN_CHAT_ID:
+    if chat_id not in AUTORIZADOS_ANEXO:
         return
     import tempfile, img2pdf as _img2pdf
 
@@ -220,28 +249,48 @@ def processar_anexo_protocolo(chat_id, msg):
             enviar(chat_id, "Nao consegui identificar o numero do protocolo neste documento. Envie uma foto/PDF mais nitido, ou digite o numero manualmente pelo sistema.")
             return
 
+        empresa_lida, ato_lido = _extrair_empresa_ato_ia(caminho_pdf)
+
+        with open(caminho_pdf, "rb") as f:
+            pdf_bytes = f.read()
+
         db = SessionLocal()
         try:
-            candidatos = db.query(Processo).filter(
-                Processo.status == "aberto"
-            ).order_by(Processo.criado_em.desc()).limit(8).all()
+            candidatos = db.query(Processo).filter(Processo.status == "aberto").order_by(Processo.criado_em.desc()).all()
         finally:
             db.close()
 
         if not candidatos:
-            enviar(chat_id, f"Protocolo identificado: {numero}\n\nMas nao ha nenhum processo em aberto (sem protocolo) no sistema no momento para vincular.")
+            enviar(chat_id, "Protocolo identificado: " + numero + "\n\nMas nao ha nenhum processo em aberto (sem protocolo) no sistema no momento para vincular.")
             return
 
-        linhas = [f"Protocolo identificado: *{numero}*\n", "A qual processo pertence? Responda esta mensagem com o numero:\n"]
+        def _pontua(p):
+            score = 0
+            if empresa_lida and p.empresa and empresa_lida.lower()[:15] in p.empresa.lower():
+                score += 10
+            if ato_lido and (p.tipo_ato or ""):
+                if ato_lido.lower()[:6] in (p.tipo_ato or "").lower():
+                    score += 5
+            if ato_lido and (p.identificador_ato or ""):
+                if ato_lido.lower()[:6] in (p.identificador_ato or "").lower():
+                    score += 5
+            return score
+
+        candidatos_ordenados = sorted(candidatos, key=_pontua, reverse=True)[:8]
+
+        cabecalho = "Protocolo identificado: *" + numero + "*\n"
+        if empresa_lida or ato_lido:
+            cabecalho += "Lido do documento -> Empresa: " + (empresa_lida or "-") + " | Ato: " + (ato_lido or "-") + "\n\n"
+        linhas = [cabecalho, "A qual processo pertence? Responda esta mensagem com o numero:\n"]
         opcoes = {}
-        for i, p in enumerate(candidatos, start=1):
-            linhas.append(f"{i}. {p.empresa} ({p.uf or '-'}) - {p.tipo_ato or ''}")
+        for i, p in enumerate(candidatos_ordenados, start=1):
+            linhas.append(str(i) + ". " + str(p.empresa) + " (" + (p.uf or "-") + ") - " + (p.tipo_ato or ""))
             opcoes[str(i)] = p.id
         texto_msg = "\n".join(linhas)
 
         r = requests.post(f"{API}/sendMessage", data={"chat_id": chat_id, "text": texto_msg, "parse_mode": "Markdown"}, timeout=10)
         message_id_enviado = r.json()["result"]["message_id"]
-        _PENDENTES_ANEXO[message_id_enviado] = {"numero_protocolo": numero, "opcoes": opcoes}
+        _PENDENTES_ANEXO[message_id_enviado] = {"numero_protocolo": numero, "opcoes": opcoes, "pdf_bytes": pdf_bytes}
     except Exception as e:
         print("erro processar_anexo_protocolo:", e)
         enviar(chat_id, "Erro ao processar o anexo: " + str(e))
@@ -265,10 +314,15 @@ def processar_confirmacao_anexo(chat_id, msg):
         if not p:
             enviar(chat_id, "Processo nao encontrado (pode ter sido alterado nesse meio tempo).")
             return True
+        nome_arquivo = p.id + "_protocolo.pdf"
+        caminho = os.path.join(UPLOADS_DIR, nome_arquivo)
+        with open(caminho, "wb") as f:
+            f.write(pendente["pdf_bytes"])
+        p.arquivo_protocolo = nome_arquivo
         p.numero_protocolo = pendente["numero_protocolo"]
         p.status = recalcular_status(p)
         db.commit()
-        enviar(chat_id, f"Protocolo {pendente['numero_protocolo']} vinculado ao processo de {p.empresa}. Status atualizado para: {p.status}.")
+        enviar(chat_id, "Protocolo " + pendente["numero_protocolo"] + " vinculado ao processo de " + str(p.empresa) + ". Documento salvo. Status atualizado para: " + str(p.status) + ".")
     except Exception as e:
         print("erro processar_confirmacao_anexo:", e)
         enviar(chat_id, "Erro ao vincular o protocolo.")

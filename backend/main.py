@@ -6,6 +6,7 @@ from database import get_db, Processo, Grupo, Usuario, EmailGrupo, criar_banco, 
 from datetime import datetime, timedelta
 from openai import OpenAI
 import json, os, uuid, shutil, bcrypt
+import asyncio
 
 from dotenv import load_dotenv
 import os
@@ -302,65 +303,35 @@ def corpo_status_cliente(p, status_label, frase_final):
         linhas.append(frase_final)
     return "\n".join(linhas)
 
-def notificar_tramitacao_cliente(db, p, status_antes):
-    """Avisa o cliente por email quando o processo entra em tramitacao (protocolo +
-    arquivo do protocolo ja presentes). Compartilhada entre PATCH manual, upload de
-    arquivo (Trocar/Salvar) e o Mane via Telegram, para nunca faltar aviso dependendo
-    de qual caminho foi usado para inserir o protocolo."""
-    if (status_antes or "").lower() == "tramitacao" or (p.status or "").lower() != "tramitacao":
-        return
-    tem_numero = bool((p.numero_protocolo or "").strip())
-    tem_pdf = bool((p.arquivo_protocolo or "").strip())
-    if tem_numero and tem_pdf:
-        try:
-            corpo = corpo_status_cliente(p, "Tramitacao", "Aguardando analise da Junta Comercial.")
-            cam = os.path.join(UPLOADS_DIR, p.arquivo_protocolo)
-            for em in emails_do_grupo(db, p.grupo_id):
-                enviar_email_anexo(em, "Atualizacao do seu processo - " + (p.empresa or ""), corpo, cam, p.arquivo_protocolo)
-        except Exception as e:
-            print("Erro ao notificar tramitacao:", e)
-    else:
-        print("Tramitacao sem email - falta numero ou pdf. numero:", tem_numero, "pdf:", tem_pdf)
+
+
+
 
 def notificar_tramitacao_cliente(db, p, status_antes):
-    """Avisa o cliente por email quando o processo entra em tramitacao (protocolo +
-    arquivo do protocolo ja presentes). Compartilhada entre PATCH manual, upload de
-    arquivo (Trocar/Salvar) e o Mane via Telegram, para nunca faltar aviso dependendo
-    de qual caminho foi usado para inserir o protocolo."""
+    """Avisa o cliente por email quando o processo entra em tramitacao.
+    Se so tiver o numero do protocolo, notifica so com o numero no corpo (sem anexo).
+    Se tiver o pdf do protocolo, notifica com numero + anexo + aviso de protocolo em anexo.
+    Compartilhada entre PATCH manual, upload de arquivo (Trocar/Salvar) e o Mane via
+    Telegram, para nunca faltar aviso dependendo de qual caminho foi usado."""
     if (status_antes or "").lower() == "tramitacao" or (p.status or "").lower() != "tramitacao":
         return
     tem_numero = bool((p.numero_protocolo or "").strip())
     tem_pdf = bool((p.arquivo_protocolo or "").strip())
-    if tem_numero and tem_pdf:
-        try:
-            corpo = corpo_status_cliente(p, "Tramitacao", "Aguardando analise da Junta Comercial.")
-            cam = os.path.join(UPLOADS_DIR, p.arquivo_protocolo)
-            for em in emails_do_grupo(db, p.grupo_id):
-                enviar_email_anexo(em, "Atualizacao do seu processo - " + (p.empresa or ""), corpo, cam, p.arquivo_protocolo)
-        except Exception as e:
-            print("Erro ao notificar tramitacao:", e)
-    else:
-        print("Tramitacao sem email - falta numero ou pdf. numero:", tem_numero, "pdf:", tem_pdf)
-
-def notificar_tramitacao_cliente(db, p, status_antes):
-    """Avisa o cliente por email quando o processo entra em tramitacao (protocolo +
-    arquivo do protocolo ja presentes). Compartilhada entre PATCH manual, upload de
-    arquivo (Trocar/Salvar) e o Mane via Telegram, para nunca faltar aviso dependendo
-    de qual caminho foi usado para inserir o protocolo."""
-    if (status_antes or "").lower() == "tramitacao" or (p.status or "").lower() != "tramitacao":
+    if not tem_numero and not tem_pdf:
+        print("Tramitacao sem email - falta numero e pdf.")
         return
-    tem_numero = bool((p.numero_protocolo or "").strip())
-    tem_pdf = bool((p.arquivo_protocolo or "").strip())
-    if tem_numero and tem_pdf:
-        try:
-            corpo = corpo_status_cliente(p, "Tramitacao", "Aguardando analise da Junta Comercial.")
+    try:
+        if tem_pdf:
+            corpo = corpo_status_cliente(p, "Tramitacao", "Aguardando analise da Junta Comercial. Protocolo em anexo.")
             cam = os.path.join(UPLOADS_DIR, p.arquivo_protocolo)
             for em in emails_do_grupo(db, p.grupo_id):
                 enviar_email_anexo(em, "Atualizacao do seu processo - " + (p.empresa or ""), corpo, cam, p.arquivo_protocolo)
-        except Exception as e:
-            print("Erro ao notificar tramitacao:", e)
-    else:
-        print("Tramitacao sem email - falta numero ou pdf. numero:", tem_numero, "pdf:", tem_pdf)
+        else:
+            corpo = corpo_status_cliente(p, "Tramitacao", "Aguardando analise da Junta Comercial.")
+            for em in emails_do_grupo(db, p.grupo_id):
+                enviar_email(em, "Atualizacao do seu processo - " + (p.empresa or ""), corpo)
+    except Exception as e:
+        print("Erro ao notificar tramitacao:", e)
 
 def rodape_atos():
     return (
@@ -1110,7 +1081,7 @@ async def analisar_pasta(arquivos: list[UploadFile] = File(...), x_token: str = 
     itens = []
     for idx, arq in enumerate(arquivos):
         conteudo = await arq.read()
-        texto = _extrair_texto_bytes(conteudo, arq.filename or "")
+        texto = await asyncio.to_thread(_extrair_texto_bytes, conteudo, arq.filename or "")
         tipo, score = _classificar(arq.filename or "", texto)
         regra = consultar_regras(arq.filename or "", texto, db)
         regra_aplicada = None
@@ -1134,7 +1105,7 @@ async def analisar_pasta(arquivos: list[UploadFile] = File(...), x_token: str = 
     dados = analisar_ata_ia(melhor["texto"]) if melhor["texto"].strip() else {}
     if melhor["tipo"]:
         dados["tipo_ato"] = dados.get("tipo_ato") or melhor["tipo"]
-    numero_prot = _tentar_extrair_protocolo(melhor["conteudo"], melhor["nome"])
+    numero_prot = await asyncio.to_thread(_tentar_extrair_protocolo, melhor["conteudo"], melhor["nome"])
     if numero_prot:
         dados["numero_protocolo"] = numero_prot
     anexos = [{"indice": i["indice"], "nome": i["nome"]} for i in itens if i["indice"] != melhor["indice"]]
@@ -1255,7 +1226,7 @@ async def analisar_pasta_multi(arquivos: list[UploadFile] = File(...), x_token: 
     itens = []
     for idx, arq in enumerate(arquivos):
         conteudo = await arq.read()
-        texto = _extrair_texto_bytes(conteudo, arq.filename or "")
+        texto = await asyncio.to_thread(_extrair_texto_bytes, conteudo, arq.filename or "")
         ja_reg_flag = _ja_registrada(_sa_texto_local(texto[:4000]))
         itens.append({"indice": idx, "nome": arq.filename or ("arquivo_" + str(idx)), "texto": texto, "ja_reg": ja_reg_flag, "conteudo": conteudo})
     if not itens:
@@ -1265,7 +1236,7 @@ async def analisar_pasta_multi(arquivos: list[UploadFile] = File(...), x_token: 
     # sistema de palavras-chave, que quebrava com qualquer variacao de titulo nao
     # prevista. Documentos ja registrados nunca sao candidatos.
     candidatos_ia = [i for i in itens if not i.get("ja_reg")]
-    classificacao_ia = _classificar_lote_ia(candidatos_ia)
+    classificacao_ia = await asyncio.to_thread(_classificar_lote_ia, candidatos_ia)
 
     principais_itens = []
     pendente = False
@@ -1283,7 +1254,7 @@ async def analisar_pasta_multi(arquivos: list[UploadFile] = File(...), x_token: 
     principais_out = []
     for i in principais_itens:
         dados = analisar_ata_ia(i["texto"]) if i["texto"].strip() else {}
-        numero_prot = _tentar_extrair_protocolo(i["conteudo"], i["nome"])
+        numero_prot = await asyncio.to_thread(_tentar_extrair_protocolo, i["conteudo"], i["nome"])
         if numero_prot:
             dados["numero_protocolo"] = numero_prot
         principais_out.append({"indice": i["indice"], "nome": i["nome"], "tipo_sugerido": dados.get("tipo_ato"), "dados": dados, "score": 0})
@@ -1365,7 +1336,7 @@ async def analisar_documento(arquivo: UploadFile = File(...), x_token: str = Hea
 
     conteudo = await arquivo.read()
     nome = arquivo.filename or ""
-    texto = _extrair_texto_bytes(conteudo, nome)
+    texto = await asyncio.to_thread(_extrair_texto_bytes, conteudo, nome)
 
     dados = analisar_ata_ia(texto)
     return dados
@@ -1601,7 +1572,7 @@ async def upload_arquivo(
         status_antes_up = (p.status or "").lower()
         setattr(p, campo_map[tipo], nome_arquivo)
         if tipo == "protocolo":
-            _num = _tentar_extrair_protocolo(conteudo, nome_arquivo)
+            _num = await asyncio.to_thread(_tentar_extrair_protocolo, conteudo, nome_arquivo)
             if _num:
                 p.numero_protocolo = _num
                 print("OCR protocolo detectado:", _num)

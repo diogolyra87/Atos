@@ -298,15 +298,15 @@ function DetalheProcessoCliente({ p, sessao, onVoltar }) {
     } catch (e) { alert("Nao foi possivel baixar o anexo."); }
   }
 
-  async function baixarDocumento(tipo, sufixo) {
+  async function baixarRegistro() {
     try {
-      const res = await axios.get(API + "/download/" + p.id + "/" + tipo, { headers: { "x-token": sessao.token }, responseType: "blob" });
+      const res = await axios.get(API + "/download/" + p.id + "/registro", { headers: { "x-token": sessao.token }, responseType: "blob" });
       const url = window.URL.createObjectURL(new Blob([res.data]));
       const a = document.createElement("a");
-      a.href = url; a.download = (p.empresa || "documento").replace(/[^a-zA-Z0-9]/g, "_") + "_" + sufixo + ".pdf";
+      a.href = url; a.download = (p.empresa || "registro").replace(/[^a-zA-Z0-9]/g, "_") + "_registro.pdf";
       document.body.appendChild(a); a.click(); a.remove();
       window.URL.revokeObjectURL(url);
-    } catch (e) { alert("Nao foi possivel baixar o documento."); }
+    } catch (e) { alert("Nao foi possivel baixar o registro."); }
   }
 
   const sD = {
@@ -332,25 +332,10 @@ function DetalheProcessoCliente({ p, sessao, onVoltar }) {
             CNPJ {p.cnpj} - NIRE {p.nire}
           </div>
         </div>
-        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-          {p.arquivo_ata && (
-            <button style={{ background: "transparent", color: "#2563eb", border: "0.5px solid #2563eb", borderRadius: 8, padding: "9px 18px", fontSize: 13, cursor: "pointer" }} onClick={() => baixarDocumento("ata", "ato")}>
-              Baixar Ato
-            </button>
-          )}
-          {p.arquivo_protocolo && (
-            <button style={{ background: "transparent", color: "#2563eb", border: "0.5px solid #2563eb", borderRadius: 8, padding: "9px 18px", fontSize: 13, cursor: "pointer" }} onClick={() => baixarDocumento("protocolo", "protocolo")}>
-              Baixar Protocolo
-            </button>
-          )}
-          {p.arquivo_exigencia && (
-            <button style={{ background: "transparent", color: "#2563eb", border: "0.5px solid #2563eb", borderRadius: 8, padding: "9px 18px", fontSize: 13, cursor: "pointer" }} onClick={() => baixarDocumento("exigencia", "exigencia")}>
-              Baixar Exigencia
-            </button>
-          )}
+        <div style={{ display: "flex", gap: 8 }}>
           {p.arquivo_registro && (
-            <button style={{ background: "#2563eb", color: "#fff", border: "none", borderRadius: 8, padding: "9px 18px", fontSize: 13, cursor: "pointer" }} onClick={() => baixarDocumento("registro", "ato_registrado")}>
-              Baixar Ato Registrado
+            <button style={{ background: "#2563eb", color: "#fff", border: "none", borderRadius: 8, padding: "9px 18px", fontSize: 13, cursor: "pointer" }} onClick={baixarRegistro}>
+              Baixar registro
             </button>
           )}
           <button style={sD.btnSecondary} onClick={onVoltar}>Voltar</button>
@@ -809,9 +794,9 @@ export function Painel({ sessao, onSair }) {
       </div>
       {docsAbertos && (() => {
         const docs = [
-          { campo: "arquivo_ata", tipo: "ata", label: "Ato" },
+          { campo: "arquivo_ata", tipo: "ata", label: "Ata" },
           { campo: "arquivo_protocolo", tipo: "protocolo", label: "Protocolo" },
-          { campo: "arquivo_registro", tipo: "registro", label: "Ato Registrado" },
+          { campo: "arquivo_registro", tipo: "registro", label: "Registro aprovado" },
           { campo: "arquivo_nd", tipo: "nd", label: "Nota de debito" },
           { campo: "arquivo_nf", tipo: "nf", label: "Nota fiscal" },
         ].filter(d => docsAbertos[d.campo]);
@@ -826,7 +811,7 @@ export function Painel({ sessao, onSair }) {
                   {docs.map(d => (
                     <button key={d.tipo} style={s.btnDl}
                       onClick={() => baixar(docsAbertos.id, d.tipo, (docsAbertos.empresa||"documento").replace(/[^a-zA-Z0-9]/g,"_"))}>
-                      ↓ {d.label}
+                      ↓ Download
                     </button>
                   ))}
                 </div>

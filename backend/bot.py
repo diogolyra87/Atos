@@ -7,7 +7,7 @@ import requests
 from database import SessionLocal, Processo, MensagemProcesso, TelegramVinculo, Usuario
 import sys as _sys
 _sys.path.insert(0, os.path.dirname(__file__))
-from main import extrair_protocolo_ocr, recalcular_status, UPLOADS_DIR, GEMINI_KEY, notificar_tramitacao_cliente
+from main import extrair_protocolo_ocr, recalcular_status, UPLOADS_DIR, GEMINI_KEY, notificar_tramitacao_cliente, registrar_evento
 
 TOKEN = os.getenv("TELEGRAM_TOKEN")
 ADMIN_CHAT_ID = str(os.getenv("TELEGRAM_CHAT_ID") or "")
@@ -322,6 +322,7 @@ def processar_confirmacao_anexo(chat_id, msg):
         p.arquivo_protocolo = nome_arquivo
         p.numero_protocolo = pendente["numero_protocolo"]
         p.status = recalcular_status(p)
+        registrar_evento(db, p, "protocolo_inserido", "Protocolo " + pendente["numero_protocolo"] + " vinculado via Telegram")
         db.commit()
         try:
             notificar_tramitacao_cliente(db, p, status_antes_bot)

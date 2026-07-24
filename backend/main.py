@@ -2,8 +2,9 @@
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from sqlalchemy.orm import Session
-from database import get_db, Processo, Grupo, Usuario, EmailGrupo, criar_banco, AuditLog, Codigo2FA, Anexo, RegraAprendizado, MensagemProcesso, TelegramVinculo
-from datetime import datetime, timedelta
+from sqlalchemy import func
+from database import get_db, Processo, Grupo, Usuario, EmailGrupo, criar_banco, AuditLog, Codigo2FA, Anexo, RegraAprendizado, MensagemProcesso, TelegramVinculo, Fluxo, Evento
+from datetime import datetime, timedelta, date
 from openai import OpenAI
 import json, os, uuid, shutil, bcrypt
 import asyncio
@@ -332,6 +333,55 @@ def notificar_tramitacao_cliente(db, p, status_antes):
                 enviar_email(em, "Atualizacao do seu processo - " + (p.empresa or ""), corpo)
     except Exception as e:
         print("Erro ao notificar tramitacao:", e)
+
+
+def vincular_fluxo_do_dia(db, processo, grupo_id):
+    """Abre (se ainda nao existir) e vincula o processo ao Fluxo do dia do grupo,
+    quando o grupo bate mais de 5 protocolos no mesmo dia. Chamar sempre logo apos
+    setar processo.grupo_id, em todos os pontos que criam processo - mesmo padrao
+    de nao deixar caminho de fora usado em notificar_tramitacao_cliente. Requer que
+    o processo ja tenha sido db.add() + db.flush() antes desta chamada, para contar
+    no total de hoje. Roda em SAVEPOINT (begin_nested) e nunca quebra o fluxo
+    principal de criacao de processo: se falhar, so desfaz o que foi feito aqui
+    dentro, sem afetar o processo ja pendente na transacao externa - mesmo
+    espirito de robustez de registrar_evento."""
+    if not grupo_id:
+        return
+    try:
+        with db.begin_nested():
+            hoje = date.today()
+            fluxo = db.query(Fluxo).filter(Fluxo.grupo_id == grupo_id, Fluxo.data == hoje).first()
+            total_hoje = db.query(Processo).filter(
+                Processo.grupo_id == grupo_id,
+                func.date(Processo.criado_em) == hoje
+            ).count()
+
+            if not fluxo and total_hoje > 5:
+                fluxo = Fluxo(id=str(uuid.uuid4()), grupo_id=grupo_id, data=hoje, total_processos=total_hoje)
+                db.add(fluxo)
+                db.flush()
+
+            if fluxo:
+                processo.fluxo_id = fluxo.id
+                fluxo.total_processos = total_hoje
+    except Exception as e:
+        print("Erro ao vincular fluxo do dia:", e)
+
+
+def registrar_evento(db, processo, tipo, descricao):
+    """Registra um evento pro feed de Atividade recente. Nao commita por conta
+    propria - chamar sempre ANTES do commit() da operacao principal, para que o
+    evento entre na mesma transacao (senao fica pendente e se perde no db.close()
+    do get_db, que nao commita). Nunca deve quebrar o fluxo principal."""
+    try:
+        evento = Evento(
+            id=str(uuid.uuid4()), processo_id=processo.id,
+            grupo_id=processo.grupo_id, tipo=tipo, descricao=descricao
+        )
+        db.add(evento)
+    except Exception:
+        pass
+
 
 def rodape_atos():
     return (
@@ -1409,6 +1459,9 @@ async def criar_processo(
         uf_destino_transferencia=(info.get("uf_destino_transferencia") or "").upper().strip()[:2] or None
     )
     db.add(p)
+    db.flush()
+    vincular_fluxo_do_dia(db, p, grupo_id)
+    registrar_evento(db, p, "ata_enviada", "Ata enviada")
     db.commit()
     try:
         corpo = "Processo Inserido no Atos:\n\n" + corpo_status_cliente(p, "Aberto", "")
@@ -1453,6 +1506,8 @@ def _criar_processo_transferencia(db, p_origem):
     )
     db.add(novo)
     db.flush()
+    vincular_fluxo_do_dia(db, novo, novo.grupo_id)
+    registrar_evento(db, novo, "processo_criado_transferencia", "Processo de destino criado automaticamente (transferência de sede)")
     # anexa a ata de origem (ja registrada) como comprovante no processo novo
     if p_origem.arquivo_ata:
         try:
@@ -1511,11 +1566,14 @@ def atualizar_processo(processo_id: str, dados: dict, request: Request = None, x
         if hasattr(p, campo):
             setattr(p, campo, valor)
     # Reinserir/atualizar protocolo cumpre a exigencia ativa
-    if ("numero_protocolo" in dados or "arquivo_protocolo" in dados) and getattr(p, "exigencia_ativa", False):
+    protocolo_editado = "numero_protocolo" in dados or "arquivo_protocolo" in dados
+    if protocolo_editado and getattr(p, "exigencia_ativa", False):
         p.exigencia_ativa = False
     status_antes_patch = (p.status or "").lower()
     p.status = recalcular_status(p)
     p.atualizado_em = datetime.now()
+    if protocolo_editado:
+        registrar_evento(db, p, "protocolo_inserido", "Protocolo inserido manualmente" + (f": {p.numero_protocolo}" if p.numero_protocolo else ""))
     db.commit()
     notificar_tramitacao_cliente(db, p, status_antes_patch)
     return {"mensagem": "Atualizado com sucesso"}
@@ -1580,6 +1638,14 @@ async def upload_arquivo(
             p.exigencia_ativa = False
         p.status = recalcular_status(p)
         p.atualizado_em = datetime.now()
+        _evento_upload = {
+            "protocolo": ("protocolo_inserido", "Protocolo inserido" + (f": {p.numero_protocolo}" if p.numero_protocolo else "")),
+            "registro": ("registro_finalizado", "Ata registrada"),
+            "nd": ("nd_inserida", "Nota de Débito inserida"),
+            "nf": ("nf_inserida", "Nota Fiscal inserida"),
+        }.get(tipo)
+        if _evento_upload:
+            registrar_evento(db, p, _evento_upload[0], _evento_upload[1])
         db.commit()
         try:
             novo_status = (p.status or "").lower()
@@ -1627,6 +1693,7 @@ async def registrar_exigencia(
     p.exigencia_ativa = True
     p.status = recalcular_status(p)
     p.atualizado_em = datetime.now()
+    registrar_evento(db, p, "exigencia_registrada", "Exigência registrada" + (f": {texto}" if texto else ""))
     db.commit()
     if arquivo is not None and p.arquivo_exigencia:
         try:
@@ -1654,6 +1721,7 @@ def exigencia_cumprida(processo_id: str, x_token: str = Header(None), db: Sessio
     p.exigencia_ativa = False
     p.status = recalcular_status(p)
     p.atualizado_em = datetime.now()
+    registrar_evento(db, p, "exigencia_cumprida", "Exigência marcada como cumprida")
     db.commit()
     return {"mensagem": "Exigencia marcada como cumprida", "status": p.status}
 

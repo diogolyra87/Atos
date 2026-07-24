@@ -1,4 +1,4 @@
-﻿from sqlalchemy import create_engine, Column, String, DateTime, Text, Float, Boolean, Integer
+﻿from sqlalchemy import create_engine, Column, String, DateTime, Text, Float, Boolean, Integer, Date
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker
 from datetime import datetime
@@ -102,6 +102,23 @@ class AuditLog(Base):
     ip = Column(String)
     data_hora = Column(DateTime, default=datetime.now)
 
+class Fluxo(Base):
+    __tablename__ = "fluxos"
+    id = Column(String, primary_key=True)
+    grupo_id = Column(String, nullable=False)
+    data = Column(Date, nullable=False)
+    total_processos = Column(Integer, default=0)
+    criado_em = Column(DateTime, default=datetime.now)
+
+class Evento(Base):
+    __tablename__ = "eventos"
+    id = Column(String, primary_key=True)
+    processo_id = Column(String, nullable=False)
+    grupo_id = Column(String, nullable=True)
+    tipo = Column(String, nullable=False)
+    descricao = Column(String, nullable=False)
+    criado_em = Column(DateTime, default=datetime.now)
+
 class Processo(Base):
     __tablename__ = "processos"
     id = Column(String, primary_key=True)
@@ -150,6 +167,7 @@ class Processo(Base):
     atualizado_em = Column(DateTime, default=datetime.now, onupdate=datetime.now)
     deferido_em = Column(DateTime, nullable=True)
     alertado_atraso_deferido = Column(Boolean, default=False)
+    fluxo_id = Column(String, nullable=True)
 
 
 def criar_banco():

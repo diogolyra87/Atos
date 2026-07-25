@@ -52,15 +52,51 @@ todos os pontos de entrada**. Diferenças do spec original abaixo, decididas nes
   implementa Leitura A (`vincular_fluxo_do_dia` agrupa por `grupo_id`) — nenhuma mudança de
   código necessária, só a confirmação formal que faltava.
 
-### AINDA PENDENTE (não mexido nesta sessão)
-1. Endpoints `/fluxo/ativo` e `/eventos/recentes` (seção 3.3) — **não implementados ainda**.
-2. Frontend inteiro (seção 4) — **não implementado ainda**. Nenhuma mudança de UI foi feita
+- **Deploy do backend em produção — CONCLUÍDO (2026-07-24).** `vincular_fluxo_do_dia` +
+  `registrar_evento` + migração (`fluxos`, `eventos`, `fluxo_id`) e depois os endpoints
+  `/fluxo/ativo` + `/eventos/recentes` foram enviados em dois deploys separados nesta sessão
+  (push → pull no servidor → migração quando aplicável → restart `atos-backend`). Validado
+  com teste ponta a ponta criando processo de verdade em produção (grupo NEOENERGIA, via
+  chamada direta ao mesmo caminho de código de `criar_processo`, sem passar pela rota HTTP)
+  e conferindo a gravação na tabela `eventos` — depois apagado. Commits: `07c0297` (tabelas +
+  instrumentação) e `3e177de` (endpoints).
+
+- **Etapa 3 concluída: endpoints `/fluxo/ativo` e `/eventos/recentes` implementados,
+  testados localmente e em produção.** Ver seção 3.3 atualizada abaixo — a assinatura real
+  usa `codigo_grupo` (não `grupo_id` cru), mesmo padrão de `listar_processos`.
+
+- **Bug de segurança encontrado e corrigido nesta sessão: vazamento de dado entre grupos em
+  `/fluxo/ativo`.** Quando um admin passava um `codigo_grupo` que não resolvia pra nenhum
+  `Grupo` real (typo, código errado), o filtro da query não era aplicado (buscava fluxos de
+  TODOS os grupos), mas a lógica de retorno ainda colapsava pro primeiro resultado
+  (`resultado[0]`) por achar que "codigo_grupo foi passado" = "filtro está ativo" — sem
+  checar se a resolução deu certo. Corrigido com um `return None` imediato quando o
+  `codigo_grupo` não resolve. **Comprovado com teste empírico**: criado um Fluxo + Processo
+  de teste pro grupo "ENEL TESTE" localmente, confirmado que um `codigo_grupo` inválido
+  retornava o fluxo da Enel (vazamento real, não hipotético) antes da correção, e `null`
+  depois. Dado de teste apagado ao final.
+
+- **Drift de schema descoberto no banco LOCAL (`mane.db`), não em produção.** Ao testar os
+  endpoints novos localmente, `db.query(Processo)`/`db.query(Usuario)` quebravam com
+  `OperationalError: no such column`. O `mane.db` local estava desatualizado: tabela
+  `usuarios` faltando 3 colunas (`email`, `token_criado_em`, `is_admin`) e `processos`
+  faltando 12 colunas (`status_jucesp`, `uf_destino_transferencia`, `transferencia_criada`,
+  `processo_origem_id`, `confirmacao_pendente`, `tipo_ato_sugerido`, `ultima_consulta_em`,
+  `ultimo_alerta_em`, `aguardando_cliente`, `avisado_deferido`, `deferido_em`,
+  `alertado_atraso_deferido`). Corrigido localmente via `ALTER TABLE` (dados preservados).
+  **Confirmado por comparação direta contra produção (`PRAGMA table_info` via SSH, só
+  leitura) que produção NÃO tem esse drift** — schema de produção bate 100% com o modelo
+  atual em `database.py`, tanto em `processos` quanto em `usuarios`. Ou seja, o `mane.db`
+  local é um artefato antigo de dev, nunca mantido em sincronia; não afeta produção nem foi
+  causado por nada desta sessão.
+
+### AINDA PENDENTE
+1. Frontend inteiro (seção 4) — **não implementado ainda**. Nenhuma mudança de UI foi feita
    nesta sessão, só backend (`database.py`, `main.py`, `bot.py`).
-3. Migração (`aplica_migracao_fluxo.py`) já existe e já foi rodada localmente (script
-   avulso, não vai pro git — confirmar se já rodou no servidor também antes do deploy).
-4. Testar com processo de mentira e conferir no banco se `vincular_fluxo_do_dia` e
-   `registrar_evento` gravaram certo (instrumentação está pronta, mas não foi testada
-   ponta a ponta ainda nesta sessão).
+2. Se algum dia for necessário rodar o backend localmente de novo, lembrar que o `mane.db`
+   local tinha drift de schema (corrigido nesta sessão, ver acima) — se aparecer de novo
+   `OperationalError: no such column`, comparar contra `database.py` e aplicar `ALTER TABLE`
+   pontual, sem recriar o banco (tem dado de dev que vale manter).
 
 ---
 
@@ -197,16 +233,31 @@ Chamado em (7 pontos, todos em ordem evento→commit):
 
 ### 3.3 Endpoints novos — AINDA NÃO IMPLEMENTADOS
 
+**IMPLEMENTADO (main.py, logo após `obter_processo`) — código real, já com a correção do
+vazamento entre grupos:**
+
 ```python
 @app.get("/fluxo/ativo")
-def fluxo_ativo(grupo_id: str = None, x_token: str = Header(None), db: Session = Depends(get_db)):
-    # se vier x_token (cliente): resolver grupo_id do usuário, ignorar param
-    # se não vier (admin) e grupo_id vier: usa o param
-    # se não vier nada (admin sem filtro): retorna lista de TODOS os fluxos ativos hoje
+def fluxo_ativo(codigo_grupo: str = None, x_token: str = Header(None), db: Session = Depends(get_db)):
+    if not x_token:
+        raise HTTPException(status_code=401, detail="Token necessario")
+    usuario = validar_token(x_token, db)
+    if not usuario:
+        raise HTTPException(status_code=401, detail="Token invalido ou sessao expirada")
+    grupo_id_filtro = None
+    if usuario.is_admin:
+        if codigo_grupo:
+            grupo = db.query(Grupo).filter(Grupo.codigo == codigo_grupo).first()
+            if not grupo:
+                return None  # codigo_grupo invalido -> nao ha fluxo pra retornar, nao cai na busca sem filtro
+            grupo_id_filtro = grupo.id
+    else:
+        grupo_id_filtro = usuario.grupo_id
+
     hoje = date.today()
     query = db.query(Fluxo).filter(Fluxo.data == hoje)
-    if grupo_id:
-        query = query.filter(Fluxo.grupo_id == grupo_id)
+    if grupo_id_filtro:
+        query = query.filter(Fluxo.grupo_id == grupo_id_filtro)
     fluxos = query.all()
 
     resultado = []
@@ -214,7 +265,7 @@ def fluxo_ativo(grupo_id: str = None, x_token: str = Header(None), db: Session =
         processos = db.query(Processo).filter(Processo.fluxo_id == f.id).all()
         pendentes = [p for p in processos if p.status != "finalizado"]
         if not pendentes:
-            continue  # todos finalizaram -> não retorna, card some
+            continue  # todos finalizaram -> nao retorna, card some
         confirmados = len([p for p in processos if p.status in ("deferido", "finalizado")])
         resultado.append({
             "grupo_id": f.grupo_id,
@@ -223,21 +274,38 @@ def fluxo_ativo(grupo_id: str = None, x_token: str = Header(None), db: Session =
             "confirmados": confirmados,
             "em_tramitacao": len([p for p in processos if p.status == "tramitacao"]),
         })
-    return resultado if not grupo_id else (resultado[0] if resultado else None)
+
+    if usuario.is_admin and not codigo_grupo:
+        return resultado
+    return resultado[0] if resultado else None
 
 
 @app.get("/eventos/recentes")
-def eventos_recentes(grupo_id: str = None, x_token: str = Header(None), db: Session = Depends(get_db), limit: int = 10):
+def eventos_recentes(codigo_grupo: str = None, limit: int = 10, x_token: str = Header(None), db: Session = Depends(get_db)):
+    if not x_token:
+        raise HTTPException(status_code=401, detail="Token necessario")
+    usuario = validar_token(x_token, db)
+    if not usuario:
+        raise HTTPException(status_code=401, detail="Token invalido ou sessao expirada")
     query = db.query(Evento).order_by(Evento.criado_em.desc())
-    if grupo_id:
-        query = query.filter(Evento.grupo_id == grupo_id)
+    if usuario.is_admin:
+        if codigo_grupo:
+            grupo = db.query(Grupo).filter(Grupo.codigo == codigo_grupo).first()
+            if grupo:
+                query = query.filter(Evento.grupo_id == grupo.id)
+    else:
+        query = query.filter(Evento.grupo_id == usuario.grupo_id)
     eventos = query.limit(limit).all()
     return [{"tipo": e.tipo, "descricao": e.descricao, "processo_id": e.processo_id,
              "criado_em": e.criado_em.isoformat()} for e in eventos]
 ```
 
-Ajustar filtro de `x_token` igual já é feito em `listar_processos` (peça 5A do histórico) —
-reusar a mesma lógica de resolver `grupo_id` a partir do token do cliente.
+Diferenças da versão implementada em relação ao rascunho original acima desta seção:
+`codigo_grupo` (não `grupo_id` cru) como query param, resolvido via `Grupo.codigo`, mesmo
+padrão de autorização de `listar_processos` (admin filtra por `codigo_grupo` opcional,
+cliente sempre restrito ao próprio `usuario.grupo_id`). `/fluxo/ativo` tem o `return None`
+extra explicado na seção STATUS ATUAL (correção do vazamento entre grupos) — `/eventos/recentes`
+não precisou dessa correção porque sempre retorna lista, nunca colapsa pra objeto único.
 
 ---
 
@@ -272,15 +340,16 @@ Paleta já em uso (não inventar cor nova):
 
 ## 5. ORDEM DE IMPLEMENTAÇÃO SUGERIDA
 
-1. ~~Migração de banco (tabelas `fluxos`, `eventos`, coluna `fluxo_id`)~~ — **feita**
-   (`aplica_migracao_fluxo.py`, rodada localmente).
+1. ~~Migração de banco (tabelas `fluxos`, `eventos`, coluna `fluxo_id`)~~ — **feita e
+   deployada em produção** (`aplica_migracao_fluxo.py`, rodada local e no servidor).
 2. ~~`vincular_fluxo_do_dia` + `registrar_evento`, plugadas nos pontos de entrada~~ —
-   **feita nesta sessão**, todos os 7 pontos conferidos. Falta testar com processo de
-   mentira e conferir no banco se gravou certo (não feito ainda nesta sessão).
-3. Endpoints `/fluxo/ativo` e `/eventos/recentes` — **próximo passo**. Testar via curl
-   antes de mexer no frontend.
-4. Componentes de frontend, um de cada vez, primeiro no admin (`App.js`, já mais perto do
-   visual novo), depois espelhar no `Cliente.js`
+   **feita e deployada em produção**, todos os 7 pontos conferidos e testados ponta a
+   ponta com processo real (criado e apagado em seguida).
+3. ~~Endpoints `/fluxo/ativo` e `/eventos/recentes`~~ — **feita, testada (local e
+   produção) e deployada**. Bug de vazamento entre grupos encontrado e corrigido nesse
+   processo (ver STATUS ATUAL).
+4. **PRÓXIMO PASSO**: Componentes de frontend, um de cada vez, primeiro no admin
+   (`App.js`, já mais perto do visual novo), depois espelhar no `Cliente.js`.
 5. Deploy e teste em aba anônima, do jeito que vocês já fazem
 
 ## 6. RISCO CONHECIDO (já sinalizado ao Diogo)

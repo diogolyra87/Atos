@@ -637,7 +637,7 @@ export function Painel({ sessao, onSair }) {
                   <div style={{ ...s.metricValue, color: "#c98a4b" }}>{metricas.tramitacao || 0}</div>
                 </div>
                 <div style={s.metricCard} onClick={() => setFStatus("exigencia")}>
-                  <div style={s.metricLabel}>Com exigência</div>
+                  <div style={s.metricLabel}>Em exigência</div>
                   <div style={{ ...s.metricValue, color: "#a8492a" }}>{metricas.exigencia || 0}</div>
                 </div>
                 <div style={s.metricCard} onClick={() => setFStatus("deferido")}>

@@ -45,6 +45,23 @@ function abreviarAto(texto, data, hora) {
   return curto;
 }
 
+function StatCard({ valor, label, corFundo, corTexto, icone, onClick }) {
+  return (
+    <div
+      onClick={onClick}
+      style={{ background: corFundo, borderRadius: 10, padding: 16, cursor: onClick ? "pointer" : "default" }}
+    >
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 6 }}>
+        <div style={{ fontSize: 12, color: corTexto, fontWeight: 500, opacity: 0.85 }}>{label}</div>
+        {icone && <div style={{ fontSize: 14, color: corTexto, opacity: 0.55 }}>{icone}</div>}
+      </div>
+      <div style={{ fontFamily: "'DM Serif Display', serif", fontSize: 40, fontWeight: 400, color: corTexto, lineHeight: 1 }}>
+        {valor}
+      </div>
+    </div>
+  );
+}
+
 function TelaGrupos() {
   const [nome, setNome] = useState("");
   const [emails, setEmails] = useState([""]);
@@ -440,7 +457,7 @@ function AppPainel({ onSair }) {
     topbar: { display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 24 },
     h1: { fontSize: 18, fontWeight: 500, color: "#23282a", margin: 0 },
     btnPrimary: { background: "#1e40af", color: "#fff", border: "none", padding: "9px 18px", borderRadius: 8, fontSize: 13, cursor: "pointer", display: "flex", alignItems: "center", gap: 6 },
-    metrics: { display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 12, marginBottom: 24 },
+    metrics: { display: "grid", gridTemplateColumns: "repeat(5,1fr)", gap: 12, marginBottom: 24 },
     metricCard: { background: "#fff", border: "0.5px solid #e2e8f0", borderRadius: 10, padding: 16 },
     metricLabel: { fontSize: 12, color: "#64748b", marginBottom: 6 },
     metricValue: { fontFamily: "'DM Serif Display', serif", fontSize: 40, fontWeight: 400, color: "#23282a", lineHeight: 1 },
@@ -989,30 +1006,46 @@ async function excluirProcesso() {
 
               <BannerPendencias />
               <div style={s.metrics}>
-                <div style={{ ...s.metricCard, cursor: "pointer" }} onClick={() => setFStatus("")}>
-                  <div style={s.metricLabel}>Total</div>
-                  <div style={s.metricValue}>{metricas.total || 0}</div>
-
-                </div>
-                <div style={{ ...s.metricCard, cursor: "pointer" }} onClick={() => setFStatus("tramitacao")}>
-                  <div style={s.metricLabel}>Em tramitação</div>
-                  <div style={{ ...s.metricValue, color: "#c98a4b" }}>{metricas.tramitacao || 0}</div>
-
-                </div>
-                <div style={{ ...s.metricCard, cursor: "pointer" }} onClick={() => setFStatus("exigencia")}>
-                  <div style={s.metricLabel}>Com exigência</div>
-                  <div style={{ ...s.metricValue, color: "#a8492a" }}>{metricas.exigencia || 0}</div>
-
-                </div>
-                <div style={{ ...s.metricCard, cursor: "pointer" }} onClick={() => setFStatus("deferido")}>
-                  <div style={s.metricLabel}>Deferidos</div>
-                  <div style={{ ...s.metricValue, color: "#2563eb" }}>{metricas.deferido || 0}</div>
-
-                </div>
-                <div style={{ ...s.metricCard, cursor: "pointer" }} onClick={() => setFStatus("finalizado")}>
-                  <div style={s.metricLabel}>Finalizados</div>
-                  <div style={{ ...s.metricValue, color: "#15803d" }}>{metricas.finalizado || 0}</div>
-                </div>
+                <StatCard
+                  valor={metricas.total || 0}
+                  label="Total"
+                  icone="⊞"
+                  corFundo="#EEEDFE"
+                  corTexto="#3C3489"
+                  onClick={() => setFStatus("")}
+                />
+                <StatCard
+                  valor={metricas.tramitacao || 0}
+                  label="Em tramitação"
+                  icone="◷"
+                  corFundo="#E1F5EE"
+                  corTexto="#085041"
+                  onClick={() => setFStatus("tramitacao")}
+                />
+                <StatCard
+                  valor={metricas.exigencia || 0}
+                  label="Em exigência"
+                  icone="⚠"
+                  corFundo="#FAEEDA"
+                  corTexto="#633806"
+                  onClick={() => setFStatus("exigencia")}
+                />
+                <StatCard
+                  valor={metricas.deferido || 0}
+                  label="Deferidos"
+                  icone="◈"
+                  corFundo="#d5e3df"
+                  corTexto="#2563eb"
+                  onClick={() => setFStatus("deferido")}
+                />
+                <StatCard
+                  valor={metricas.finalizado || 0}
+                  label="Finalizados"
+                  icone="✓"
+                  corFundo="#EAF3DE"
+                  corTexto="#27500A"
+                  onClick={() => setFStatus("finalizado")}
+                />
               </div>
 
               <div

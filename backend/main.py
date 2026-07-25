@@ -879,6 +879,68 @@ def obter_processo(processo_id: str, request: Request = None, x_token: str = Hea
     registrar_auditoria(db, usuario, "visualizar", processo_id, "empresa=" + str(p.empresa), _ip)
     return p
 
+@app.get("/fluxo/ativo")
+def fluxo_ativo(codigo_grupo: str = None, x_token: str = Header(None), db: Session = Depends(get_db)):
+    if not x_token:
+        raise HTTPException(status_code=401, detail="Token necessario")
+    usuario = validar_token(x_token, db)
+    if not usuario:
+        raise HTTPException(status_code=401, detail="Token invalido ou sessao expirada")
+    grupo_id_filtro = None
+    if usuario.is_admin:
+        if codigo_grupo:
+            grupo = db.query(Grupo).filter(Grupo.codigo == codigo_grupo).first()
+            if not grupo:
+                return None  # codigo_grupo invalido -> nao ha fluxo pra retornar, nao cai na busca sem filtro
+            grupo_id_filtro = grupo.id
+    else:
+        grupo_id_filtro = usuario.grupo_id
+
+    hoje = date.today()
+    query = db.query(Fluxo).filter(Fluxo.data == hoje)
+    if grupo_id_filtro:
+        query = query.filter(Fluxo.grupo_id == grupo_id_filtro)
+    fluxos = query.all()
+
+    resultado = []
+    for f in fluxos:
+        processos = db.query(Processo).filter(Processo.fluxo_id == f.id).all()
+        pendentes = [p for p in processos if p.status != "finalizado"]
+        if not pendentes:
+            continue  # todos finalizaram -> nao retorna, card some
+        confirmados = len([p for p in processos if p.status in ("deferido", "finalizado")])
+        resultado.append({
+            "grupo_id": f.grupo_id,
+            "data": f.data.isoformat(),
+            "total": len(processos),
+            "confirmados": confirmados,
+            "em_tramitacao": len([p for p in processos if p.status == "tramitacao"]),
+        })
+
+    if usuario.is_admin and not codigo_grupo:
+        return resultado
+    return resultado[0] if resultado else None
+
+
+@app.get("/eventos/recentes")
+def eventos_recentes(codigo_grupo: str = None, limit: int = 10, x_token: str = Header(None), db: Session = Depends(get_db)):
+    if not x_token:
+        raise HTTPException(status_code=401, detail="Token necessario")
+    usuario = validar_token(x_token, db)
+    if not usuario:
+        raise HTTPException(status_code=401, detail="Token invalido ou sessao expirada")
+    query = db.query(Evento).order_by(Evento.criado_em.desc())
+    if usuario.is_admin:
+        if codigo_grupo:
+            grupo = db.query(Grupo).filter(Grupo.codigo == codigo_grupo).first()
+            if grupo:
+                query = query.filter(Evento.grupo_id == grupo.id)
+    else:
+        query = query.filter(Evento.grupo_id == usuario.grupo_id)
+    eventos = query.limit(limit).all()
+    return [{"tipo": e.tipo, "descricao": e.descricao, "processo_id": e.processo_id,
+             "criado_em": e.criado_em.isoformat()} for e in eventos]
+
 # ===== PARTE 2: deteccao automatica do documento principal =====
 TIPOS_PRINCIPAIS = {
     "Contrato Social": ["contrato social"],

@@ -62,6 +62,24 @@ function StatCard({ valor, label, corFundo, corTexto, icone, onClick }) {
   );
 }
 
+function FluxoDoDiaCard({ fluxo }) {
+  if (!fluxo) return null;
+  const pct = fluxo.total > 0 ? Math.round((fluxo.confirmados / fluxo.total) * 100) : 0;
+  return (
+    <div style={{ background: "#FAFAFF", border: "1px solid #AFA9EC", borderRadius: 10, padding: 16, marginBottom: 12 }}>
+      <div style={{ fontSize: 13, fontWeight: 600, color: "#3C3489", marginBottom: 8 }}>
+        Fluxo do dia
+      </div>
+      <div style={{ fontSize: 12, color: "#64748b", marginBottom: 8 }}>
+        {fluxo.confirmados} de {fluxo.total} confirmados pela Junta
+      </div>
+      <div style={{ background: "#EEEDFE", borderRadius: 6, height: 8, overflow: "hidden" }}>
+        <div style={{ background: "#534AB7", height: "100%", width: `${pct}%`, transition: "width 0.4s ease" }} />
+      </div>
+    </div>
+  );
+}
+
 function TelaGrupos() {
   const [nome, setNome] = useState("");
   const [emails, setEmails] = useState([""]);
@@ -199,6 +217,7 @@ function TelaAprendizado() {
 function AppPainel({ onSair }) {
   const [processos, setProcessos] = useState([]);
   const [metricas, setMetricas] = useState({});
+  const [fluxosAtivos, setFluxosAtivos] = useState([]);
   const [tela, setTela] = useState("processos");
   const [processoSelecionado, setProcessoSelecionado] = useState(null);
   const [modalNovo, setModalNovo] = useState(false);
@@ -234,6 +253,18 @@ function AppPainel({ onSair }) {
   const [arquivoSelecionado, setArquivoSelecionado] = useState(null);
 
   useEffect(() => { carregar(); }, []);
+
+  useEffect(() => {
+    async function carregarFluxos() {
+      try {
+        const r = await axios.get(`${API}/fluxo/ativo`);
+        setFluxosAtivos(Array.isArray(r.data) ? r.data : []);
+      } catch (e) {}
+    }
+    carregarFluxos();
+    const _t = setInterval(carregarFluxos, 5000);
+    return () => clearInterval(_t);
+  }, []);
 
   async function carregar() {
     const [p, m] = await Promise.all([
@@ -1005,6 +1036,7 @@ async function excluirProcesso() {
               </div>
 
               <BannerPendencias />
+              {fluxosAtivos.map(f => <FluxoDoDiaCard key={f.grupo_id} fluxo={f} />)}
               <div style={s.metrics}>
                 <StatCard
                   valor={metricas.total || 0}

@@ -33,6 +33,155 @@ function abreviarAto(texto, data) {
   return curto;
 }
 
+function chaveDataAta(dataAta) {
+  const m = (dataAta || "").match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
+  if (!m) return null;
+  return `${m[3]}-${m[2]}-${m[1]}`;
+}
+
+function formatarDataExtenso(chaveAAAAMMDD) {
+  const [ano, mes, dia] = chaveAAAAMMDD.split("-").map(Number);
+  const d = new Date(ano, mes - 1, dia);
+  return d.toLocaleDateString("pt-BR", { day: "numeric", month: "long", year: "numeric" });
+}
+
+function StatCard({ valor, label, corFundo, corTexto, icone, onClick }) {
+  return (
+    <div
+      onClick={onClick}
+      style={{ background: corFundo, borderRadius: 10, padding: 16, cursor: onClick ? "pointer" : "default" }}
+    >
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 6 }}>
+        <div style={{ fontSize: 12, color: corTexto, fontWeight: 500, opacity: 0.85 }}>{label}</div>
+        {icone && <div style={{ fontSize: 14, color: corTexto, opacity: 0.55 }}>{icone}</div>}
+      </div>
+      <div style={{ fontFamily: "'DM Serif Display', serif", fontSize: 40, fontWeight: 400, color: corTexto, lineHeight: 1 }}>
+        {valor}
+      </div>
+    </div>
+  );
+}
+
+function FluxoDoDiaCard({ fluxo }) {
+  if (!fluxo) return null;
+  const pct = fluxo.total > 0 ? Math.round((fluxo.confirmados / fluxo.total) * 100) : 0;
+  return (
+    <div style={{ background: "#FAFAFF", border: "1px solid #AFA9EC", borderRadius: 10, padding: 16, marginBottom: 12 }}>
+      <div style={{ fontSize: 13, fontWeight: 600, color: "#3C3489", marginBottom: 8 }}>
+        Fluxo do dia
+      </div>
+      <div style={{ fontSize: 12, color: "#64748b", marginBottom: 8 }}>
+        {fluxo.confirmados} de {fluxo.total} confirmados pela Junta
+      </div>
+      <div style={{ background: "#EEEDFE", borderRadius: 6, height: 8, overflow: "hidden" }}>
+        <div style={{ background: "#534AB7", height: "100%", width: `${pct}%`, transition: "width 0.4s ease" }} />
+      </div>
+    </div>
+  );
+}
+
+function AtividadeRecente({ eventos }) {
+  return (
+    <div style={{ background: "#fff", border: "0.5px solid #e2e8f0", borderRadius: 10, padding: 20 }}>
+      <div style={{ fontSize: 13, fontWeight: 600, color: "#23282a", marginBottom: 14 }}>
+        Atividade recente
+      </div>
+      {(!eventos || eventos.length === 0) ? (
+        <div style={{ fontSize: 13, color: "#94a3b8" }}>Nenhuma atividade ainda.</div>
+      ) : (
+        <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+          {eventos.map((ev, i) => (
+            <div
+              key={i}
+              style={{
+                fontSize: 12,
+                color: "#475569",
+                borderBottom: i < eventos.length - 1 ? "0.5px solid #f1f5f9" : "none",
+                paddingBottom: 8,
+              }}
+            >
+              <div style={{ color: "#23282a" }}>{ev.descricao}</div>
+              <div style={{ color: "#94a3b8", fontSize: 11, marginTop: 2 }}>
+                {new Date(ev.criado_em).toLocaleString("pt-BR")}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function StatusDonut({ metricas }) {
+  const total = metricas.total || 0;
+  const aberto = Math.max(0, total - (metricas.tramitacao || 0) - (metricas.exigencia || 0) - (metricas.deferido || 0) - (metricas.finalizado || 0));
+  const segmentos = [
+    { valor: aberto, cor: STATUS_CONFIG.aberto.color, label: "Aberto" },
+    { valor: metricas.tramitacao || 0, cor: STATUS_CONFIG.tramitacao.color, label: "Tramitação" },
+    { valor: metricas.exigencia || 0, cor: STATUS_CONFIG.exigencia.color, label: "Exigência" },
+    { valor: metricas.deferido || 0, cor: STATUS_CONFIG.deferido.color, label: "Deferido" },
+    { valor: metricas.finalizado || 0, cor: STATUS_CONFIG.finalizado.color, label: "Finalizado" },
+  ].filter(seg => seg.valor > 0);
+
+  const raio = 60;
+  const circ = 2 * Math.PI * raio;
+  let acumulado = 0;
+
+  return (
+    <div style={{ background: "#fff", border: "0.5px solid #e2e8f0", borderRadius: 10, padding: 20 }}>
+      <div style={{ fontSize: 13, fontWeight: 600, color: "#23282a", marginBottom: 14 }}>
+        Status dos processos
+      </div>
+      {total === 0 ? (
+        <div style={{ fontSize: 13, color: "#94a3b8" }}>Nenhum processo ainda.</div>
+      ) : (
+        <div style={{ display: "flex", alignItems: "center", gap: 20 }}>
+          <svg width="140" height="140" viewBox="0 0 140 140">
+            <g transform="rotate(-90 70 70)">
+              <circle cx="70" cy="70" r={raio} fill="none" stroke="#eceae2" strokeWidth="18" />
+              {segmentos.map((seg, i) => {
+                const comprimento = (seg.valor / total) * circ;
+                const offset = -acumulado;
+                acumulado += comprimento;
+                return (
+                  <circle
+                    key={i}
+                    cx="70"
+                    cy="70"
+                    r={raio}
+                    fill="none"
+                    stroke={seg.cor}
+                    strokeWidth="18"
+                    strokeDasharray={`${comprimento} ${circ - comprimento}`}
+                    strokeDashoffset={offset}
+                  />
+                );
+              })}
+            </g>
+            <text
+              x="70"
+              y="70"
+              textAnchor="middle"
+              dominantBaseline="central"
+              style={{ fontFamily: "'DM Serif Display', serif", fontSize: 28, fill: "#23282a" }}
+            >
+              {total}
+            </text>
+          </svg>
+          <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+            {segmentos.map((seg, i) => (
+              <div key={i} style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 12, color: "#475569" }}>
+                <div style={{ width: 10, height: 10, borderRadius: 3, backgroundColor: seg.cor }} />
+                {seg.label}: {seg.valor}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function Cliente() {
   const [params] = useSearchParams();
   const codigoGrupo = params.get("grupo") || "";
@@ -388,6 +537,8 @@ function DetalheProcessoCliente({ p, sessao, onVoltar }) {
 export function Painel({ sessao, onSair }) {
   const [processos, setProcessos] = useState([]);
   const [metricas, setMetricas] = useState({});
+  const [fluxoAtivo, setFluxoAtivo] = useState(null);
+  const [eventosRecentes, setEventosRecentes] = useState([]);
   const [processoSelecionado, setProcessoSelecionado] = useState(null);
   const [carregando, setCarregando] = useState(true);
   const [erro, setErro] = useState("");
@@ -415,6 +566,32 @@ export function Painel({ sessao, onSair }) {
   });
   const s = estilos();
   useEffect(() => { carregar(); }, []);
+
+  useEffect(() => {
+    async function carregarFluxo() {
+      try {
+        const r = await axios.get(`${API}/fluxo/ativo`, { headers: { "x-token": sessao.token } });
+        setFluxoAtivo(r.data || null);
+      } catch (e) {}
+    }
+    carregarFluxo();
+    const _t = setInterval(carregarFluxo, 5000);
+    return () => clearInterval(_t);
+    /* eslint-disable-next-line */
+  }, []);
+
+  useEffect(() => {
+    async function carregarEventos() {
+      try {
+        const r = await axios.get(`${API}/eventos/recentes`, { headers: { "x-token": sessao.token }, params: { limit: 5 } });
+        setEventosRecentes(r.data || []);
+      } catch (e) {}
+    }
+    carregarEventos();
+    const _t = setInterval(carregarEventos, 5000);
+    return () => clearInterval(_t);
+    /* eslint-disable-next-line */
+  }, []);
   async function carregar() {
     setCarregando(true); setErro("");
     try {
@@ -602,6 +779,81 @@ export function Painel({ sessao, onSair }) {
     else if (p.status === "aprovado" || p.status === "finalizado" || p.status === "deferido") baixar(p.id, "registro", (p.empresa || "registro").replace(/[^a-zA-Z0-9]/g, "_"));
     else setDocsAbertos(p);
   }
+  function ListaProcessosAgrupada() {
+    const [gruposFechados, setGruposFechados] = useState({});
+
+    const grupos = processosFiltrados.reduce((acc, p) => {
+      const chave = chaveDataAta(p.data_ata) || "sem-data";
+      if (!acc[chave]) acc[chave] = [];
+      acc[chave].push(p);
+      return acc;
+    }, {});
+
+    const chaves = Object.keys(grupos).sort((a, b) => {
+      if (a === "sem-data") return 1;
+      if (b === "sem-data") return -1;
+      return a < b ? 1 : -1;
+    });
+
+    return (
+      <>
+        {chaves.map(chave => {
+          const itens = grupos[chave];
+          const label = chave === "sem-data" ? "Sem data" : formatarDataExtenso(chave);
+          const aberto = !gruposFechados[chave];
+          return (
+            <div key={chave}>
+              <div
+                onClick={() => setGruposFechados(g => ({ ...g, [chave]: aberto }))}
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 8,
+                  cursor: "pointer",
+                  padding: "10px 16px",
+                  background: "#f8fafc",
+                  borderBottom: "0.5px solid #e2e8f0",
+                  fontSize: 13,
+                  fontWeight: 600,
+                  color: "#23282a",
+                }}
+              >
+                <span style={{ fontSize: 11, color: "#94a3b8" }}>{aberto ? "▾" : "▸"}</span>
+                {label}
+                <span style={{ fontSize: 11, color: "#94a3b8", fontWeight: 400 }}>({itens.length})</span>
+              </div>
+              {aberto && itens.map(p => (
+                <div key={p.id} style={s.row}>
+                  <div>
+                    <div style={s.empresa}>{p.empresa}</div>
+                    <div style={s.metaEmp}>CNPJ {p.cnpj}{p.nire ? ` · NIRE ${p.nire}` : ""}</div>
+                  </div>
+                  <div style={s.cell}>{p.uf || "—"}</div>
+                  <div style={s.cell}>{abreviarAto(p.identificador_ato, p.data_ata)}</div>
+                  <div style={{ ...s.cell, fontFamily: "monospace", fontSize: 11 }}>{p.numero_protocolo ? p.numero_protocolo.replace(/\D/g, "") : "—"}</div>
+                  <div>
+                    <span onClick={() => clicarStatus(p)}
+                      style={{ ...s.badge, background: (STATUS_CONFIG[p.status]?.bg||"#f1f5f9"), color: (STATUS_CONFIG[p.status]?.color||"#475569"),
+                        cursor: "pointer" }}>
+                      {STATUS_CONFIG[p.status]?.label || p.status}
+                      {p.status === "exigencia" ? " ›" : " ↓"}
+                    </span>
+                  </div>
+                  <div>
+                    <button onClick={() => setProcessoSelecionado(p)}
+                      style={{ background: "transparent", border: "0.5px solid #2563eb", color: "#2563eb", borderRadius: 6, padding: "5px 12px", fontSize: 12, cursor: "pointer", fontFamily: "'Inter', sans-serif" }}>
+                      Ver processo
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          );
+        })}
+      </>
+    );
+  }
+
   return (
     <>
       <div style={s.appCliente}>
@@ -627,23 +879,44 @@ export function Painel({ sessao, onSair }) {
           ) : tela === "processos" ? (
             <div style={s.conteudo}>
               <div style={s.h1}>Meus Processos</div>
+              <FluxoDoDiaCard fluxo={fluxoAtivo} />
               <div style={s.metrics}>
-                <div style={s.metricCard} onClick={() => setFStatus("")}>
-                  <div style={s.metricLabel}>Total</div>
-                  <div style={s.metricValue}>{metricas.total || 0}</div>
-                </div>
-                <div style={s.metricCard} onClick={() => setFStatus("tramitacao")}>
-                  <div style={s.metricLabel}>Em tramitação</div>
-                  <div style={{ ...s.metricValue, color: "#c98a4b" }}>{metricas.tramitacao || 0}</div>
-                </div>
-                <div style={s.metricCard} onClick={() => setFStatus("exigencia")}>
-                  <div style={s.metricLabel}>Em exigência</div>
-                  <div style={{ ...s.metricValue, color: "#a8492a" }}>{metricas.exigencia || 0}</div>
-                </div>
-                <div style={s.metricCard} onClick={() => setFStatus("deferido")}>
-                  <div style={s.metricLabel}>Deferidos</div>
-                  <div style={{ ...s.metricValue, color: "#2563eb" }}>{metricas.deferido || 0}</div>
-                </div>
+                <StatCard
+                  valor={metricas.total || 0}
+                  label="Total"
+                  icone="⊞"
+                  corFundo="#EEEDFE"
+                  corTexto="#3C3489"
+                  onClick={() => setFStatus("")}
+                />
+                <StatCard
+                  valor={metricas.tramitacao || 0}
+                  label="Em tramitação"
+                  icone="◷"
+                  corFundo="#E1F5EE"
+                  corTexto="#085041"
+                  onClick={() => setFStatus("tramitacao")}
+                />
+                <StatCard
+                  valor={metricas.exigencia || 0}
+                  label="Em exigência"
+                  icone="⚠"
+                  corFundo="#FAEEDA"
+                  corTexto="#633806"
+                  onClick={() => setFStatus("exigencia")}
+                />
+                <StatCard
+                  valor={metricas.deferido || 0}
+                  label="Deferidos"
+                  icone="◈"
+                  corFundo="#d5e3df"
+                  corTexto="#2563eb"
+                  onClick={() => setFStatus("deferido")}
+                />
+              </div>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: 24 }}>
+                <StatusDonut metricas={metricas} />
+                <AtividadeRecente eventos={eventosRecentes} />
               </div>
               <div style={{ display: "flex", gap: 10, marginBottom: 16, flexWrap: "wrap", alignItems: "center" }}>
                 <input value={fBusca} onChange={e => setFBusca(e.target.value)} placeholder="Buscar empresa..."
@@ -739,31 +1012,7 @@ export function Painel({ sessao, onSair }) {
                     <div style={s.thead}>
                       {["Empresa", "UF", "Ato", "Protocolo", "Status"].map((h, i) => <div key={i} style={s.th}>{h}</div>)}
                     </div>
-                    {processosFiltrados.map(p => (
-                      <div key={p.id} style={s.row}>
-                        <div>
-                          <div style={s.empresa}>{p.empresa}</div>
-                          <div style={s.metaEmp}>CNPJ {p.cnpj}{p.nire ? ` · NIRE ${p.nire}` : ""}</div>
-                        </div>
-                        <div style={s.cell}>{p.uf || "—"}</div>
-                        <div style={s.cell}>{abreviarAto(p.identificador_ato, p.data_ata)}</div>
-                        <div style={{ ...s.cell, fontFamily: "monospace", fontSize: 11 }}>{p.numero_protocolo ? p.numero_protocolo.replace(/\D/g, "") : "—"}</div>
-                        <div>
-                          <span onClick={() => clicarStatus(p)}
-                            style={{ ...s.badge, background: (STATUS_CONFIG[p.status]?.bg||"#f1f5f9"), color: (STATUS_CONFIG[p.status]?.color||"#475569"),
-                              cursor: "pointer" }}>
-                            {STATUS_CONFIG[p.status]?.label || p.status}
-                            {p.status === "exigencia" ? " ›" : " ↓"}
-                          </span>
-                        </div>
-                        <div>
-                          <button onClick={() => setProcessoSelecionado(p)}
-                            style={{ background: "transparent", border: "0.5px solid #2563eb", color: "#2563eb", borderRadius: 6, padding: "5px 12px", fontSize: 12, cursor: "pointer", fontFamily: "'Inter', sans-serif" }}>
-                            Ver processo
-                          </button>
-                        </div>
-                      </div>
-                    ))}
+                    <ListaProcessosAgrupada />
                   </div>
                 )}
             </div>

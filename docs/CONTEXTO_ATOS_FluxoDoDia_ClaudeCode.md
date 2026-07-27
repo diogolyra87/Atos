@@ -106,15 +106,31 @@ todos os pontos de entrada**. Diferenças do spec original abaixo, decididas nes
   `_criar_processo_transferencia`, PATCH genérico — commit `1eb1f2d`). Migração dos
   registros existentes em **Python**, não SQL puro — confirmado que `UPPER()` nativo do
   SQLite não trata acentos (`ã`, `ç`, `é` ficam minúsculos). Script `aplica_uppercase_empresa.py`
-  (gitignored) rodado local; **ainda falta rodar em produção** (ver pendências abaixo).
+  (gitignored) rodado local **e em produção** (5 de 72 processos corrigidos, com backup do
+  `mane.db` do servidor antes — `mane-20260727-1521.db.gz.enc`); código deployado e
+  `atos-backend` reiniciado. **Concluído, nada pendente aqui.**
+
+- **Frontend do cliente (Cliente.js) — CONCLUÍDO (2026-07-27).** Os mesmos 5 componentes
+  espelhados (commit `427cf79`), adaptados ao markup/estilos já existentes em `Cliente.js`
+  (`s.empresa`/`s.metaEmp` em vez de `s.company`/`s.cnpj`, badge clicável com `clicarStatus`,
+  botão "Ver processo", `abreviarAto` com 2 parâmetros — não 3, não tem `hora_ata` aqui).
+  Confirmado e testado visualmente (local, injeção de sessão via `localStorage["mane_sessao"]`
+  com usuário "Cliente" já existente no banco local). **Nenhum filtro de grupo novo foi
+  necessário**: `/metricas`, `/fluxo/ativo`, `/eventos/recentes` e `/processos` já restringem
+  sozinhos ao `grupo_id` do usuário logado quando `not usuario.is_admin` — confirmado lendo o
+  código dos 4 endpoints antes de implementar, não por suposição. `FluxoDoDiaCard` só precisou
+  tratar a resposta como objeto único/`null` em vez de lista (mesmo componente reaproveitado
+  do admin sem nenhuma mudança de código, já que ele já recebia um `fluxo` único via prop).
+
+  Com isso, a **seção 4 do doc está inteiramente concluída** (admin + cliente).
 
 ### AINDA PENDENTE
-1. Espelhar os 5 componentes no `Cliente.js` (visão do cliente) — próximo passo desta sessão.
-2. Rodar `aplica_uppercase_empresa.py` em produção (independente do frontend, só dado — fazer
-   backup do `mane.db` do servidor antes, é `UPDATE` em massa).
-3. Deploy completo do frontend (build + scp) — **esperar o `Cliente.js` também estar pronto e
-   testado**, pra ser um único deploy em vez de dois fragmentados pro mesmo conjunto de telas.
-4. Se algum dia for necessário rodar o backend localmente de novo, lembrar que o `mane.db`
+1. **Deploy completo do frontend (build + scp)** — único item de código/deploy que falta.
+   Admin e cliente (`App.js`/`Cliente.js`) já estão prontos e testados localmente; falta
+   `npm run build` no PC + `scp` do JS/index.html pro servidor (`/var/www/atos/`), conforme o
+   `CONTEXTO_ATOS_ClaudeCode.md`. Nenhuma migração de banco nova é necessária pra esse deploy
+   (backend já está 100% em produção desde os passos anteriores).
+2. Se algum dia for necessário rodar o backend localmente de novo, lembrar que o `mane.db`
    local tinha drift de schema (corrigido em sessão anterior, ver acima) — se aparecer de novo
    `OperationalError: no such column`, comparar contra `database.py` e aplicar `ALTER TABLE`
    pontual, sem recriar o banco (tem dado de dev que vale manter).
@@ -332,7 +348,8 @@ não precisou dessa correção porque sempre retorna lista, nunca colapsa pra ob
 
 ## 4. FRONTEND — estrutura comum (App.js admin + Cliente.js cliente)
 
-**Admin (`App.js`): CONCLUÍDO. Cliente (`Cliente.js`): AINDA NÃO IMPLEMENTADO (próximo passo).**
+**Admin (`App.js`): CONCLUÍDO. Cliente (`Cliente.js`): CONCLUÍDO.** Só falta o deploy
+(build + scp), ver seção 5.
 
 Paleta já em uso (não inventar cor nova):
 - Roxo principal `#4f46b7`, gradiente sidebar `#241b4a → #4f46b7`
@@ -392,10 +409,10 @@ Paleta já em uso (não inventar cor nova):
 3. ~~Endpoints `/fluxo/ativo` e `/eventos/recentes`~~ — **feita, testada (local e
    produção) e deployada**. Bug de vazamento entre grupos encontrado e corrigido nesse
    processo (ver STATUS ATUAL).
-4. ~~Componentes de frontend no admin (`App.js`)~~ — **feito** (5 componentes, ver seção 4).
-   **PRÓXIMO PASSO**: espelhar no `Cliente.js`.
-5. Deploy e teste em aba anônima, do jeito que vocês já fazem — **esperar `Cliente.js`
-   terminar**, deploy único pras duas telas.
+4. ~~Componentes de frontend no admin (`App.js`) e no cliente (`Cliente.js`)~~ — **feito nos
+   dois**, 5 componentes cada, ver seção 4.
+5. **PRÓXIMO PASSO (único item que falta)**: deploy do frontend (build + scp) e teste em aba
+   anônima, do jeito que vocês já fazem — admin e cliente juntos, num deploy só.
 
 ## 6. RISCO CONHECIDO (já sinalizado ao Diogo)
 

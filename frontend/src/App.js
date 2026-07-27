@@ -80,6 +80,76 @@ function FluxoDoDiaCard({ fluxo }) {
   );
 }
 
+function StatusDonut({ metricas }) {
+  const total = metricas.total || 0;
+  const aberto = Math.max(0, total - (metricas.tramitacao || 0) - (metricas.exigencia || 0) - (metricas.deferido || 0) - (metricas.finalizado || 0));
+  const segmentos = [
+    { valor: aberto, cor: STATUS_CONFIG.aberto.color, label: "Aberto" },
+    { valor: metricas.tramitacao || 0, cor: STATUS_CONFIG.tramitacao.color, label: "Tramitação" },
+    { valor: metricas.exigencia || 0, cor: STATUS_CONFIG.exigencia.color, label: "Exigência" },
+    { valor: metricas.deferido || 0, cor: STATUS_CONFIG.deferido.color, label: "Deferido" },
+    { valor: metricas.finalizado || 0, cor: STATUS_CONFIG.finalizado.color, label: "Finalizado" },
+  ].filter(seg => seg.valor > 0);
+
+  const raio = 60;
+  const circ = 2 * Math.PI * raio;
+  let acumulado = 0;
+
+  return (
+    <div style={{ background: "#fff", border: "0.5px solid #e2e8f0", borderRadius: 10, padding: 20 }}>
+      <div style={{ fontSize: 13, fontWeight: 600, color: "#23282a", marginBottom: 14 }}>
+        Status dos processos
+      </div>
+      {total === 0 ? (
+        <div style={{ fontSize: 13, color: "#94a3b8" }}>Nenhum processo ainda.</div>
+      ) : (
+        <div style={{ display: "flex", alignItems: "center", gap: 20 }}>
+          <svg width="140" height="140" viewBox="0 0 140 140">
+            <g transform="rotate(-90 70 70)">
+              <circle cx="70" cy="70" r={raio} fill="none" stroke="#eceae2" strokeWidth="18" />
+              {segmentos.map((seg, i) => {
+                const comprimento = (seg.valor / total) * circ;
+                const offset = -acumulado;
+                acumulado += comprimento;
+                return (
+                  <circle
+                    key={i}
+                    cx="70"
+                    cy="70"
+                    r={raio}
+                    fill="none"
+                    stroke={seg.cor}
+                    strokeWidth="18"
+                    strokeDasharray={`${comprimento} ${circ - comprimento}`}
+                    strokeDashoffset={offset}
+                  />
+                );
+              })}
+            </g>
+            <text
+              x="70"
+              y="70"
+              textAnchor="middle"
+              dominantBaseline="central"
+              style={{ fontFamily: "'DM Serif Display', serif", fontSize: 28, fill: "#23282a" }}
+            >
+              {total}
+            </text>
+          </svg>
+          <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+            {segmentos.map((seg, i) => (
+              <div key={i} style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 12, color: "#475569" }}>
+                <div style={{ width: 10, height: 10, borderRadius: 3, backgroundColor: seg.cor }} />
+                {seg.label}: {seg.valor}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function TelaGrupos() {
   const [nome, setNome] = useState("");
   const [emails, setEmails] = useState([""]);
@@ -1078,6 +1148,10 @@ async function excluirProcesso() {
                   corTexto="#27500A"
                   onClick={() => setFStatus("finalizado")}
                 />
+              </div>
+
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: 24 }}>
+                <StatusDonut metricas={metricas} />
               </div>
 
               <div

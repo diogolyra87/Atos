@@ -45,6 +45,18 @@ function abreviarAto(texto, data, hora) {
   return curto;
 }
 
+function chaveDataAta(dataAta) {
+  const m = (dataAta || "").match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
+  if (!m) return null;
+  return `${m[3]}-${m[2]}-${m[1]}`;
+}
+
+function formatarDataExtenso(chaveAAAAMMDD) {
+  const [ano, mes, dia] = chaveAAAAMMDD.split("-").map(Number);
+  const d = new Date(ano, mes - 1, dia);
+  return d.toLocaleDateString("pt-BR", { day: "numeric", month: "long", year: "numeric" });
+}
+
 function StatCard({ valor, label, corFundo, corTexto, icone, onClick }) {
   return (
     <div
@@ -643,6 +655,69 @@ function AppPainel({ onSair }) {
     checklist: { background: "#f8fafc", borderRadius: 8, padding: 14, marginBottom: 16 },
     checkItem: { fontSize: 13, color: "#475569", padding: "4px 0", borderBottom: "0.5px solid #e2e8f0", display: "flex", alignItems: "center", gap: 8 },
   };
+
+  function ListaProcessosAgrupada() {
+    const [gruposFechados, setGruposFechados] = useState({});
+
+    const grupos = processosFiltrados.reduce((acc, p) => {
+      const chave = chaveDataAta(p.data_ata) || "sem-data";
+      if (!acc[chave]) acc[chave] = [];
+      acc[chave].push(p);
+      return acc;
+    }, {});
+
+    const chaves = Object.keys(grupos).sort((a, b) => {
+      if (a === "sem-data") return 1;
+      if (b === "sem-data") return -1;
+      return a < b ? 1 : -1;
+    });
+
+    return (
+      <>
+        {chaves.map(chave => {
+          const itens = grupos[chave];
+          const label = chave === "sem-data" ? "Sem data" : formatarDataExtenso(chave);
+          const aberto = !gruposFechados[chave];
+          return (
+            <div key={chave}>
+              <div
+                onClick={() => setGruposFechados(g => ({ ...g, [chave]: aberto }))}
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 8,
+                  cursor: "pointer",
+                  padding: "10px 16px",
+                  background: "#f8fafc",
+                  borderBottom: "0.5px solid #e2e8f0",
+                  fontSize: 13,
+                  fontWeight: 600,
+                  color: "#23282a",
+                }}
+              >
+                <span style={{ fontSize: 11, color: "#94a3b8" }}>{aberto ? "▾" : "▸"}</span>
+                {label}
+                <span style={{ fontSize: 11, color: "#94a3b8", fontWeight: 400 }}>({itens.length})</span>
+              </div>
+              {aberto && itens.map(p => (
+                <div key={p.id} style={s.row} onClick={() => setProcessoSelecionado(p)}>
+                  <div>
+                    <div style={s.company}>{p.empresa}</div>
+                    <div style={s.cnpj}>CNPJ {p.cnpj} · NIRE {p.nire}</div>
+                  </div>
+                  <div style={{ ...s.cell, fontWeight: 500, color: "#475569" }}>{p.uf || "—"}</div>
+                  <div style={s.cell}>{abreviarAto(p.identificador_ato, p.data_ata, p.hora_ata)}</div>
+                  <div style={{ ...s.cell, fontFamily: "monospace", fontSize: 11 }}>{p.numero_protocolo ? p.numero_protocolo.replace(/\D/g, "") : "—"}</div>
+                  <div><span style={s.badge(p.status)}>{STATUS_CONFIG[p.status]?.label || p.status}</span></div>
+                  <div><button style={s.btnVer} onClick={e => { e.stopPropagation(); setProcessoSelecionado(p); }}>Ver</button></div>
+                </div>
+              ))}
+            </div>
+          );
+        })}
+      </>
+    );
+  }
 
   function BannerPendencias() {
     const [pend, setPend] = useState([]);
@@ -1300,19 +1375,7 @@ async function excluirProcesso() {
                   <div style={{ padding: "32px 16px", textAlign: "center", color: "#94a3b8", fontSize: 13 }}>
                     Nenhum processo ainda. Clique em "Novo processo" para começar.
                   </div>
-                ) : processosFiltrados.map(p => (
-                  <div key={p.id} style={s.row} onClick={() => setProcessoSelecionado(p)}>
-                    <div>
-                      <div style={s.company}>{p.empresa}</div>
-                      <div style={s.cnpj}>CNPJ {p.cnpj} · NIRE {p.nire}</div>
-                    </div>
-                    <div style={{ ...s.cell, fontWeight: 500, color: "#475569" }}>{p.uf || "—"}</div>
-                    <div style={s.cell}>{abreviarAto(p.identificador_ato, p.data_ata, p.hora_ata)}</div>
-                    <div style={{ ...s.cell, fontFamily: "monospace", fontSize: 11 }}>{p.numero_protocolo ? p.numero_protocolo.replace(/\D/g, "") : "—"}</div>
-                    <div><span style={s.badge(p.status)}>{STATUS_CONFIG[p.status]?.label || p.status}</span></div>
-                    <div><button style={s.btnVer} onClick={e => { e.stopPropagation(); setProcessoSelecionado(p); }}>Ver</button></div>
-                  </div>
-                ))}
+                ) : <ListaProcessosAgrupada />}
               </div>
             </>
           )}

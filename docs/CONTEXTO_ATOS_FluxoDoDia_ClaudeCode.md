@@ -423,6 +423,65 @@ Paleta já em uso (não inventar cor nova):
 
 **FLUXO DO DIA: TODAS AS ETAPAS CONCLUÍDAS E EM PRODUÇÃO.**
 
+---
+
+## 7. PÓS-DEPLOY (2026-07-27): bugs encontrados e correções
+
+Depois do deploy inicial, o Diogo reportou tela branca após login em produção. Investigação
+e correções feitas na mesma sessão, sem downtime:
+
+- **Bug real: nginx sem `proxy_pass` pra `/fluxo/ativo` e `/eventos/recentes`.** O vhost
+  (`/etc/nginx/sites-available/atos`) só tinha `location` configurado pra
+  `/processos`, `/login`, `/cadastro`, `/grupos`, `/metricas`, `/relatorio`, `/download` —
+  os 2 endpoints novos desta sessão nunca foram adicionados. Sem `proxy_pass`, essas
+  chamadas caíam no catch-all do SPA (`try_files $uri /index.html`) e recebiam o HTML da
+  página inteira em vez de JSON. `AtividadeRecente` guardava essa string HTML como se fosse
+  a lista de eventos e quebrava no `.map()` (string não tem esse método), derrubando a
+  árvore React inteira (sem error boundary). **Corrigido**: 2 blocos `location` adicionados
+  (mesmo padrão dos existentes), `nginx -t` validado, `reload` sem downtime. Backup da config
+  antiga em `/etc/nginx/sites-available/atos.bak.20260727_162823`. Confirmado via `curl` que
+  as duas rotas passaram a devolver `application/json` (`401 Token necessario`) em vez de
+  HTML. **Lição pra próxima vez que um endpoint novo for criado**: sempre conferir se o nginx
+  já tem `location` pra ele — o backend funcionar direto na porta 8000 não significa que o
+  proxy reverso está configurado.
+
+- **Refatoração: `frontend/src/components/Compartilhados.js` criado** (commit `85709d8`),
+  eliminando duplicação de `StatCard`, `FluxoDoDiaCard`, `StatusDonut`, `AtividadeRecente`,
+  `chaveDataAta`, `formatarDataExtenso` e `STATUS_CONFIG` entre `App.js` e `Cliente.js`.
+  Diagnóstico confirmou que as 6 funções eram **byte-a-byte idênticas** entre os dois
+  arquivos — a duplicação em si nunca tinha causado bug de *definição* divergente. O bug real
+  encontrado foi outro: `Cliente.js` só tinha **4 `<StatCard>` chamados no JSX** (faltava
+  "Finalizados", que o `App.js` já tinha) — erro de cópia manual na hora de espelhar, não
+  relacionado à duplicação de código em si, mas exatamente o tipo de erro que a extração
+  compartilhada previne no futuro. Corrigido como parte da unificação.
+
+  **`ListaProcessosAgrupada` ficou de fora da extração, deliberadamente** — tem interação
+  genuinamente diferente por tela: no admin, a linha inteira do processo é clicável
+  (`onClick` no `<div style={s.row}>`, abre `DetalheProcesso`); no cliente, não há clique na
+  linha — em vez disso o badge de status é clicável (`onClick={() => clicarStatus(p)}`) e
+  dispara ações diferentes por status (exigência abre modal, deferido/finalizado baixa
+  arquivo, outros abrem docs), mais um botão "Ver processo" separado. `s.badge` também tem
+  formatos diferentes: função em `App.js` (`s.badge(status)`), objeto estático combinado
+  inline com `STATUS_CONFIG` em `Cliente.js`. Não tentar unificar isso sem antes confirmar
+  com o Diogo se os dois modelos de interação devem convergir — não é dado como certo.
+
+- **CSS responsivo adicionado** (`frontend/src/responsivo.css`, importado globalmente via
+  `index.js`) — o projeto não tinha **nenhuma** `@media` query antes. Grid de 5 `StatCard`
+  (`.grid-metricas`) e grid de 2 colunas donut/atividade (`.grid-duas-colunas`) quebram pra 1
+  coluna abaixo de 768px. Essas duas classes substituem o estilo inline `gridTemplateColumns`
+  que existia antes (removido de `s.metrics` e do `style={{}}` inline correspondente) — só
+  esse comportamento mudou, nenhuma cor/estrutura foi alterada.
+
+- **Bug pré-existente encontrado, FORA de escopo, não corrigido**: a tela de login (admin e
+  cliente) usa `fontFamily: "AtosBrand"` pro logo, mas o `@font-face` correspondente nunca
+  foi commitado (está preso nas mudanças não commitadas da *outra tarefa*, a mesma de
+  favicon/index.html que já foi pedido pra não mexer) — **e o arquivo de fonte em si
+  (`TeXGyreHeros-Bold.woff2`) nunca existiu em nenhum lugar do histórico do git**. Confirmado
+  via `git blame` que o JSX que referencia `"AtosBrand"` está commitado desde 2026-07-13,
+  então isso já está assim em produção há semanas — não é regressão desta sessão, e afeta
+  local e produção igualmente (fallback pra fonte padrão do navegador nos dois). Só será
+  corrigido quando a outra tarefa retomar e trouxer o arquivo de fonte de verdade.
+
 ## 6. RISCO CONHECIDO (já sinalizado ao Diogo)
 
 A peça de eventos exige tocar em vários pontos do código pra não deixar nenhum caminho de

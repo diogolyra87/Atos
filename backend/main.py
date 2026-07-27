@@ -1500,7 +1500,7 @@ async def criar_processo(
 
     p = Processo(
         id=processo_id,
-        empresa=info.get("empresa", ""),
+        empresa=(info.get("empresa", "") or "").upper(),
         cnpj=info.get("cnpj", ""),
         nire=info.get("nire", ""),
         uf=(info.get("uf") or "").upper().strip()[:2],
@@ -1551,7 +1551,7 @@ def _criar_processo_transferencia(db, p_origem):
     obs = f"Processo criado automaticamente apos transferencia de sede. Origem: {p_origem.id} ({p_origem.uf or '-'})."
     novo = Processo(
         id=novo_id,
-        empresa=p_origem.empresa,
+        empresa=(p_origem.empresa or "").upper(),
         cnpj=p_origem.cnpj,
         nire=p_origem.nire,
         uf=uf_destino,
@@ -1626,6 +1626,8 @@ def atualizar_processo(processo_id: str, dados: dict, request: Request = None, x
     registrar_auditoria(db, usuario, "editar", processo_id, "campos=" + ",".join(list(dados.keys())), _ip)
     for campo, valor in dados.items():
         if hasattr(p, campo):
+            if campo == "empresa" and valor:
+                valor = valor.upper()
             setattr(p, campo, valor)
     # Reinserir/atualizar protocolo cumpre a exigencia ativa
     protocolo_editado = "numero_protocolo" in dados or "arquivo_protocolo" in dados

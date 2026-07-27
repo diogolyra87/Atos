@@ -124,16 +124,23 @@ todos os pontos de entrada**. Diferenças do spec original abaixo, decididas nes
 
   Com isso, a **seção 4 do doc está inteiramente concluída** (admin + cliente).
 
+- **Deploy do frontend em produção — CONCLUÍDO (2026-07-27).** `npm run build` local →
+  `scp` do bundle JS (`main.6ee78e94.js` + `.LICENSE.txt` + `.map`) e `index.html` pro
+  servidor (`/var/www/atos/`) → bundle antigo (`main.265967f1.js`) removido. Cuidado tomado
+  antes do build: `favicon.ico`/`index.html` tinham mudanças locais não commitadas de **outra
+  tarefa** (não relacionada ao Fluxo do Dia) — feito `git stash push --` seletivo só nesses 2
+  arquivos, build limpo gerado a partir da versão committed, deploy feito, depois
+  `git stash pop` restaurando o trabalho da outra tarefa intacto. Smoke test via HTTPS com
+  Host correto (nginx é vhost por nome, `server_name atos.net.br`) confirmou `200` em
+  `index.html` e no bundle novo, referenciando o hash certo. **Fluxo do Dia está 100% em
+  produção**: backend + frontend (admin e cliente).
+
 ### AINDA PENDENTE
-1. **Deploy completo do frontend (build + scp)** — único item de código/deploy que falta.
-   Admin e cliente (`App.js`/`Cliente.js`) já estão prontos e testados localmente; falta
-   `npm run build` no PC + `scp` do JS/index.html pro servidor (`/var/www/atos/`), conforme o
-   `CONTEXTO_ATOS_ClaudeCode.md`. Nenhuma migração de banco nova é necessária pra esse deploy
-   (backend já está 100% em produção desde os passos anteriores).
-2. Se algum dia for necessário rodar o backend localmente de novo, lembrar que o `mane.db`
-   local tinha drift de schema (corrigido em sessão anterior, ver acima) — se aparecer de novo
-   `OperationalError: no such column`, comparar contra `database.py` e aplicar `ALTER TABLE`
-   pontual, sem recriar o banco (tem dado de dev que vale manter).
+Nada relacionado ao Fluxo do Dia. Se algum dia for necessário rodar o backend localmente de
+novo, lembrar que o `mane.db` local tinha drift de schema (corrigido em sessão anterior, ver
+acima) — se aparecer de novo `OperationalError: no such column`, comparar contra
+`database.py` e aplicar `ALTER TABLE` pontual, sem recriar o banco (tem dado de dev que vale
+manter).
 
 ---
 
@@ -411,8 +418,10 @@ Paleta já em uso (não inventar cor nova):
    processo (ver STATUS ATUAL).
 4. ~~Componentes de frontend no admin (`App.js`) e no cliente (`Cliente.js`)~~ — **feito nos
    dois**, 5 componentes cada, ver seção 4.
-5. **PRÓXIMO PASSO (único item que falta)**: deploy do frontend (build + scp) e teste em aba
-   anônima, do jeito que vocês já fazem — admin e cliente juntos, num deploy só.
+5. ~~Deploy do frontend (build + scp)~~ — **feito**, admin e cliente juntos, num deploy só.
+   Smoke test via curl/HTTPS OK. **Falta só o Diogo confirmar visualmente em aba anônima.**
+
+**FLUXO DO DIA: TODAS AS ETAPAS CONCLUÍDAS E EM PRODUÇÃO.**
 
 ## 6. RISCO CONHECIDO (já sinalizado ao Diogo)
 

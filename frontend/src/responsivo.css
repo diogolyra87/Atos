@@ -1,0 +1,20 @@
+.grid-metricas {
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  gap: 12px;
+  margin-bottom: 24px;
+}
+
+.grid-duas-colunas {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+  margin-bottom: 24px;
+}
+
+@media (max-width: 768px) {
+  .grid-metricas,
+  .grid-duas-colunas {
+    grid-template-columns: 1fr;
+  }
+}

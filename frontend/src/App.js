@@ -150,6 +150,38 @@ function StatusDonut({ metricas }) {
   );
 }
 
+function AtividadeRecente({ eventos }) {
+  return (
+    <div style={{ background: "#fff", border: "0.5px solid #e2e8f0", borderRadius: 10, padding: 20 }}>
+      <div style={{ fontSize: 13, fontWeight: 600, color: "#23282a", marginBottom: 14 }}>
+        Atividade recente
+      </div>
+      {(!eventos || eventos.length === 0) ? (
+        <div style={{ fontSize: 13, color: "#94a3b8" }}>Nenhuma atividade ainda.</div>
+      ) : (
+        <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+          {eventos.map((ev, i) => (
+            <div
+              key={i}
+              style={{
+                fontSize: 12,
+                color: "#475569",
+                borderBottom: i < eventos.length - 1 ? "0.5px solid #f1f5f9" : "none",
+                paddingBottom: 8,
+              }}
+            >
+              <div style={{ color: "#23282a" }}>{ev.descricao}</div>
+              <div style={{ color: "#94a3b8", fontSize: 11, marginTop: 2 }}>
+                {new Date(ev.criado_em).toLocaleString("pt-BR")}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function TelaGrupos() {
   const [nome, setNome] = useState("");
   const [emails, setEmails] = useState([""]);
@@ -288,6 +320,7 @@ function AppPainel({ onSair }) {
   const [processos, setProcessos] = useState([]);
   const [metricas, setMetricas] = useState({});
   const [fluxosAtivos, setFluxosAtivos] = useState([]);
+  const [eventosRecentes, setEventosRecentes] = useState([]);
   const [tela, setTela] = useState("processos");
   const [processoSelecionado, setProcessoSelecionado] = useState(null);
   const [modalNovo, setModalNovo] = useState(false);
@@ -333,6 +366,18 @@ function AppPainel({ onSair }) {
     }
     carregarFluxos();
     const _t = setInterval(carregarFluxos, 5000);
+    return () => clearInterval(_t);
+  }, []);
+
+  useEffect(() => {
+    async function carregarEventos() {
+      try {
+        const r = await axios.get(`${API}/eventos/recentes`, { params: { limit: 5 } });
+        setEventosRecentes(r.data || []);
+      } catch (e) {}
+    }
+    carregarEventos();
+    const _t = setInterval(carregarEventos, 5000);
     return () => clearInterval(_t);
   }, []);
 
@@ -1152,6 +1197,7 @@ async function excluirProcesso() {
 
               <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: 24 }}>
                 <StatusDonut metricas={metricas} />
+                <AtividadeRecente eventos={eventosRecentes} />
               </div>
 
               <div

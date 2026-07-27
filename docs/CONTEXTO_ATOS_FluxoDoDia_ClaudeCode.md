@@ -90,11 +90,32 @@ todos os pontos de entrada**. Diferenças do spec original abaixo, decididas nes
   local é um artefato antigo de dev, nunca mantido em sincronia; não afeta produção nem foi
   causado por nada desta sessão.
 
+- **Frontend do admin (App.js) — CONCLUÍDO (2026-07-27).** Os 5 componentes da seção 4
+  implementados, testados visualmente no navegador (local, com dados de teste criados e
+  apagados pra cada um) e commitados: `StatCard` (`1e77f08`), `FluxoDoDiaCard` (`9f4800f`),
+  `StatusDonut` (`49a3351`), `AtividadeRecente` (`ec4d877`), `ListaProcessosAgrupada`
+  (`cd04507`). Ver seção 4 abaixo pra detalhes/divergências do rascunho original de cada um
+  (o mais notável: `ListaProcessosAgrupada` acabou agrupando por **data do ato**, não por
+  empresa como o spec original sugeria — decisão tomada durante a implementação, ver seção 4).
+
+- **Bug de dado encontrado durante o teste do `ListaProcessosAgrupada`: inconsistência de
+  maiúscula/minúscula em `processos.empresa`** (ex: "Esperanca" vs "ESPERANCA" pra mesma
+  empresa/CNPJ), gerando quase-duplicados na lista. Não é bug do Fluxo do Dia, mas foi achado
+  e corrigido nesta sessão por afetar a qualidade do agrupamento: `empresa` agora é
+  normalizado pra maiúscula em todo ponto de gravação (`criar_processo`,
+  `_criar_processo_transferencia`, PATCH genérico — commit `1eb1f2d`). Migração dos
+  registros existentes em **Python**, não SQL puro — confirmado que `UPPER()` nativo do
+  SQLite não trata acentos (`ã`, `ç`, `é` ficam minúsculos). Script `aplica_uppercase_empresa.py`
+  (gitignored) rodado local; **ainda falta rodar em produção** (ver pendências abaixo).
+
 ### AINDA PENDENTE
-1. Frontend inteiro (seção 4) — **não implementado ainda**. Nenhuma mudança de UI foi feita
-   nesta sessão, só backend (`database.py`, `main.py`, `bot.py`).
-2. Se algum dia for necessário rodar o backend localmente de novo, lembrar que o `mane.db`
-   local tinha drift de schema (corrigido nesta sessão, ver acima) — se aparecer de novo
+1. Espelhar os 5 componentes no `Cliente.js` (visão do cliente) — próximo passo desta sessão.
+2. Rodar `aplica_uppercase_empresa.py` em produção (independente do frontend, só dado — fazer
+   backup do `mane.db` do servidor antes, é `UPDATE` em massa).
+3. Deploy completo do frontend (build + scp) — **esperar o `Cliente.js` também estar pronto e
+   testado**, pra ser um único deploy em vez de dois fragmentados pro mesmo conjunto de telas.
+4. Se algum dia for necessário rodar o backend localmente de novo, lembrar que o `mane.db`
+   local tinha drift de schema (corrigido em sessão anterior, ver acima) — se aparecer de novo
    `OperationalError: no such column`, comparar contra `database.py` e aplicar `ALTER TABLE`
    pontual, sem recriar o banco (tem dado de dev que vale manter).
 
@@ -309,7 +330,9 @@ não precisou dessa correção porque sempre retorna lista, nunca colapsa pra ob
 
 ---
 
-## 4. FRONTEND — estrutura comum (App.js admin + Cliente.js cliente) — AINDA NÃO IMPLEMENTADO
+## 4. FRONTEND — estrutura comum (App.js admin + Cliente.js cliente)
+
+**Admin (`App.js`): CONCLUÍDO. Cliente (`Cliente.js`): AINDA NÃO IMPLEMENTADO (próximo passo).**
 
 Paleta já em uso (não inventar cor nova):
 - Roxo principal `#4f46b7`, gradiente sidebar `#241b4a → #4f46b7`
@@ -318,23 +341,44 @@ Paleta já em uso (não inventar cor nova):
   (exigência), verde `#EAF3DE`/`#27500A` (finalizados)
 - Card Fluxo do dia: fundo `#FAFAFF`, borda `#AFA9EC`, barra de progresso `#534AB7`
 
-### Componentes a criar
-1. `StatCard` — 4 usos no topo, props: `valor, label, corFundo, corTexto, icone`
-2. `FluxoDoDiaCard` — busca `/fluxo/ativo` no mount + polling 5s (mesmo padrão do chat do
-   processo); se resposta vazia/null, **não renderiza nada** (sem placeholder, sem "sem
-   fluxo hoje" — some por completo)
-3. `StatusDonut` — SVG puro, sem lib nova (ver exemplo já validado no mockup)
-4. `AtividadeRecente` — busca `/eventos/recentes`, lista os 3-5 mais novos
-5. `ListaProcessosAgrupada` — substitui a lista vertical atual; agrupa por `empresa` no
-   próprio frontend (`Array.prototype.reduce`), cabeçalho de grupo clicável
-   (expandir/colapsar), sem chamada nova de API
+### Componentes (status real após implementação no App.js)
+1. `StatCard` — **feito**. Props exatas: `valor, label, corFundo, corTexto, icone, onClick`
+   (`onClick` foi adicionado, não estava no rascunho original — cards continuam clicáveis pra
+   filtrar por status, como já eram antes da migração pro componente). 5 usos no topo (Total,
+   Tramitação, Exigência, **Deferidos** — cor azul `#d5e3df`/`#2563eb` reaproveitada do
+   `STATUS_CONFIG` existente, não inventada — e Finalizados).
+2. `FluxoDoDiaCard` — **feito**, exatamente como no rascunho: busca `/fluxo/ativo` no mount +
+   polling 5s, não renderiza nada se vazio/null.
+3. `StatusDonut` — **feito**. Cores dos segmentos reaproveitam `STATUS_CONFIG` (mesmas cores
+   já usadas nos badges de status em todo o app), não a paleta do `StatCard` — decisão pra
+   manter uma linguagem visual só pra "status" em toda a tela. SVG puro via
+   `stroke-dasharray`/`stroke-dashoffset` empilhado (técnica padrão de donut sem lib), total
+   no centro, legenda lateral com contagem por status.
+4. `AtividadeRecente` — **feito**, busca `/eventos/recentes?limit=5`, polling 5s (não estava
+   explícito no rascunho, mas seguido por consistência com `FluxoDoDiaCard`/`StatusDonut`).
+5. `ListaProcessosAgrupada` — **feito, mas com uma mudança de escopo pedida pelo Diogo durante
+   a implementação**: agrupa por **data do ato** (`p.data_ata`, formato `DD/MM/AAAA` no banco
+   — convertido pra `AAAA-MM-DD` internamente só pra ordenar/comparar certo, já que a string
+   crua brasileira ordena errado), **não por `empresa`** como este doc sugeria originalmente.
+   Ordenado do mais recente pro mais antigo, grupo `"Sem data"` sempre por último. Cabeçalho
+   de cada grupo é clicável (expandir/colapsar), com ícone `▾`/`▸` — isso também mudou de ideia
+   no meio do caminho: a primeira versão implementada tirava o clique por completo (cabeçalho
+   fixo, sem interação), depois o Diogo pediu de volta o expandir/colapsar, só que vinculado à
+   **chave de data**, não mais ao nome da empresa. Continua sem chamada nova de API
+   (`Array.prototype.reduce` sobre `processosFiltrados`, já carregado). Componente aninhado
+   **dentro do `AppPainel`** (não top-level como os outros 4), porque referencia `s` (objeto
+   de estilos) e `processosFiltrados`/`setProcessoSelecionado` da closure — mesmo padrão já
+   usado por `BannerPendencias`/`ChatProcesso` no arquivo.
 
 ### Diferença admin x cliente
 - Admin: `FluxoDoDiaCard` pode renderizar **mais de um** (map sobre a lista de
-  `/fluxo/ativo` sem `grupo_id`) — um por grupo que bateu o gatilho hoje. Tem seletor de
-  Grupo Empresarial no topo (já existe hoje, manter).
+  `/fluxo/ativo` sem `codigo_grupo`) — um por grupo que bateu o gatilho hoje. **Implementado
+  assim**: sempre busca a lista global, sem respeitar o filtro `fGrupo` da tabela de baixo (que
+  já era só um filtro client-side, nunca mandava pro backend — `/metricas` também já era
+  global, então manter `FluxoDoDiaCard`/`StatusDonut`/`AtividadeRecente` globais ficou
+  consistente com o que já existia).
 - Cliente: chama `/fluxo/ativo` sem parâmetro (backend resolve pelo token) — no máximo um
-  card. Sem seletor de grupo.
+  card. Sem seletor de grupo. **Ainda não implementado.**
 
 ---
 
@@ -348,9 +392,10 @@ Paleta já em uso (não inventar cor nova):
 3. ~~Endpoints `/fluxo/ativo` e `/eventos/recentes`~~ — **feita, testada (local e
    produção) e deployada**. Bug de vazamento entre grupos encontrado e corrigido nesse
    processo (ver STATUS ATUAL).
-4. **PRÓXIMO PASSO**: Componentes de frontend, um de cada vez, primeiro no admin
-   (`App.js`, já mais perto do visual novo), depois espelhar no `Cliente.js`.
-5. Deploy e teste em aba anônima, do jeito que vocês já fazem
+4. ~~Componentes de frontend no admin (`App.js`)~~ — **feito** (5 componentes, ver seção 4).
+   **PRÓXIMO PASSO**: espelhar no `Cliente.js`.
+5. Deploy e teste em aba anônima, do jeito que vocês já fazem — **esperar `Cliente.js`
+   terminar**, deploy único pras duas telas.
 
 ## 6. RISCO CONHECIDO (já sinalizado ao Diogo)
 

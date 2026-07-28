@@ -36,6 +36,9 @@ credentials.json
 .DS_Store
 Thumbs.db
 
+# Claude Code - config local da maquina (nunca versionar)
+.claude/settings.local.json
+
 # Scripts temporarios de edicao (uso unico - nao vao pro servidor)
 add_*.py
 ajusta_*.py
@@ -61,8 +64,24 @@ teste_*.docx
 *.bak-*
 *.save
 .env.*
+!.env.example
 # Scripts de exploracao/debug de automacao (temporarios)
 automacao/explorar_*.py
 automacao/debug_*.py
 backend/_*.py
 backend/_*.txt
+
+# Logs
+*.log
+
+# Queries SQL avulsas (sempre scratch - rodadas via scp+ssh, nunca versionadas)
+*.sql
+
+# Scripts avulsos de uso unico (mesmo padrao das secoes acima)
+teste_*.py
+diff_*.txt
+fix_*.py
+fix_*.ps1
+backend/disparar_convite.py
+planilhar_egp.py
+trocar_api.py

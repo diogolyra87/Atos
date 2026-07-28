@@ -4,6 +4,7 @@ from fastapi.staticfiles import StaticFiles
 from sqlalchemy.orm import Session
 from sqlalchemy import func
 from database import get_db, Processo, Grupo, Usuario, EmailGrupo, criar_banco, AuditLog, Codigo2FA, Anexo, RegraAprendizado, MensagemProcesso, TelegramVinculo, Fluxo, Evento
+from cnpj_utils import normalizar_cnpj, validar_cnpj, formatar_cnpj
 from datetime import datetime, timedelta, date
 from openai import OpenAI
 import json, os, uuid, shutil, bcrypt
@@ -798,9 +799,10 @@ def excluir_anexo(anexo_id: str, request: Request = None, x_token: str = Header(
     a = db.query(Anexo).filter(Anexo.id == anexo_id).first()
     if not a:
         raise HTTPException(status_code=404, detail="Anexo nao encontrado")
-    p = db.query(Processo).filter(Processo.id == a.processo_id).first()
-    if p and not usuario.is_admin and p.grupo_id != usuario.grupo_id:
-        raise HTTPException(status_code=403, detail="Sem permissao para este anexo")
+    _ip = obter_ip(request)
+    if not usuario.is_admin and a.enviado_por != usuario.login:
+        registrar_auditoria(db, usuario, "anexo_excluir_negado", a.processo_id, "anexo=" + (a.nome_original or "") + " motivo=sem_permissao", _ip)
+        raise HTTPException(status_code=403, detail="Apenas administrador ou quem enviou o anexo pode exclui-lo")
     caminho = os.path.join(UPLOADS_DIR, a.arquivo)
     try:
         if os.path.exists(caminho):
@@ -811,7 +813,6 @@ def excluir_anexo(anexo_id: str, request: Request = None, x_token: str = Header(
     nome = a.nome_original
     db.delete(a)
     db.commit()
-    _ip = obter_ip(request)
     registrar_auditoria(db, usuario, "anexo_excluir", proc_id, "anexo=" + (nome or ""), _ip)
     return {"mensagem": "Anexo removido"}
 
@@ -1478,6 +1479,11 @@ async def criar_processo(
     # URGENTE - NUNCA bloquear a insercao do processo por falta de campo extraido.
     # Sempre insere o processo, marca para revisao manual, e avisa o administrador.
 
+    cnpj_norm = normalizar_cnpj(info.get("cnpj") or "")
+    if cnpj_norm and not validar_cnpj(cnpj_norm):
+        faltando.append("cnpj (digito verificador invalido)")
+    cnpj_final = formatar_cnpj(cnpj_norm) if cnpj_norm else ""
+
     grupo_id = None
     if usuario_tok.is_admin:
         codigo_grupo = info.get("codigo_grupo", "").strip()
@@ -1501,7 +1507,7 @@ async def criar_processo(
     p = Processo(
         id=processo_id,
         empresa=(info.get("empresa", "") or "").upper(),
-        cnpj=info.get("cnpj", ""),
+        cnpj=cnpj_final,
         nire=info.get("nire", ""),
         uf=(info.get("uf") or "").upper().strip()[:2],
         tipo_sociedade=info.get("tipo_sociedade", ""),
@@ -1628,6 +1634,8 @@ def atualizar_processo(processo_id: str, dados: dict, request: Request = None, x
         if hasattr(p, campo):
             if campo == "empresa" and valor:
                 valor = valor.upper()
+            if campo == "cnpj" and valor:
+                valor = formatar_cnpj(normalizar_cnpj(valor))
             setattr(p, campo, valor)
     # Reinserir/atualizar protocolo cumpre a exigencia ativa
     protocolo_editado = "numero_protocolo" in dados or "arquivo_protocolo" in dados

@@ -472,6 +472,14 @@ e correções feitas na mesma sessão, sem downtime:
   que existia antes (removido de `s.metrics` e do `style={{}}` inline correspondente) — só
   esse comportamento mudou, nenhuma cor/estrutura foi alterada.
 
+- **Refatoração deployada em produção (2026-07-27, commits `85709d8` + `ea4e8e5`)** — mesmo
+  protocolo de sempre: `git stash push --` seletivo em `favicon.ico`/`index.html` (proteger a
+  outra tarefa), build limpo, `scp` do bundle JS + **CSS novo** (primeira vez que o projeto
+  publica um arquivo `.css` de verdade, antes era só JS/HTML) + `index.html`, bundle antigo
+  removido, smoke test `200` nos três arquivos via HTTPS, `git stash pop` restaurando a outra
+  tarefa. Produção agora tem o `Compartilhados.js` unificado (bug do "Finalizados" corrigido
+  lá também) e o CSS responsivo, além da correção do nginx já mencionada acima.
+
 - **Bug pré-existente encontrado, FORA de escopo, não corrigido**: a tela de login (admin e
   cliente) usa `fontFamily: "AtosBrand"` pro logo, mas o `@font-face` correspondente nunca
   foi commitado (está preso nas mudanças não commitadas da *outra tarefa*, a mesma de

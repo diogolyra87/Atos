@@ -1,7 +1,7 @@
 ﻿import { useState, useEffect } from "react";
 import axios from "axios";
 import { Painel as PainelCliente } from "./Cliente";
-import { STATUS_CONFIG, chaveDataAta, formatarDataExtenso, StatCard, FluxoDoDiaCard, AtividadeRecente, StatusDonut } from "./components/Compartilhados";
+import { STATUS_CONFIG, formatarDataExtenso, StatCard, FluxoDoDiaCard, AtividadeRecente, StatusDonut } from "./components/Compartilhados";
 
 const API = "";
 
@@ -502,7 +502,7 @@ function AppPainel({ onSair }) {
     const [gruposFechados, setGruposFechados] = useState({});
 
     const grupos = processosFiltrados.reduce((acc, p) => {
-      const chave = chaveDataAta(p.data_ata) || "sem-data";
+      const chave = (p.criado_em || "").slice(0, 10) || "sem-data";
       if (!acc[chave]) acc[chave] = [];
       acc[chave].push(p);
       return acc;
@@ -518,7 +518,7 @@ function AppPainel({ onSair }) {
       <>
         {chaves.map(chave => {
           const itens = grupos[chave];
-          const label = chave === "sem-data" ? "Sem data" : formatarDataExtenso(chave);
+          const label = chave === "sem-data" ? "Data inválida" : `Processos abertos em ${formatarDataExtenso(chave)}`;
           const aberto = !gruposFechados[chave];
           return (
             <div key={chave}>

@@ -986,6 +986,37 @@ def listar_processos(codigo_grupo: str = None, x_token: str = Header(None), db: 
     ).all()
     return processos
 
+@app.get("/processos/pendentes")
+async def listar_pendentes(x_token: str = Header(None), db: Session = Depends(get_db)):
+    if not x_token:
+        raise HTTPException(status_code=401, detail="Token necessario")
+    usuario = validar_token(x_token, db)
+    requer_acesso_admin(usuario)
+    ps = db.query(Processo).filter(Processo.confirmacao_pendente == True).all()
+    return [{"id": p.id, "empresa": p.empresa, "tipo_ato": p.tipo_ato, "tipo_ato_sugerido": p.tipo_ato_sugerido, "identificador_ato": p.identificador_ato, "data_ata": p.data_ata} for p in ps]
+
+@app.get("/processos/checar-duplicidade")
+async def checar_duplicidade(empresa: str = "", tipo_ato: str = "", data_ata: str = "", hora_ata: str = "", identificador_ato: str = "", x_token: str = Header(None), db: Session = Depends(get_db)):
+    if not x_token:
+        raise HTTPException(status_code=401, detail="Token necessario")
+    usuario = validar_token(x_token, db)
+    if not usuario:
+        raise HTTPException(status_code=401, detail="Token invalido ou sessao expirada")
+    q = db.query(Processo)
+    if not _tem_acesso_admin(usuario):
+        q = q.filter(Processo.grupo_id == usuario.grupo_id)
+    alvo = (_norm(empresa), _norm(tipo_ato), _norm(data_ata), _norm(hora_ata), _norm(identificador_ato))
+    for p in q.all():
+        atual = (_norm(p.empresa), _norm(p.tipo_ato), _norm(p.data_ata), _norm(p.hora_ata), _norm(p.identificador_ato))
+        if atual == alvo and any(alvo):
+            return {"duplicado": True, "processo_id": p.id, "empresa": p.empresa, "identificador_ato": p.identificador_ato}
+    return {"duplicado": False}
+
+# IMPORTANTE: as duas rotas acima (pendentes, checar-duplicidade) tem que vir
+# ANTES de /processos/{processo_id} - FastAPI casa rotas por ordem de
+# registro, nao por especificidade. Como {processo_id} aceita qualquer string,
+# se ele viesse primeiro "engoliria" essas duas rotas literais (bug real ja
+# visto em producao: GET /processos/pendentes retornava 404 do backend).
 @app.get("/processos/{processo_id}")
 def obter_processo(processo_id: str, request: Request = None, x_token: str = Header(None), db: Session = Depends(get_db)):
     if not x_token:
@@ -1517,15 +1548,6 @@ async def analisar_pasta_multi(arquivos: list[UploadFile] = File(...), x_token: 
         "tipos_disponiveis": list(TIPOS_PRINCIPAIS.keys()),
     }
 
-@app.get("/processos/pendentes")
-async def listar_pendentes(x_token: str = Header(None), db: Session = Depends(get_db)):
-    if not x_token:
-        raise HTTPException(status_code=401, detail="Token necessario")
-    usuario = validar_token(x_token, db)
-    requer_acesso_admin(usuario)
-    ps = db.query(Processo).filter(Processo.confirmacao_pendente == True).all()
-    return [{"id": p.id, "empresa": p.empresa, "tipo_ato": p.tipo_ato, "tipo_ato_sugerido": p.tipo_ato_sugerido, "identificador_ato": p.identificador_ato, "data_ata": p.data_ata} for p in ps]
-
 @app.post("/processos/{processo_id}/confirmar-tipo")
 async def confirmar_tipo(processo_id: str, dados: str = Form(...), request: Request = None, x_token: str = Header(None), db: Session = Depends(get_db)):
     if not x_token:
@@ -1550,23 +1572,6 @@ def _norm(s):
     s = (s or "").strip().lower()
     s = "".join(c for c in unicodedata.normalize("NFD", s) if unicodedata.category(c) != "Mn")
     return " ".join(s.split())
-
-@app.get("/processos/checar-duplicidade")
-async def checar_duplicidade(empresa: str = "", tipo_ato: str = "", data_ata: str = "", hora_ata: str = "", identificador_ato: str = "", x_token: str = Header(None), db: Session = Depends(get_db)):
-    if not x_token:
-        raise HTTPException(status_code=401, detail="Token necessario")
-    usuario = validar_token(x_token, db)
-    if not usuario:
-        raise HTTPException(status_code=401, detail="Token invalido ou sessao expirada")
-    q = db.query(Processo)
-    if not _tem_acesso_admin(usuario):
-        q = q.filter(Processo.grupo_id == usuario.grupo_id)
-    alvo = (_norm(empresa), _norm(tipo_ato), _norm(data_ata), _norm(hora_ata), _norm(identificador_ato))
-    for p in q.all():
-        atual = (_norm(p.empresa), _norm(p.tipo_ato), _norm(p.data_ata), _norm(p.hora_ata), _norm(p.identificador_ato))
-        if atual == alvo and any(alvo):
-            return {"duplicado": True, "processo_id": p.id, "empresa": p.empresa, "identificador_ato": p.identificador_ato}
-    return {"duplicado": False}
 
 @app.post("/processos/analisar")
 async def analisar_documento(arquivo: UploadFile = File(...), x_token: str = Header(None), db: Session = Depends(get_db)):

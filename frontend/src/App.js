@@ -170,7 +170,8 @@ function TelaAprendizado() {
   );
 }
 
-function AppPainel({ onSair }) {
+function AppPainel({ onSair, sessao }) {
+  const ehOperador = sessao && sessao.papel === "operador" && !sessao.is_admin;
   const [processos, setProcessos] = useState([]);
   const [metricas, setMetricas] = useState({});
   const [fluxosAtivos, setFluxosAtivos] = useState([]);
@@ -848,7 +849,9 @@ async function excluirProcesso() {
               CNPJ {p.cnpj} · NIRE {p.nire} · {p.id}
             </div>
           </div>
-          <button style={s.btnSecondary} onClick={() => setProcessoSelecionado(null)}>← Voltar</button> <button style={{ background: "#b91c1c", color: "#fff", border: "none", borderRadius: 8, padding: "8px 16px", fontSize: 13, cursor: "pointer", marginLeft: 8 }} onClick={excluirProcesso}>Excluir Processo</button>
+          <button style={s.btnSecondary} onClick={() => setProcessoSelecionado(null)}>← Voltar</button> {!ehOperador && (
+            <button style={{ background: "#b91c1c", color: "#fff", border: "none", borderRadius: 8, padding: "8px 16px", fontSize: 13, cursor: "pointer", marginLeft: 8 }} onClick={excluirProcesso}>Excluir Processo</button>
+          )}
         </div>
 
         {p.requer_cpl && (
@@ -1042,7 +1045,8 @@ async function excluirProcesso() {
             { key: "cobrancas", icon: "◈", label: "Cobranças" },
             { key: "relatorios", icon: "▦", label: "Relatórios" },
             { key: "grupos", icon: "◉", label: "Grupos" },
-            { key: "aprendizado", icon: "◈", label: "Aprendizado" },
+            // Aprendizado = configuracao global de classificacao da IA, restrita ao admin completo
+            ...(ehOperador ? [] : [{ key: "aprendizado", icon: "◈", label: "Aprendizado" }]),
           ].map(({ key, icon, label }) => (
             <button key={key} style={s.nav(tela === key)} onClick={() => { setTela(key); setProcessoSelecionado(null); }}>
               {icon} {label}
@@ -1352,7 +1356,7 @@ export default function App() {
   }
 
   if (sessao && sessao.token) {
-    if (sessao.is_admin) return <AppPainel onSair={sair} />;
+    if (sessao.is_admin || sessao.papel === "operador") return <AppPainel onSair={sair} sessao={sessao} />;
     return <PainelCliente sessao={sessao} onSair={sair} />;
   }
 

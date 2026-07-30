@@ -32,6 +32,9 @@ app/criar_planilha_enel.py
 token.json
 credentials.json
 
+# Senhas iniciais de usuarios criados (nunca versionar)
+credenciais_operadores.txt
+
 # Sistema
 .DS_Store
 Thumbs.db

@@ -7,21 +7,29 @@ load_dotenv("/root/atos/.env")
 DB = "/root/atos/backend/mane.db"
 ADMIN_EMAIL = os.getenv("ADMIN_EMAIL")
 
-# Reusa funcoes do backend (email Brevo + telegram)
+# Reusa funcoes do backend (email Brevo + telegram + lista de destinatarios admin)
 try:
-    from main import enviar_email, notificar_telegram
+    from main import enviar_email, notificar_telegram, emails_admin
 except Exception as e:
     print("Falha ao importar funcoes do main:", e)
     def enviar_email(*a, **k): print("email indisponivel")
     def notificar_telegram(*a, **k): print("telegram indisponivel")
+    def emails_admin(db): return [ADMIN_EMAIL] if ADMIN_EMAIL else []
+
+from database import SessionLocal
 
 AGORA = datetime.now()
 
 def alertar(assunto, corpo):
     print(">>", assunto)
     try:
-        if ADMIN_EMAIL:
-            enviar_email(ADMIN_EMAIL, assunto, corpo)
+        _db = SessionLocal()
+        try:
+            destinatarios = emails_admin(_db)
+        finally:
+            _db.close()
+        for destinatario in destinatarios:
+            enviar_email(destinatario, assunto, corpo)
     except Exception as e:
         print("erro email:", e)
     try:

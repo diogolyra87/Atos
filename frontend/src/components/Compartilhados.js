@@ -77,7 +77,7 @@ export function AtividadeRecente({ eventos }) {
             >
               <div style={{ color: "#23282a" }}>{ev.descricao}</div>
               <div style={{ color: "#94a3b8", fontSize: 11, marginTop: 2 }}>
-                {new Date(ev.criado_em).toLocaleString("pt-BR")}
+                {ev.autor_nome ? `por ${ev.autor_nome} · ` : ""}{new Date(ev.criado_em).toLocaleString("pt-BR")}
               </div>
             </div>
           ))}

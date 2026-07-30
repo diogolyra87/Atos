@@ -10,7 +10,7 @@ sys.path.insert(0, "/root/atos/backend")
 sys.path.insert(0, "/root/atos/automacao")
 from database import SessionLocal, Processo, Grupo, EmailGrupo
 sys.path.insert(0, "/root/atos/backend")
-from main import corpo_status_cliente, enviar_email_anexo, emails_do_grupo, UPLOADS_DIR, recalcular_status
+from main import corpo_status_cliente, enviar_email_anexo, emails_do_grupo, UPLOADS_DIR, recalcular_status, emails_admin
 from consultar_jucesp import consultar
 from consultar_jucerja import consultar_jucerja, classificar_status_rj, baixar_documento_jucerja
 from consultar_juceb import consultar_juceb, classificar_status_ba, baixar_documento_juceb
@@ -47,6 +47,14 @@ BASE_URL = "https://atos.net.br"
 
 INTERVALO_NORMAL = timedelta(hours=24)
 INTERVALO_AGUARDANDO = timedelta(days=7)
+
+
+def enviar_email_admin_todos(db, assunto, corpo):
+    """Envia um alerta administrativo pra todos os destinatarios de
+    emails_admin(db) (admin + operadores) - lista definida uma unica vez em
+    main.py, reaproveitada aqui pra nao duplicar quem recebe."""
+    for destinatario in emails_admin(db):
+        enviar_email(destinatario, assunto, corpo)
 
 
 def enviar_email(destinatario, assunto, corpo):
@@ -101,13 +109,13 @@ def aplicar_classificacao(db, p, classificacao, agora):
             p.aguardando_cliente = False
             p.ultimo_alerta_em = agora
             db.commit()
-            enviar_email(EMAIL_ADMIN, "[Atos] Exigencia - " + str(p.empresa), corpo_admin(p, "Exigencia"))
+            enviar_email_admin_todos(db, "[Atos] Exigencia - " + str(p.empresa), corpo_admin(p, "Exigencia"))
             print("   -> mudou para EXIGENCIA + alertou admin")
         else:
             if precisa_alertar(p, agora):
                 p.ultimo_alerta_em = agora
                 db.commit()
-                enviar_email(EMAIL_ADMIN, "[Atos] Exigencia (lembrete) - " + str(p.empresa), corpo_admin(p, "Exigencia"))
+                enviar_email_admin_todos(db, "[Atos] Exigencia (lembrete) - " + str(p.empresa), corpo_admin(p, "Exigencia"))
                 print("   -> lembrete de exigencia ao admin")
             else:
                 db.commit()
@@ -120,7 +128,7 @@ def aplicar_classificacao(db, p, classificacao, agora):
             p.ultimo_alerta_em = agora
             p.deferido_em = agora
             db.commit()
-            enviar_email(EMAIL_ADMIN, "[Atos] Deferido - " + str(p.empresa), corpo_admin(p, "Deferido") + "\n\nAguardando a Junta Comercial disponibilizar o Registro.")
+            enviar_email_admin_todos(db, "[Atos] Deferido - " + str(p.empresa), corpo_admin(p, "Deferido") + "\n\nAguardando a Junta Comercial disponibilizar o Registro.")
             if not p.avisado_deferido:
                 for em in emails_do_grupo(db, p.grupo_id):
                     enviar_email(em, "Atualizacao do seu processo - " + str(p.empresa), corpo_status_cliente(p, "Deferido", "Aguardando liberacao do Registro."))
@@ -131,7 +139,7 @@ def aplicar_classificacao(db, p, classificacao, agora):
             if precisa_alertar(p, agora):
                 p.ultimo_alerta_em = agora
                 db.commit()
-                enviar_email(EMAIL_ADMIN, "[Atos] Deferido (lembrete) - " + str(p.empresa), corpo_admin(p, "Deferido"))
+                enviar_email_admin_todos(db, "[Atos] Deferido (lembrete) - " + str(p.empresa), corpo_admin(p, "Deferido"))
                 print("   -> lembrete de deferido ao admin")
             else:
                 db.commit()
@@ -356,7 +364,7 @@ def verificar_atrasos_deferido(db, agora):
                 "Deferido ha aproximadamente " + str(horas) + "h.\n"
                 "Verificar manualmente."
             )
-            enviar_email(EMAIL_ADMIN, "[Atos] ALERTA - Processo travado ha 24h+ - " + str(p.empresa), texto)
+            enviar_email_admin_todos(db, "[Atos] ALERTA - Processo travado ha 24h+ - " + str(p.empresa), texto)
             try:
                 enviar_telegram(ADMIN_CHAT_ID, texto)
             except Exception as e:

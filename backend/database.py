@@ -25,10 +25,19 @@ class Usuario(Base):
     login = Column(String, unique=True, nullable=False)
     senha_hash = Column(String, nullable=False)
     email = Column(String, nullable=True)
+    nome = Column(String, nullable=True)
     grupo_id = Column(String, nullable=False)
     token = Column(String, nullable=True)
     token_criado_em = Column(DateTime, nullable=True)
     is_admin = Column(Boolean, default=False)
+    # "admin" (superadmin, acesso total) | "operador" (acesso a tela administrativa,
+    # sem config/usuarios/identidade visual) | "cliente" (portal do cliente).
+    # is_admin continua True somente para papel "admin" - operador usa is_admin=False
+    # de proposito, pra herdar automaticamente todo bloqueio ja existente baseado em
+    # is_admin (config, usuarios, exclusao de processo/anexo) sem precisar tocar nesses
+    # endpoints. Endpoints que devem liberar operador usam _tem_acesso_admin() em vez
+    # de checar is_admin direto.
+    papel = Column(String, default="cliente")
     criado_em = Column(DateTime, default=datetime.now)
 
 class EmailGrupo(Base):
@@ -93,6 +102,8 @@ class AuditLog(Base):
     __tablename__ = "audit_logs"
     id = Column(String, primary_key=True)
     usuario_login = Column(String)
+    usuario_nome = Column(String)
+    usuario_papel = Column(String)
     usuario_id = Column(String)
     grupo_id = Column(String)
     is_admin = Column(Boolean, default=False)
@@ -117,6 +128,12 @@ class Evento(Base):
     grupo_id = Column(String, nullable=True)
     tipo = Column(String, nullable=False)
     descricao = Column(String, nullable=False)
+    # Autor da acao (para atribuicao visivel na timeline - "por Fulano, dd/mm/aaaa").
+    # None/NULL quando o evento foi gerado por automacao sem usuario logado (ex:
+    # criacao automatica de processo de transferencia de sede).
+    usuario_login = Column(String, nullable=True)
+    usuario_nome = Column(String, nullable=True)
+    usuario_papel = Column(String, nullable=True)
     criado_em = Column(DateTime, default=datetime.now)
 
 class Processo(Base):

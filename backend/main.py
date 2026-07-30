@@ -149,6 +149,8 @@ def registrar_auditoria(db, usuario, acao, processo_id=None, detalhe=None, ip=No
         log = AuditLog(
             id=str(_uuid.uuid4()),
             usuario_login=getattr(usuario, "login", None) if usuario else None,
+            usuario_nome=nome_usuario(usuario) if usuario else None,
+            usuario_papel=(getattr(usuario, "papel", None) or ("admin" if getattr(usuario, "is_admin", False) else None)) if usuario else None,
             usuario_id=getattr(usuario, "id", None) if usuario else None,
             grupo_id=getattr(usuario, "grupo_id", None) if usuario else None,
             is_admin=bool(getattr(usuario, "is_admin", False)) if usuario else False,
@@ -167,6 +169,33 @@ def emails_do_grupo(db, grupo_id):
         return []
     regs = db.query(EmailGrupo).filter(EmailGrupo.grupo_id == grupo_id).all()
     return [r.email for r in regs if r.email]
+
+
+def _tem_acesso_admin(usuario):
+    """Admin OU operador: mesma tela administrativa, mesma visibilidade de
+    processos de todos os grupos, mesmas acoes operacionais. Cliente nao passa."""
+    return bool(usuario and (usuario.is_admin or getattr(usuario, "papel", None) == "operador"))
+
+
+def requer_acesso_admin(usuario):
+    """Levanta 403 se o usuario nao for admin nem operador."""
+    if not _tem_acesso_admin(usuario):
+        raise HTTPException(status_code=403, detail="Acesso restrito a administrador ou operador")
+
+
+def requer_admin_completo(usuario):
+    """Levanta 403 se o usuario nao for especificamente o papel 'admin' (superadmin).
+    Operador NAO passa aqui - usar nos endpoints de configuracao do sistema,
+    gerenciamento de usuarios/integracoes e acoes destrutivas (excluir processo)."""
+    if not usuario or not usuario.is_admin:
+        raise HTTPException(status_code=403, detail="Acesso restrito ao administrador")
+
+
+def nome_usuario(usuario):
+    """Nome de exibicao pra atribuicao na timeline. None (sem usuario) = automacao."""
+    if not usuario:
+        return "Sistema (automação)"
+    return getattr(usuario, "nome", None) or usuario.login
 
 def _regex_protocolo(texto):
     import re
@@ -369,15 +398,22 @@ def vincular_fluxo_do_dia(db, processo, grupo_id):
         print("Erro ao vincular fluxo do dia:", e)
 
 
-def registrar_evento(db, processo, tipo, descricao):
+def registrar_evento(db, processo, tipo, descricao, usuario=None):
     """Registra um evento pro feed de Atividade recente. Nao commita por conta
     propria - chamar sempre ANTES do commit() da operacao principal, para que o
     evento entre na mesma transacao (senao fica pendente e se perde no db.close()
-    do get_db, que nao commita). Nunca deve quebrar o fluxo principal."""
+    do get_db, que nao commita). Nunca deve quebrar o fluxo principal.
+
+    usuario=None quando o evento e gerado por automacao sem usuario logado (ex:
+    criacao automatica de processo de transferencia de sede) - a timeline mostra
+    "Sistema (automação)" nesse caso (ver nome_usuario())."""
     try:
         evento = Evento(
             id=str(uuid.uuid4()), processo_id=processo.id,
-            grupo_id=processo.grupo_id, tipo=tipo, descricao=descricao
+            grupo_id=processo.grupo_id, tipo=tipo, descricao=descricao,
+            usuario_login=getattr(usuario, "login", None) if usuario else None,
+            usuario_nome=nome_usuario(usuario) if usuario else None,
+            usuario_papel=(getattr(usuario, "papel", None) or ("admin" if getattr(usuario, "is_admin", False) else None)) if usuario else None,
         )
         db.add(evento)
     except Exception:
@@ -460,8 +496,37 @@ os.makedirs(UPLOADS_DIR, exist_ok=True)
 
 GEMINI_KEY = os.getenv("GEMINI_KEY")
 EMAIL_ADMIN = os.getenv("ADMIN_EMAIL")
+
+
+def emails_admin(db):
+    """Destinatarios dos alertas administrativos automaticos (exigencia, atraso,
+    processo com campo incompleto, etc.): o admin fixo (EMAIL_ADMIN) mais todo
+    usuario com papel 'operador' que tenha e-mail cadastrado. Centralizado aqui
+    pra qualquer alerta admin - em main.py ou nos scripts de automacao que
+    importam esta funcao - usar a mesma lista, sem duplicar quem recebe. Novo
+    operador criado via /usuarios/operador entra automaticamente, sem precisar
+    mudar codigo em nenhum ponto de disparo."""
+    emails = [EMAIL_ADMIN] if EMAIL_ADMIN else []
+    operadores = db.query(Usuario).filter(
+        Usuario.papel == "operador",
+        Usuario.email.isnot(None),
+        Usuario.email != "",
+    ).all()
+    for u in operadores:
+        if u.email and u.email not in emails:
+            emails.append(u.email)
+    return emails
+
+
 DEEPSEEK_KEY = os.getenv("DEEPSEEK_KEY")
 client = OpenAI(api_key=DEEPSEEK_KEY, base_url="https://api.deepseek.com")
+
+INFOSIMPLES_TOKEN = os.getenv("INFOSIMPLES_TOKEN")
+INFOSIMPLES_CPF = os.getenv("INFOSIMPLES_CPF")
+INFOSIMPLES_SENHA_NFP = os.getenv("INFOSIMPLES_SENHA_NFP")
+import sys as _sys
+_sys.path.insert(0, os.path.join(BASE_DIR, "..", "automacao"))
+from jucesp_infosimples import baixar_certidao_simplificada
 
 CONHECIMENTO_FILE = r"D:\Mane\dados\conhecimento_registro.json"
 def carregar_conhecimento():
@@ -637,7 +702,15 @@ def login_verificar(dados: dict, request: Request, db: Session = Depends(get_db)
     db.commit()
     registrar_auditoria(db, usuario, "login", None, "acesso ao sistema (2FA)", ip)
     grupo = db.query(Grupo).filter(Grupo.id == usuario.grupo_id).first()
-    return {"token": token, "login": usuario.login, "grupo_id": usuario.grupo_id, "grupo": grupo.nome if grupo else None, "is_admin": bool(usuario.is_admin)}
+    return {
+        "token": token,
+        "login": usuario.login,
+        "nome": getattr(usuario, "nome", None),
+        "papel": getattr(usuario, "papel", None) or ("admin" if usuario.is_admin else "cliente"),
+        "grupo_id": usuario.grupo_id,
+        "grupo": grupo.nome if grupo else None,
+        "is_admin": bool(usuario.is_admin),
+    }
 
 
 
@@ -673,7 +746,7 @@ async def enviar_mensagem(processo_id: str, dados: str = Form(...), request: Req
     p = db.query(Processo).filter(Processo.id == processo_id).first()
     if not p:
         raise HTTPException(status_code=404, detail="Processo nao encontrado")
-    if not usuario.is_admin and p.grupo_id != usuario.grupo_id:
+    if not _tem_acesso_admin(usuario) and p.grupo_id != usuario.grupo_id:
         raise HTTPException(status_code=403, detail="Sem permissao para este processo")
     info = json.loads(dados)
     texto = (info.get("texto") or "").strip()
@@ -683,7 +756,7 @@ async def enviar_mensagem(processo_id: str, dados: str = Form(...), request: Req
         id=str(uuid.uuid4()),
         processo_id=processo_id,
         autor_login=usuario.login,
-        autor_tipo=("admin" if usuario.is_admin else "cliente"),
+        autor_tipo=("admin" if usuario.is_admin else ("operador" if getattr(usuario, "papel", None) == "operador" else "cliente")),
         texto=texto,
         status_no_momento=p.status,
         tipo_ato_no_momento=p.tipo_ato,
@@ -692,7 +765,7 @@ async def enviar_mensagem(processo_id: str, dados: str = Form(...), request: Req
     db.commit()
     _ip = obter_ip(request)
     registrar_auditoria(db, usuario, "mensagem_processo", processo_id, "", _ip)
-    if not usuario.is_admin:
+    if not _tem_acesso_admin(usuario):
         _grupo = db.query(Grupo).filter(Grupo.id == p.grupo_id).first()
         _empresa = (_grupo.nome if _grupo else None) or p.empresa or "cliente"
         _ato = p.identificador_ato or p.tipo_ato or "processo"
@@ -715,7 +788,7 @@ async def listar_mensagens(processo_id: str, x_token: str = Header(None), db: Se
     p = db.query(Processo).filter(Processo.id == processo_id).first()
     if not p:
         raise HTTPException(status_code=404, detail="Processo nao encontrado")
-    if not usuario.is_admin and p.grupo_id != usuario.grupo_id:
+    if not _tem_acesso_admin(usuario) and p.grupo_id != usuario.grupo_id:
         raise HTTPException(status_code=403, detail="Sem permissao para este processo")
     msgs = db.query(MensagemProcesso).filter(MensagemProcesso.processo_id == processo_id).order_by(MensagemProcesso.criado_em.asc()).all()
     return [{"id": mm.id, "autor_login": mm.autor_login, "autor_tipo": mm.autor_tipo, "texto": mm.texto, "criado_em": mm.criado_em.isoformat() if mm.criado_em else None} for mm in msgs]
@@ -730,7 +803,7 @@ async def enviar_anexo(processo_id: str, arquivo: UploadFile = File(...), descri
     p = db.query(Processo).filter(Processo.id == processo_id).first()
     if not p:
         raise HTTPException(status_code=404, detail="Processo nao encontrado")
-    if not usuario.is_admin and p.grupo_id != usuario.grupo_id:
+    if not _tem_acesso_admin(usuario) and p.grupo_id != usuario.grupo_id:
         raise HTTPException(status_code=403, detail="Sem permissao para este processo")
     ext = os.path.splitext(arquivo.filename or "")[1].lower()
     EXT_PERMITIDAS = {".pdf", ".png", ".jpg", ".jpeg", ".xml", ".txt"}
@@ -763,7 +836,7 @@ def listar_anexos(processo_id: str, x_token: str = Header(None), db: Session = D
     p = db.query(Processo).filter(Processo.id == processo_id).first()
     if not p:
         raise HTTPException(status_code=404, detail="Processo nao encontrado")
-    if not usuario.is_admin and p.grupo_id != usuario.grupo_id:
+    if not _tem_acesso_admin(usuario) and p.grupo_id != usuario.grupo_id:
         raise HTTPException(status_code=403, detail="Sem permissao para este processo")
     anexos = db.query(Anexo).filter(Anexo.processo_id == processo_id).order_by(Anexo.criado_em).all()
     return [{"id": a.id, "nome_original": a.nome_original, "descricao": a.descricao, "enviado_por": a.enviado_por, "criado_em": str(a.criado_em)} for a in anexos]
@@ -780,7 +853,7 @@ def baixar_anexo(anexo_id: str, request: Request = None, x_token: str = Header(N
     if not a:
         raise HTTPException(status_code=404, detail="Anexo nao encontrado")
     p = db.query(Processo).filter(Processo.id == a.processo_id).first()
-    if p and not usuario.is_admin and p.grupo_id != usuario.grupo_id:
+    if p and not _tem_acesso_admin(usuario) and p.grupo_id != usuario.grupo_id:
         raise HTTPException(status_code=403, detail="Sem permissao para este anexo")
     caminho = os.path.join(UPLOADS_DIR, a.arquivo)
     if not os.path.exists(caminho):
@@ -816,6 +889,55 @@ def excluir_anexo(anexo_id: str, request: Request = None, x_token: str = Header(
     registrar_auditoria(db, usuario, "anexo_excluir", proc_id, "anexo=" + (nome or ""), _ip)
     return {"mensagem": "Anexo removido"}
 
+@app.post("/processos/{processo_id}/certidao-simplificada")
+def emitir_certidao_simplificada(processo_id: str, request: Request = None, x_token: str = Header(None), db: Session = Depends(get_db)):
+    """Emite a Certidao Simplificada da JUCESP (via Infosimples) pro NIRE do
+    processo e anexa o PDF ao processo. NAO notifica o cliente automaticamente
+    - so disponibiliza o documento no sistema (anexo), por decisao explicita:
+    se isso deve entrar no e-mail automatico de "processo concluido" fica pra
+    decidir depois."""
+    if not x_token:
+        raise HTTPException(status_code=401, detail="Token necessario")
+    usuario = validar_token(x_token, db)
+    if not usuario:
+        raise HTTPException(status_code=401, detail="Token invalido ou sessao expirada")
+    p = db.query(Processo).filter(Processo.id == processo_id).first()
+    if not p:
+        raise HTTPException(status_code=404, detail="Processo nao encontrado")
+    if not _tem_acesso_admin(usuario) and p.grupo_id != usuario.grupo_id:
+        raise HTTPException(status_code=403, detail="Sem permissao para este processo")
+    if not p.nire:
+        raise HTTPException(status_code=400, detail="Processo sem NIRE cadastrado")
+    if not all([INFOSIMPLES_TOKEN, INFOSIMPLES_CPF, INFOSIMPLES_SENHA_NFP]):
+        raise HTTPException(status_code=503, detail="Credenciais da Infosimples nao configuradas")
+
+    _ip = obter_ip(request)
+    anexo_id = str(uuid.uuid4())
+    nome_arquivo = "certidao_simplificada_" + anexo_id + ".pdf"
+    caminho = os.path.join(UPLOADS_DIR, nome_arquivo)
+    ok = baixar_certidao_simplificada(p.nire, INFOSIMPLES_TOKEN, INFOSIMPLES_CPF, INFOSIMPLES_SENHA_NFP, caminho)
+    if not ok:
+        registrar_auditoria(db, usuario, "certidao_simplificada_erro", processo_id, "nire=" + str(p.nire), _ip)
+        raise HTTPException(status_code=502, detail="Nao foi possivel emitir a certidao simplificada (NIRE invalido, credencial invalida ou falha na Infosimples)")
+
+    novo = Anexo(
+        id=anexo_id,
+        processo_id=processo_id,
+        arquivo=nome_arquivo,
+        nome_original="Certidao Simplificada JUCESP - " + (p.empresa or p.nire) + ".pdf",
+        descricao="Certidao Simplificada emitida automaticamente via Infosimples",
+        enviado_por=usuario.login,
+    )
+    db.add(novo)
+    db.commit()
+    registrar_auditoria(db, usuario, "certidao_simplificada_emitida", processo_id, "nire=" + str(p.nire), _ip)
+    return {
+        "mensagem": "Certidao Simplificada emitida e anexada ao processo",
+        "anexo_id": anexo_id,
+        "nome_original": novo.nome_original,
+        "download_url": "/anexos/" + anexo_id + "/download",
+    }
+
 @app.get("/download/{processo_id}/{tipo}")
 def download(processo_id: str, tipo: str, request: Request = None, x_token: str = Header(None), db: Session = Depends(get_db)):
     from fastapi.responses import FileResponse
@@ -827,7 +949,7 @@ def download(processo_id: str, tipo: str, request: Request = None, x_token: str 
     p = db.query(Processo).filter(Processo.id == processo_id).first()
     if not p:
         raise HTTPException(status_code=404, detail="Processo nao encontrado")
-    if not usuario.is_admin and p.grupo_id != usuario.grupo_id:
+    if not _tem_acesso_admin(usuario) and p.grupo_id != usuario.grupo_id:
         raise HTTPException(status_code=403, detail="Acesso negado a este processo")
     campo_map = {"ata": p.arquivo_ata, "protocolo": p.arquivo_protocolo, "registro": p.arquivo_registro, "nd": p.arquivo_nd, "nf": p.arquivo_nf, "exigencia": p.arquivo_exigencia}
     if tipo not in campo_map:
@@ -850,7 +972,7 @@ def listar_processos(codigo_grupo: str = None, x_token: str = Header(None), db: 
     if not usuario:
         raise HTTPException(status_code=401, detail="Token invalido ou sessao expirada")
     query = db.query(Processo)
-    if usuario.is_admin:
+    if _tem_acesso_admin(usuario):
         if codigo_grupo:
             grupo = db.query(Grupo).filter(Grupo.codigo == codigo_grupo).first()
             if grupo:
@@ -872,7 +994,7 @@ def obter_processo(processo_id: str, request: Request = None, x_token: str = Hea
     if not usuario:
         raise HTTPException(status_code=401, detail="Token invalido ou sessao expirada")
     p = db.query(Processo).filter(Processo.id == processo_id).first()
-    if p and not usuario.is_admin and p.grupo_id != usuario.grupo_id:
+    if p and not _tem_acesso_admin(usuario) and p.grupo_id != usuario.grupo_id:
         raise HTTPException(status_code=403, detail="Sem permissao para este processo")
     if not p:
         raise HTTPException(status_code=404, detail="Processo não encontrado")
@@ -888,7 +1010,7 @@ def fluxo_ativo(codigo_grupo: str = None, x_token: str = Header(None), db: Sessi
     if not usuario:
         raise HTTPException(status_code=401, detail="Token invalido ou sessao expirada")
     grupo_id_filtro = None
-    if usuario.is_admin:
+    if _tem_acesso_admin(usuario):
         if codigo_grupo:
             grupo = db.query(Grupo).filter(Grupo.codigo == codigo_grupo).first()
             if not grupo:
@@ -918,7 +1040,7 @@ def fluxo_ativo(codigo_grupo: str = None, x_token: str = Header(None), db: Sessi
             "em_tramitacao": len([p for p in processos if p.status == "tramitacao"]),
         })
 
-    if usuario.is_admin and not codigo_grupo:
+    if _tem_acesso_admin(usuario) and not codigo_grupo:
         return resultado
     return resultado[0] if resultado else None
 
@@ -931,7 +1053,7 @@ def eventos_recentes(codigo_grupo: str = None, limit: int = 10, x_token: str = H
     if not usuario:
         raise HTTPException(status_code=401, detail="Token invalido ou sessao expirada")
     query = db.query(Evento).order_by(Evento.criado_em.desc())
-    if usuario.is_admin:
+    if _tem_acesso_admin(usuario):
         if codigo_grupo:
             grupo = db.query(Grupo).filter(Grupo.codigo == codigo_grupo).first()
             if grupo:
@@ -939,8 +1061,17 @@ def eventos_recentes(codigo_grupo: str = None, limit: int = 10, x_token: str = H
     else:
         query = query.filter(Evento.grupo_id == usuario.grupo_id)
     eventos = query.limit(limit).all()
-    return [{"tipo": e.tipo, "descricao": e.descricao, "processo_id": e.processo_id,
-             "criado_em": e.criado_em.isoformat()} for e in eventos]
+    # nome/papel do autor so vao pra quem tem acesso a tela administrativa - o
+    # cliente continua vendo so a descricao, sem nome de quem da equipe agiu.
+    mostrar_autor = _tem_acesso_admin(usuario)
+    return [{
+        "tipo": e.tipo,
+        "descricao": e.descricao,
+        "processo_id": e.processo_id,
+        "criado_em": e.criado_em.isoformat(),
+        "autor_nome": (e.usuario_nome or "Sistema (automação)") if mostrar_autor else None,
+        "autor_papel": e.usuario_papel if mostrar_autor else None,
+    } for e in eventos]
 
 # ===== PARTE 2: deteccao automatica do documento principal =====
 TIPOS_PRINCIPAIS = {
@@ -1391,8 +1522,7 @@ async def listar_pendentes(x_token: str = Header(None), db: Session = Depends(ge
     if not x_token:
         raise HTTPException(status_code=401, detail="Token necessario")
     usuario = validar_token(x_token, db)
-    if not usuario or not usuario.is_admin:
-        raise HTTPException(status_code=403, detail="Apenas administrador")
+    requer_acesso_admin(usuario)
     ps = db.query(Processo).filter(Processo.confirmacao_pendente == True).all()
     return [{"id": p.id, "empresa": p.empresa, "tipo_ato": p.tipo_ato, "tipo_ato_sugerido": p.tipo_ato_sugerido, "identificador_ato": p.identificador_ato, "data_ata": p.data_ata} for p in ps]
 
@@ -1401,8 +1531,7 @@ async def confirmar_tipo(processo_id: str, dados: str = Form(...), request: Requ
     if not x_token:
         raise HTTPException(status_code=401, detail="Token necessario")
     usuario = validar_token(x_token, db)
-    if not usuario or not usuario.is_admin:
-        raise HTTPException(status_code=403, detail="Apenas administrador")
+    requer_acesso_admin(usuario)
     p = db.query(Processo).filter(Processo.id == processo_id).first()
     if not p:
         raise HTTPException(status_code=404, detail="Processo nao encontrado")
@@ -1430,7 +1559,7 @@ async def checar_duplicidade(empresa: str = "", tipo_ato: str = "", data_ata: st
     if not usuario:
         raise HTTPException(status_code=401, detail="Token invalido ou sessao expirada")
     q = db.query(Processo)
-    if not usuario.is_admin:
+    if not _tem_acesso_admin(usuario):
         q = q.filter(Processo.grupo_id == usuario.grupo_id)
     alvo = (_norm(empresa), _norm(tipo_ato), _norm(data_ata), _norm(hora_ata), _norm(identificador_ato))
     for p in q.all():
@@ -1485,7 +1614,7 @@ async def criar_processo(
     cnpj_final = formatar_cnpj(cnpj_norm) if cnpj_norm else ""
 
     grupo_id = None
-    if usuario_tok.is_admin:
+    if _tem_acesso_admin(usuario_tok):
         codigo_grupo = info.get("codigo_grupo", "").strip()
         if codigo_grupo:
             grupo = db.query(Grupo).filter(Grupo.codigo == codigo_grupo).first()
@@ -1529,7 +1658,7 @@ async def criar_processo(
     db.add(p)
     db.flush()
     vincular_fluxo_do_dia(db, p, grupo_id)
-    registrar_evento(db, p, "ata_enviada", "Ata enviada")
+    registrar_evento(db, p, "ata_enviada", "Ata enviada", usuario_tok)
     db.commit()
     try:
         corpo = "Processo Inserido no Atos:\n\n" + corpo_status_cliente(p, "Aberto", "")
@@ -1541,8 +1670,10 @@ async def criar_processo(
         try:
             p.confirmacao_pendente = True
             db.commit()
-            enviar_email(EMAIL_ADMIN, "[Atos] ATENCAO - Processo inserido com campos incompletos - " + (p.empresa or processo_id),
-                "O processo " + processo_id + " (" + (p.empresa or "sem nome") + ") foi inserido no sistema, mas a extracao automatica nao conseguiu identificar: " + ", ".join(faltando) + ".\n\nRevise manualmente e complete os dados faltantes o quanto antes.")
+            _assunto_incompleto = "[Atos] ATENCAO - Processo inserido com campos incompletos - " + (p.empresa or processo_id)
+            _corpo_incompleto = "O processo " + processo_id + " (" + (p.empresa or "sem nome") + ") foi inserido no sistema, mas a extracao automatica nao conseguiu identificar: " + ", ".join(faltando) + ".\n\nRevise manualmente e complete os dados faltantes o quanto antes."
+            for _e in emails_admin(db):
+                enviar_email(_e, _assunto_incompleto, _corpo_incompleto)
         except Exception as e:
             print("Erro ao notificar campos incompletos:", e)
     return {"id": processo_id, "mensagem": "Processo criado com sucesso"}
@@ -1624,7 +1755,7 @@ def atualizar_processo(processo_id: str, dados: dict, request: Request = None, x
     if not usuario:
         raise HTTPException(status_code=401, detail="Token invalido ou sessao expirada")
     p = db.query(Processo).filter(Processo.id == processo_id).first()
-    if p and not usuario.is_admin and p.grupo_id != usuario.grupo_id:
+    if p and not _tem_acesso_admin(usuario) and p.grupo_id != usuario.grupo_id:
         raise HTTPException(status_code=403, detail="Sem permissao para este processo")
     if not p:
         raise HTTPException(status_code=404, detail="Processo não encontrado")
@@ -1645,7 +1776,7 @@ def atualizar_processo(processo_id: str, dados: dict, request: Request = None, x
     p.status = recalcular_status(p)
     p.atualizado_em = datetime.now()
     if protocolo_editado:
-        registrar_evento(db, p, "protocolo_inserido", "Protocolo inserido manualmente" + (f": {p.numero_protocolo}" if p.numero_protocolo else ""))
+        registrar_evento(db, p, "protocolo_inserido", "Protocolo inserido manualmente" + (f": {p.numero_protocolo}" if p.numero_protocolo else ""), usuario)
     db.commit()
     notificar_tramitacao_cliente(db, p, status_antes_patch)
     return {"mensagem": "Atualizado com sucesso"}
@@ -1665,7 +1796,7 @@ async def upload_arquivo(
     if not usuario:
         raise HTTPException(status_code=401, detail="Token invalido ou sessao expirada")
     p = db.query(Processo).filter(Processo.id == processo_id).first()
-    if p and not usuario.is_admin and p.grupo_id != usuario.grupo_id:
+    if p and not _tem_acesso_admin(usuario) and p.grupo_id != usuario.grupo_id:
         raise HTTPException(status_code=403, detail="Sem permissao para este processo")
     if not p:
         raise HTTPException(status_code=404, detail="Processo não encontrado")
@@ -1717,7 +1848,7 @@ async def upload_arquivo(
             "nf": ("nf_inserida", "Nota Fiscal inserida"),
         }.get(tipo)
         if _evento_upload:
-            registrar_evento(db, p, _evento_upload[0], _evento_upload[1])
+            registrar_evento(db, p, _evento_upload[0], _evento_upload[1], usuario)
         db.commit()
         try:
             novo_status = (p.status or "").lower()
@@ -1750,7 +1881,7 @@ async def registrar_exigencia(
     if not usuario:
         raise HTTPException(status_code=401, detail="Token invalido ou sessao expirada")
     p = db.query(Processo).filter(Processo.id == processo_id).first()
-    if p and not usuario.is_admin and p.grupo_id != usuario.grupo_id:
+    if p and not _tem_acesso_admin(usuario) and p.grupo_id != usuario.grupo_id:
         raise HTTPException(status_code=403, detail="Sem permissao para este processo")
     if not p:
         raise HTTPException(status_code=404, detail="Processo nao encontrado")
@@ -1765,7 +1896,7 @@ async def registrar_exigencia(
     p.exigencia_ativa = True
     p.status = recalcular_status(p)
     p.atualizado_em = datetime.now()
-    registrar_evento(db, p, "exigencia_registrada", "Exigência registrada" + (f": {texto}" if texto else ""))
+    registrar_evento(db, p, "exigencia_registrada", "Exigência registrada" + (f": {texto}" if texto else ""), usuario)
     db.commit()
     if arquivo is not None and p.arquivo_exigencia:
         try:
@@ -1786,14 +1917,14 @@ def exigencia_cumprida(processo_id: str, x_token: str = Header(None), db: Sessio
     if not usuario:
         raise HTTPException(status_code=401, detail="Token invalido ou sessao expirada")
     p = db.query(Processo).filter(Processo.id == processo_id).first()
-    if p and not usuario.is_admin and p.grupo_id != usuario.grupo_id:
+    if p and not _tem_acesso_admin(usuario) and p.grupo_id != usuario.grupo_id:
         raise HTTPException(status_code=403, detail="Sem permissao para este processo")
     if not p:
         raise HTTPException(status_code=404, detail="Processo nao encontrado")
     p.exigencia_ativa = False
     p.status = recalcular_status(p)
     p.atualizado_em = datetime.now()
-    registrar_evento(db, p, "exigencia_cumprida", "Exigência marcada como cumprida")
+    registrar_evento(db, p, "exigencia_cumprida", "Exigência marcada como cumprida", usuario)
     db.commit()
     return {"mensagem": "Exigencia marcada como cumprida", "status": p.status}
 
@@ -1818,8 +1949,7 @@ def exigencia_aguardando_cliente(processo_id: str, x_token: str = Header(None), 
     if not x_token:
         raise HTTPException(status_code=401, detail="Token necessario")
     usuario = validar_token(x_token, db)
-    if not usuario or not usuario.is_admin:
-        raise HTTPException(status_code=403, detail="Acesso restrito ao administrador")
+    requer_acesso_admin(usuario)
     p = db.query(Processo).filter(Processo.id == processo_id).first()
     if not p:
         raise HTTPException(status_code=404, detail="Processo nao encontrado")
@@ -1834,8 +1964,7 @@ def listar_grupos(x_token: str = Header(None), db: Session = Depends(get_db)):
     if not x_token:
         raise HTTPException(status_code=401, detail="Token necessario")
     usuario = validar_token(x_token, db)
-    if not usuario or not usuario.is_admin:
-        raise HTTPException(status_code=403, detail="Acesso restrito ao administrador")
+    requer_acesso_admin(usuario)
     grupos = db.query(Grupo).order_by(Grupo.nome).all()
     return [{"id": g.id, "nome": g.nome, "codigo": g.codigo} for g in grupos]
 
@@ -1844,8 +1973,7 @@ def criar_grupo(dados: dict, background: BackgroundTasks, x_token: str = Header(
     if not x_token:
         raise HTTPException(status_code=401, detail="Token necessario")
     usuario = validar_token(x_token, db)
-    if not usuario or not usuario.is_admin:
-        raise HTTPException(status_code=403, detail="Acesso restrito ao administrador")
+    requer_acesso_admin(usuario)
 
     nome = (dados.get("nome") or "").strip()
     emails = dados.get("emails") or []
@@ -1884,6 +2012,55 @@ def criar_grupo(dados: dict, background: BackgroundTasks, x_token: str = Header(
         "emails_falharam": falharam,
         "link": link
     }
+
+
+@app.post("/usuarios/operador")
+def criar_usuario_operador(dados: dict, request: Request = None, x_token: str = Header(None), db: Session = Depends(get_db)):
+    """Cria um novo usuario com papel 'operador' (acesso a tela administrativa,
+    sem configuracoes/gerenciamento de usuarios/identidade visual). So o admin
+    completo pode criar - reaproveita o mesmo fluxo de login + 2FA por e-mail
+    que ja existe pra qualquer Usuario (basta ter email e senha_hash validos)."""
+    if not x_token:
+        raise HTTPException(status_code=401, detail="Token necessario")
+    usuario = validar_token(x_token, db)
+    requer_admin_completo(usuario)
+
+    nome = (dados.get("nome") or "").strip()
+    email = (dados.get("email") or "").strip().lower()
+    senha = dados.get("senha") or ""
+    login = (dados.get("login") or email).strip()
+
+    if not nome or not email or not senha:
+        raise HTTPException(status_code=400, detail="nome, email e senha sao obrigatorios")
+    if len(senha) < 6:
+        raise HTTPException(status_code=400, detail="A senha deve ter pelo menos 6 caracteres")
+
+    existente = db.query(Usuario).filter(Usuario.login == login).first()
+    if existente:
+        raise HTTPException(status_code=400, detail="Ja existe um usuario com esse login")
+
+    grupo = db.query(Grupo).filter(Grupo.codigo == "ADMIN").first()
+    if not grupo:
+        grupo = Grupo(id=str(uuid.uuid4()), nome="Administracao", codigo="ADMIN")
+        db.add(grupo)
+        db.commit()
+
+    senha_hash = bcrypt.hashpw(senha.encode()[:72], bcrypt.gensalt()).decode()
+    novo = Usuario(
+        id=str(uuid.uuid4()),
+        login=login,
+        senha_hash=senha_hash,
+        email=email,
+        nome=nome,
+        grupo_id=grupo.id,
+        is_admin=False,
+        papel="operador",
+    )
+    db.add(novo)
+    db.commit()
+    _ip = obter_ip(request)
+    registrar_auditoria(db, usuario, "criar_operador", None, "novo_login=" + login + " nome=" + nome, _ip)
+    return {"mensagem": "Usuario operador criado com sucesso", "login": login, "nome": nome, "email": email}
 
 
 @app.get("/relatorio")
@@ -1942,7 +2119,7 @@ def metricas(x_token: str = Header(None), db: Session = Depends(get_db)):
     if not usuario:
         raise HTTPException(status_code=401, detail="Token invalido ou sessao expirada")
     base = db.query(Processo)
-    if not usuario.is_admin:
+    if not _tem_acesso_admin(usuario):
         base = base.filter(Processo.grupo_id == usuario.grupo_id)
     total = base.count()
     tramitacao = base.filter(Processo.status == "tramitacao").count()

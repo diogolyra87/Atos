@@ -221,6 +221,59 @@ def processar_sp(db, agora):
         print()
 
 
+def processar_sp_registro_sem_protocolo(db, agora):
+    """Fallback pra processos SP sem numero_protocolo, mas com numero_registro
+    ja identificado (ex: revisao manual via listagem da Certidao de Inteiro
+    Teor). Sem protocolo nao da pra usar o scraper gratuito de status
+    (consultar_jucesp exige protocolo), entao aqui so tenta o download direto
+    via Infosimples usando o numero de registro no lugar do protocolo -
+    mesmo padrao de e-mail (cliente + administradores) de processar_sp."""
+    processos = db.query(Processo).filter(
+        Processo.uf == "SP",
+        Processo.numero_registro.isnot(None),
+        Processo.numero_registro != "",
+        (Processo.numero_protocolo.is_(None)) | (Processo.numero_protocolo == ""),
+        Processo.arquivo_registro.is_(None),
+    ).all()
+    print("[SP-sem-protocolo] " + str(len(processos)) + " processo(s) com numero_registro, sem protocolo.\n")
+    for p in processos:
+        if (p.status or "").lower() == "finalizado":
+            continue
+        nire_limpo = re.sub(r"\D", "", p.nire or "")
+        print("-> [SP-sem-protocolo] " + str(p.empresa) + " | registro " + str(p.numero_registro))
+        if not nire_limpo:
+            print("   sem NIRE cadastrado - nao da pra baixar via Infosimples.")
+            continue
+        if not all([INFOSIMPLES_TOKEN, INFOSIMPLES_CPF, INFOSIMPLES_SENHA_NFP]):
+            print("   credenciais Infosimples ausentes no .env - pulando download.")
+            continue
+        try:
+            nome_arquivo = aplicar_nomenclatura_junta(p.id + "_registro_auto.pdf")
+            caminho = os.path.join(UPLOADS_DIR, nome_arquivo)
+            ok_dl = baixar_documento_infosimples_sp(
+                nire_limpo, p.numero_registro, INFOSIMPLES_TOKEN, INFOSIMPLES_CPF, INFOSIMPLES_SENHA_NFP, caminho
+            )
+            if ok_dl and os.path.exists(caminho):
+                p.arquivo_registro = nome_arquivo
+                p.status = recalcular_status(p)
+                db.commit()
+                print("   documento baixado via Infosimples e processo atualizado para:", p.status)
+                if p.status == "finalizado":
+                    try:
+                        corpo = corpo_status_cliente(p, "Finalizado", "Seu Processo foi Finalizado, em Anexo o Registro.")
+                        destinatarios = set(emails_do_grupo(db, p.grupo_id)) | set(emails_admin(db))
+                        for em in destinatarios:
+                            enviar_email_anexo(em, "Processo Finalizado - " + (p.empresa or ""), corpo, caminho, nome_arquivo)
+                        print("   e-mail de finalizacao enviado (cliente + administradores).")
+                    except Exception as e:
+                        print("   erro ao enviar e-mail de finalizacao:", e)
+            else:
+                print("   documento ainda nao disponivel para download via Infosimples (aguardando).")
+        except Exception as e:
+            print("   erro ao baixar documento automaticamente via Infosimples:", e)
+        print()
+
+
 def processar_rj(db, agora):
     processos = db.query(Processo).filter(
         Processo.uf == "RJ",
@@ -417,6 +470,7 @@ def processar():
     agora = datetime.now()
     print("[" + str(agora) + "] Iniciando consultas autonomas.\n")
     processar_sp(db, agora)
+    processar_sp_registro_sem_protocolo(db, agora)
     processar_rj(db, agora)
     processar_ba(db, agora)
     processar_pe(db, agora)

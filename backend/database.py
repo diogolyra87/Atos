@@ -157,6 +157,11 @@ class Processo(Base):
     numero_protocolo = Column(String)
     data_protocolo = Column(String)
     data_registro = Column(String)
+    # Numero de registro da JUCESP (ex: "300.504/26-3") - preenchido quando o
+    # processo nao tem protocolo mas o registro foi identificado por outra via
+    # (ex: revisao manual). Usado como fallback pro download via Infosimples
+    # quando numero_protocolo esta vazio.
+    numero_registro = Column(String, nullable=True)
     eventos = Column(Text)
     checklist = Column(Text)
     requer_cpl = Column(Boolean, default=False)

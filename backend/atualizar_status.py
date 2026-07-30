@@ -1,5 +1,5 @@
 ﻿# -*- coding: utf-8 -*-
-import sys, os
+import sys, os, re
 import smtplib
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
@@ -12,6 +12,7 @@ from database import SessionLocal, Processo, Grupo, EmailGrupo
 sys.path.insert(0, "/root/atos/backend")
 from main import corpo_status_cliente, enviar_email_anexo, emails_do_grupo, UPLOADS_DIR, recalcular_status, emails_admin
 from consultar_jucesp import consultar
+from jucesp_infosimples import baixar_documento as baixar_documento_infosimples_sp
 from consultar_jucerja import consultar_jucerja, classificar_status_rj, baixar_documento_jucerja
 from consultar_juceb import consultar_juceb, classificar_status_ba, baixar_documento_juceb
 from consultar_jucepe import consultar_jucepe, classificar_status_pe, baixar_documento_jucepe
@@ -24,6 +25,10 @@ EMAIL_FROM = os.getenv("EMAIL_FROM") or EMAIL_USER
 EMAIL_PASS = os.getenv("EMAIL_PASS")
 EMAIL_HOST = os.getenv("EMAIL_HOST", "mail.realpublicidade.com.br")
 EMAIL_PORT_SMTP = int(os.getenv("EMAIL_PORT_SMTP", "587"))
+
+INFOSIMPLES_TOKEN = os.getenv("INFOSIMPLES_TOKEN")
+INFOSIMPLES_CPF = os.getenv("INFOSIMPLES_CPF")
+INFOSIMPLES_SENHA_NFP = os.getenv("INFOSIMPLES_SENHA_NFP")
 
 JUCERJA_USUARIO = os.getenv("JUCERJA_USUARIO")
 JUCERJA_SENHA = os.getenv("JUCERJA_SENHA")
@@ -181,6 +186,38 @@ def processar_sp(db, agora):
         else:
             cls = "tramitacao"
         aplicar_classificacao(db, p, cls, agora)
+
+        if cls == "deferido" and not p.arquivo_registro:
+            nire_limpo = re.sub(r"\D", "", p.nire or "")
+            if not nire_limpo:
+                print("   [SP] deferido, mas sem NIRE cadastrado - nao da pra baixar via Infosimples.")
+            elif not all([INFOSIMPLES_TOKEN, INFOSIMPLES_CPF, INFOSIMPLES_SENHA_NFP]):
+                print("   [SP] deferido, mas credenciais Infosimples ausentes no .env - pulando download.")
+            else:
+                try:
+                    nome_arquivo = aplicar_nomenclatura_junta(p.id + "_registro_auto.pdf")
+                    caminho = os.path.join(UPLOADS_DIR, nome_arquivo)
+                    ok_dl = baixar_documento_infosimples_sp(
+                        nire_limpo, p.numero_protocolo, INFOSIMPLES_TOKEN, INFOSIMPLES_CPF, INFOSIMPLES_SENHA_NFP, caminho
+                    )
+                    if ok_dl and os.path.exists(caminho):
+                        p.arquivo_registro = nome_arquivo
+                        p.status = recalcular_status(p)
+                        db.commit()
+                        print("   [SP] documento baixado via Infosimples e processo atualizado para:", p.status)
+                        if p.status == "finalizado":
+                            try:
+                                corpo = corpo_status_cliente(p, "Finalizado", "Seu Processo foi Finalizado, em Anexo o Registro.")
+                                destinatarios = set(emails_do_grupo(db, p.grupo_id)) | set(emails_admin(db))
+                                for em in destinatarios:
+                                    enviar_email_anexo(em, "Processo Finalizado - " + (p.empresa or ""), corpo, caminho, nome_arquivo)
+                                print("   [SP] e-mail de finalizacao enviado (cliente + administradores).")
+                            except Exception as e:
+                                print("   [SP] erro ao enviar e-mail de finalizacao:", e)
+                    else:
+                        print("   [SP] documento ainda nao disponivel para download via Infosimples (aguardando).")
+                except Exception as e:
+                    print("   [SP] erro ao baixar documento automaticamente via Infosimples:", e)
         print()
 
 

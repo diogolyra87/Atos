@@ -1858,9 +1858,15 @@ async def upload_arquivo(
         try:
             novo_status = (p.status or "").lower()
             if tipo == "registro" and novo_status == "finalizado":
-                corpo = corpo_status_cliente(p, "Finalizado", "Seu Processo foi Finalizado, em Anexo o Registro.")
-                for em in emails_do_grupo(db, p.grupo_id):
-                    enviar_email_anexo(em, "Processo Finalizado - " + (p.empresa or ""), corpo, caminho, nome_arquivo)
+                # SUSPENSO 30/07/2026: e-mail ao cliente da automacao JUCESP
+                # (SP) desativado por decisao explicita, ate revisao do fluxo
+                # de documento. Upload/registro continua funcionando
+                # normalmente (arquivo salvo, status atualizado) - so o aviso
+                # ao cliente que fica em pausa pra SP.
+                if (p.uf or "").upper() != "SP":
+                    corpo = corpo_status_cliente(p, "Finalizado", "Seu Processo foi Finalizado, em Anexo o Registro.")
+                    for em in emails_do_grupo(db, p.grupo_id):
+                        enviar_email_anexo(em, "Processo Finalizado - " + (p.empresa or ""), corpo, caminho, nome_arquivo)
                 try:
                     _criar_processo_transferencia(db, p)
                 except Exception as e:

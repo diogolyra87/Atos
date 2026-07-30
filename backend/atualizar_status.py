@@ -13,6 +13,7 @@ sys.path.insert(0, "/root/atos/backend")
 from main import corpo_status_cliente, enviar_email_anexo, emails_do_grupo, UPLOADS_DIR, recalcular_status, emails_admin
 from consultar_jucesp import consultar
 from jucesp_infosimples import baixar_documento as baixar_documento_infosimples_sp
+from jucesp_infosimples import descobrir_registro as descobrir_registro_infosimples_sp
 from consultar_jucerja import consultar_jucerja, classificar_status_rj, baixar_documento_jucerja
 from consultar_juceb import consultar_juceb, classificar_status_ba, baixar_documento_juceb
 from consultar_jucepe import consultar_jucepe, classificar_status_pe, baixar_documento_jucepe
@@ -134,12 +135,16 @@ def aplicar_classificacao(db, p, classificacao, agora):
             p.deferido_em = agora
             db.commit()
             enviar_email_admin_todos(db, "[Atos] Deferido - " + str(p.empresa), corpo_admin(p, "Deferido") + "\n\nAguardando a Junta Comercial disponibilizar o Registro.")
-            if not p.avisado_deferido:
+            # SUSPENSO 30/07/2026: e-mail ao cliente da automacao JUCESP (SP)
+            # desativado por decisao explicita, ate revisao do fluxo de
+            # documento (ver aplicar_nomenclatura_junta / processar_sp).
+            # Admin continua sendo avisado normalmente acima.
+            if not p.avisado_deferido and (p.uf or "").upper() != "SP":
                 for em in emails_do_grupo(db, p.grupo_id):
                     enviar_email(em, "Atualizacao do seu processo - " + str(p.empresa), corpo_status_cliente(p, "Deferido", "Aguardando liberacao do Registro."))
                 p.avisado_deferido = True
                 db.commit()
-            print("   -> mudou para DEFERIDO + alertou admin e cliente")
+            print("   -> mudou para DEFERIDO + alertou admin" + (" (cliente suspenso - SP)" if (p.uf or "").upper() == "SP" else " e cliente"))
         else:
             if precisa_alertar(p, agora):
                 p.ultimo_alerta_em = agora
@@ -187,7 +192,16 @@ def processar_sp(db, agora):
             cls = "tramitacao"
         aplicar_classificacao(db, p, cls, agora)
 
-        if cls == "deferido" and not p.arquivo_registro:
+        # DESATIVADO 30/07/2026: download-dc baixa a copia digitalizada avulsa
+        # do arquivamento ("SEM VALOR DE CERTIDAO"), nao a Certidao de Inteiro
+        # Teor oficial (com registro/carimbo/valor probatorio) que o processo
+        # realmente precisa. 4 processos reais (NBD BRASIL, NEOENERGIA
+        # TRANSMISSORA 13/16/17) chegaram a ser marcados "finalizado" com o
+        # documento errado e o cliente foi notificado por e-mail antes de
+        # detectarmos o problema - ja revertido manualmente (arquivo removido,
+        # status de volta pra deferido). Reativar so depois de trocar pelo
+        # fluxo correto de emissao da Certidao de Inteiro Teor.
+        if False and cls == "deferido" and not p.arquivo_registro:
             nire_limpo = re.sub(r"\D", "", p.nire or "")
             if not nire_limpo:
                 print("   [SP] deferido, mas sem NIRE cadastrado - nao da pra baixar via Infosimples.")
@@ -195,11 +209,26 @@ def processar_sp(db, agora):
                 print("   [SP] deferido, mas credenciais Infosimples ausentes no .env - pulando download.")
             else:
                 try:
-                    nome_arquivo = aplicar_nomenclatura_junta(p.id + "_registro_auto.pdf")
-                    caminho = os.path.join(UPLOADS_DIR, nome_arquivo)
-                    ok_dl = baixar_documento_infosimples_sp(
-                        nire_limpo, p.numero_protocolo, INFOSIMPLES_TOKEN, INFOSIMPLES_CPF, INFOSIMPLES_SENHA_NFP, caminho
+                    # download-dc exige o numero de REGISTRO da JUCESP (ex:
+                    # "300.504/26-3"), nao o numero de protocolo - os dois nao
+                    # tem relacao previsivel entre si (confirmado em teste real
+                    # 30/07/2026). Descobre automaticamente via lista de
+                    # documentos do NIRE antes de tentar o download.
+                    registro = p.numero_registro or descobrir_registro_infosimples_sp(
+                        nire_limpo, p.numero_protocolo, INFOSIMPLES_TOKEN, INFOSIMPLES_CPF, INFOSIMPLES_SENHA_NFP
                     )
+                    if not registro:
+                        ok_dl = False
+                        caminho = None
+                        nome_arquivo = None
+                    else:
+                        p.numero_registro = registro
+                        db.commit()
+                        nome_arquivo = aplicar_nomenclatura_junta(p.id + "_registro_auto.pdf")
+                        caminho = os.path.join(UPLOADS_DIR, nome_arquivo)
+                        ok_dl = baixar_documento_infosimples_sp(
+                            nire_limpo, registro, INFOSIMPLES_TOKEN, INFOSIMPLES_CPF, INFOSIMPLES_SENHA_NFP, caminho
+                        )
                     if ok_dl and os.path.exists(caminho):
                         p.arquivo_registro = nome_arquivo
                         p.status = recalcular_status(p)
@@ -236,6 +265,10 @@ def processar_sp_registro_sem_protocolo(db, agora):
         Processo.arquivo_registro.is_(None),
     ).all()
     print("[SP-sem-protocolo] " + str(len(processos)) + " processo(s) com numero_registro, sem protocolo.\n")
+    # DESATIVADO 30/07/2026: mesmo motivo de processar_sp - download-dc baixa
+    # a copia avulsa sem valor de certidao, nao a Certidao de Inteiro Teor
+    # oficial. Ver comentario em processar_sp.
+    processos = []
     for p in processos:
         if (p.status or "").lower() == "finalizado":
             continue

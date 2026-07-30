@@ -38,6 +38,11 @@ class Usuario(Base):
     # endpoints. Endpoints que devem liberar operador usam _tem_acesso_admin() em vez
     # de checar is_admin direto.
     papel = Column(String, default="cliente")
+    # Convite de primeiro acesso (definir senha propria): token de uso unico,
+    # limpo (None) assim que a senha e definida ou nunca gerado pra quem
+    # sempre teve senha definida pelo fluxo antigo (cliente via /cadastro).
+    token_convite = Column(String, nullable=True)
+    convite_expira_em = Column(DateTime, nullable=True)
     criado_em = Column(DateTime, default=datetime.now)
 
 class EmailGrupo(Base):

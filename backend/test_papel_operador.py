@@ -9,6 +9,7 @@ Rodar com: python -m unittest test_papel_operador -v
 import unittest
 import uuid
 from datetime import datetime
+from unittest.mock import patch
 
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
@@ -164,29 +165,37 @@ class TestOperadorBloqueadoEmConfiguracao(unittest.TestCase):
         self.assertEqual(resp.status_code, 403)
 
     def test_operador_recebe_403_ao_criar_outro_operador(self):
-        resp = client.post(
-            "/usuarios/operador",
-            json={"nome": "Novo Operador", "email": "novo@exemplo.com", "senha": "123456"},
-            headers={"x-token": self.operador.token},
-        )
+        with patch("main.enviar_email") as mock_email:
+            resp = client.post(
+                "/usuarios/operador",
+                json={"nome": "Novo Operador", "email": "novo@exemplo.com"},
+                headers={"x-token": self.operador.token},
+            )
         self.assertEqual(resp.status_code, 403)
+        mock_email.assert_not_called()
 
     def test_admin_acessa_aprendizado_regras(self):
         resp = client.get("/aprendizado/regras", headers={"x-token": self.admin.token})
         self.assertEqual(resp.status_code, 200)
 
     def test_admin_cria_operador_com_sucesso(self):
-        resp = client.post(
-            "/usuarios/operador",
-            json={"nome": "Novo Operador", "email": "novo_" + uuid.uuid4().hex[:6] + "@exemplo.com", "senha": "123456"},
-            headers={"x-token": self.admin.token},
-        )
+        with patch("main.enviar_email") as mock_email:
+            resp = client.post(
+                "/usuarios/operador",
+                json={"nome": "Novo Operador", "email": "novo_" + uuid.uuid4().hex[:6] + "@exemplo.com"},
+                headers={"x-token": self.admin.token},
+            )
         self.assertEqual(resp.status_code, 200)
         corpo = resp.json()
         criado = self.db.query(Usuario).filter(Usuario.login == corpo["login"]).first()
         self.assertIsNotNone(criado)
         self.assertEqual(criado.papel, "operador")
         self.assertFalse(criado.is_admin)
+        # nao recebe senha - convite por e-mail e disparado, com token de uso unico gravado
+        self.assertIsNotNone(criado.token_convite)
+        self.assertIsNotNone(criado.convite_expira_em)
+        mock_email.assert_called_once()
+        self.assertEqual(mock_email.call_args[0][0], criado.email)
 
 
 if __name__ == "__main__":

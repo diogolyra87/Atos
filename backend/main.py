@@ -7,7 +7,7 @@ from database import get_db, Processo, Grupo, Usuario, EmailGrupo, criar_banco, 
 from cnpj_utils import normalizar_cnpj, validar_cnpj, formatar_cnpj
 from datetime import datetime, timedelta, date
 from openai import OpenAI
-import json, os, uuid, shutil, bcrypt
+import json, os, uuid, shutil, bcrypt, secrets
 import asyncio
 
 from dotenv import load_dotenv
@@ -2014,12 +2014,76 @@ def criar_grupo(dados: dict, background: BackgroundTasks, x_token: str = Header(
     }
 
 
+TOKEN_CONVITE_VALIDADE_HORAS = 48
+
+
+def gerar_convite(db, usuario, horas_validade=TOKEN_CONVITE_VALIDADE_HORAS):
+    """Gera token de convite de uso unico pro usuario definir a propria senha
+    no primeiro acesso (ou redefinir apos convite reenviado). Sobrescreve
+    qualquer convite anterior ainda pendente."""
+    token = secrets.token_urlsafe(32)
+    usuario.token_convite = token
+    usuario.convite_expira_em = datetime.now() + timedelta(hours=horas_validade)
+    db.commit()
+    return token
+
+
+def enviar_convite_email(usuario, token):
+    link = f"{BASE_URL_SISTEMA}/criar-senha?token={token}"
+    corpo = (
+        "Ola, " + (usuario.nome or usuario.login) + "!\n\n"
+        "Voce foi convidado a acessar o Atos - Gestao Societaria.\n\n"
+        "Clique no link abaixo para definir sua senha de acesso (valido por "
+        + str(TOKEN_CONVITE_VALIDADE_HORAS) + " horas):\n" + link + "\n\n"
+        "Se voce nao esperava este e-mail, ignore-o."
+    )
+    return enviar_email(usuario.email, "Convite de acesso - Atos", corpo)
+
+
+@app.get("/convite/{token}")
+def validar_convite(token: str, db: Session = Depends(get_db)):
+    """Endpoint publico (sem token de sessao) pra tela /criar-senha conferir se
+    o link ainda e valido antes de mostrar o formulario, e cumprimentar pelo nome."""
+    usuario = db.query(Usuario).filter(Usuario.token_convite == token).first()
+    if not usuario:
+        raise HTTPException(status_code=404, detail="Convite invalido ou ja utilizado")
+    if usuario.convite_expira_em and usuario.convite_expira_em < datetime.now():
+        raise HTTPException(status_code=410, detail="Convite expirado. Peca um novo convite ao administrador.")
+    return {"nome": usuario.nome or usuario.login, "email": usuario.email}
+
+
+@app.post("/convite/definir-senha")
+def definir_senha_convite(dados: dict, db: Session = Depends(get_db)):
+    """Endpoint publico: define a senha a partir de um token de convite valido
+    e invalida o token (uso unico) - mesma tela usada tanto pro primeiro acesso
+    quanto pra um convite reenviado."""
+    token = (dados.get("token") or "").strip()
+    senha = dados.get("senha") or ""
+    if not token or not senha:
+        raise HTTPException(status_code=400, detail="token e senha sao obrigatorios")
+    if len(senha) < 8 or not any(c.isalpha() for c in senha) or not any(c.isdigit() for c in senha):
+        raise HTTPException(status_code=400, detail="A senha deve ter ao menos 8 caracteres, com letras e numeros")
+
+    usuario = db.query(Usuario).filter(Usuario.token_convite == token).first()
+    if not usuario:
+        raise HTTPException(status_code=404, detail="Convite invalido ou ja utilizado")
+    if usuario.convite_expira_em and usuario.convite_expira_em < datetime.now():
+        raise HTTPException(status_code=410, detail="Convite expirado. Peca um novo convite ao administrador.")
+
+    usuario.senha_hash = bcrypt.hashpw(senha.encode()[:72], bcrypt.gensalt()).decode()
+    usuario.token_convite = None
+    usuario.convite_expira_em = None
+    db.commit()
+    return {"mensagem": "Senha definida com sucesso. Voce ja pode fazer login."}
+
+
 @app.post("/usuarios/operador")
 def criar_usuario_operador(dados: dict, request: Request = None, x_token: str = Header(None), db: Session = Depends(get_db)):
     """Cria um novo usuario com papel 'operador' (acesso a tela administrativa,
     sem configuracoes/gerenciamento de usuarios/identidade visual). So o admin
-    completo pode criar - reaproveita o mesmo fluxo de login + 2FA por e-mail
-    que ja existe pra qualquer Usuario (basta ter email e senha_hash validos)."""
+    completo pode criar. Nao recebe senha - o usuario define a propria senha
+    via convite por e-mail (fluxo /criar-senha), mesmo padrao usado pra
+    convidar/reconvidar qualquer usuario administrativo."""
     if not x_token:
         raise HTTPException(status_code=401, detail="Token necessario")
     usuario = validar_token(x_token, db)
@@ -2027,13 +2091,10 @@ def criar_usuario_operador(dados: dict, request: Request = None, x_token: str = 
 
     nome = (dados.get("nome") or "").strip()
     email = (dados.get("email") or "").strip().lower()
-    senha = dados.get("senha") or ""
     login = (dados.get("login") or email).strip()
 
-    if not nome or not email or not senha:
-        raise HTTPException(status_code=400, detail="nome, email e senha sao obrigatorios")
-    if len(senha) < 6:
-        raise HTTPException(status_code=400, detail="A senha deve ter pelo menos 6 caracteres")
+    if not nome or not email:
+        raise HTTPException(status_code=400, detail="nome e email sao obrigatorios")
 
     existente = db.query(Usuario).filter(Usuario.login == login).first()
     if existente:
@@ -2045,11 +2106,13 @@ def criar_usuario_operador(dados: dict, request: Request = None, x_token: str = 
         db.add(grupo)
         db.commit()
 
-    senha_hash = bcrypt.hashpw(senha.encode()[:72], bcrypt.gensalt()).decode()
+    # senha_hash placeholder (aleatorio, nunca comunicado) - login so funciona
+    # depois que o convite definir uma senha de verdade.
+    senha_placeholder = bcrypt.hashpw(secrets.token_urlsafe(24).encode()[:72], bcrypt.gensalt()).decode()
     novo = Usuario(
         id=str(uuid.uuid4()),
         login=login,
-        senha_hash=senha_hash,
+        senha_hash=senha_placeholder,
         email=email,
         nome=nome,
         grupo_id=grupo.id,
@@ -2058,9 +2121,13 @@ def criar_usuario_operador(dados: dict, request: Request = None, x_token: str = 
     )
     db.add(novo)
     db.commit()
+
+    token = gerar_convite(db, novo)
+    enviar_convite_email(novo, token)
+
     _ip = obter_ip(request)
     registrar_auditoria(db, usuario, "criar_operador", None, "novo_login=" + login + " nome=" + nome, _ip)
-    return {"mensagem": "Usuario operador criado com sucesso", "login": login, "nome": nome, "email": email}
+    return {"mensagem": "Usuario operador criado, convite enviado por e-mail", "login": login, "nome": nome, "email": email}
 
 
 @app.get("/relatorio")

@@ -11,21 +11,38 @@ Este modulo cobre so o que o portal publico gratuito NAO oferece: ficha
 cadastral simplificada/completa, certidao simplificada (documento mais pedido
 pelos clientes) e download do documento digitalizado de um ato ja registrado.
 
-ATENCAO - slugs de endpoint nao confirmados: os paths abaixo foram inferidos
-das paginas publicas de doc da Infosimples (infosimples.com/consultas/
-junta-comercial-sp-*). A documentacao tecnica exata (URL de API valida, nomes
-de campo da resposta) fica atras de login em api.infosimples.com/consultas/docs
-e nao foi possivel confirmar sem acesso a conta. Confirmar contra uma resposta
-real antes de usar em producao (ver teste_jucesp_infosimples.py).
+Slugs de endpoint CONFIRMADOS empiricamente contra a API real (nao mais um
+palpite): o padrao correto e /junta-comercial/sp/{servico} (dois segmentos -
+categoria generica "junta-comercial" + UF "sp", igual ao padrao usado por
+outros orgaos estaduais na propria doc da Infosimples, ex. /tribunal/trf4/
+certidao). Testado em 30/07/2026: os 4 slugs abaixo retornam code
+606/608/615/620 (erro de parametro/credencial/servico pausado/site-origem)
+em vez de 602 ("servico informado na URL nao e valido") - ou seja, o
+servidor reconhece os 4 paths como validos.
+
+PENDENTE - login JUCESP (INFOSIMPLES_CPF/INFOSIMPLES_SENHA_NFP no .env) ainda
+nao produziu uma consulta 200 de verdade: a credencial ja foi trocada uma vez
+(confirmado via hash MD5 na resposta da API, valor mudou de fato) mas
+"junta-comercial/sp/simplifica" ainda devolveu "O cadastro do usuario foi
+bloqueado" (ERL0003100) mesmo com a credencial nova - ou o novo CPF/senha
+tambem esta incorreto, ou o bloqueio e' no cadastro GOV.BR em si (nao na
+senha) e precisa ser desbloqueado la antes de qualquer consulta funcionar.
+"junta-comercial/sp/ficha" testado separadamente devolveu code 615 ("API
+pausada temporariamente" - pausa do lado da Infosimples, nao chega a testar
+login) - resultado inconclusivo quanto a credencial, nao confirma nem
+descarta o bloqueio. Os nomes exatos dos campos de resposta (ficha_emitida,
+certidao_emitida, digitalizacao) permanecem NAO confirmados ate uma consulta
+200 real - ver ressalva nas funcoes abaixo. Cada chamada de teste e' cobrada
+(~R$0,26 observado) - evitar tentativas repetidas sem necessidade.
 """
 import requests
 
 BASE_URL = "https://api.infosimples.com/api/v2/consultas"
 
-ENDPOINT_FICHA_SIMPLIFICADA = "junta-comercial-sp/ficha-simplificada"
-ENDPOINT_FICHA_COMPLETA = "junta-comercial-sp/ficha-completa"
-ENDPOINT_DOWNLOAD_DOCUMENTO = "junta-comercial-sp/download-dc"
-ENDPOINT_CERTIDAO_SIMPLIFICADA = "junta-comercial-sp/certidao-simplificada"
+ENDPOINT_FICHA_SIMPLIFICADA = "junta-comercial/sp/ficha"
+ENDPOINT_FICHA_COMPLETA = "junta-comercial/sp/completa"
+ENDPOINT_DOWNLOAD_DOCUMENTO = "junta-comercial/sp/download-dc"
+ENDPOINT_CERTIDAO_SIMPLIFICADA = "junta-comercial/sp/simplifica"
 
 TIMEOUT_REQUISICAO = 120
 

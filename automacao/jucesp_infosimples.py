@@ -20,20 +20,22 @@ certidao). Testado em 30/07/2026: os 4 slugs abaixo retornam code
 em vez de 602 ("servico informado na URL nao e valido") - ou seja, o
 servidor reconhece os 4 paths como validos.
 
-PENDENTE - login JUCESP (INFOSIMPLES_CPF/INFOSIMPLES_SENHA_NFP no .env) ainda
-nao produziu uma consulta 200 de verdade: a credencial ja foi trocada uma vez
-(confirmado via hash MD5 na resposta da API, valor mudou de fato) mas
-"junta-comercial/sp/simplifica" ainda devolveu "O cadastro do usuario foi
-bloqueado" (ERL0003100) mesmo com a credencial nova - ou o novo CPF/senha
-tambem esta incorreto, ou o bloqueio e' no cadastro GOV.BR em si (nao na
-senha) e precisa ser desbloqueado la antes de qualquer consulta funcionar.
-"junta-comercial/sp/ficha" testado separadamente devolveu code 615 ("API
-pausada temporariamente" - pausa do lado da Infosimples, nao chega a testar
-login) - resultado inconclusivo quanto a credencial, nao confirma nem
-descarta o bloqueio. Os nomes exatos dos campos de resposta (ficha_emitida,
-certidao_emitida, digitalizacao) permanecem NAO confirmados ate uma consulta
-200 real - ver ressalva nas funcoes abaixo. Cada chamada de teste e' cobrada
-(~R$0,26 observado) - evitar tentativas repetidas sem necessidade.
+CONFIRMADO PONTA A PONTA em 30/07/2026: "junta-comercial/sp/ficha" retornou
+code 200 com dados reais (NIRE 35225626798, OTA HOLD BRASIL PARTICIPACOES
+LTDA) apos corrigir a credencial de login - INFOSIMPLES_SENHA_NFP e' na
+verdade a SENHA DO GOV.BR (login federado), nao uma senha separada da Nota
+Fiscal Paulista - nome da variavel ficou como estava por continuidade, mas
+o valor certo e' a senha do GOV.BR da mesma pessoa do INFOSIMPLES_CPF.
+
+Campo do PDF confirmado: data[0]["site_receipt"] (URL terminada em .pdf,
+baixado e validado - comeca com a assinatura %PDF-). NAO e' "ficha_emitida"
+(esse campo e' booleano, so indica que a ficha foi emitida) nem "arquivo"/
+"pdf" como o codigo assumia antes de confirmar - mantidos como fallback por
+seguranca, mas "site_receipt" e' o campo real. Os outros 3 servicos (completa,
+simplifica, download-dc) ainda nao tiveram uma consulta 200 real - assumindo
+o mesmo campo "site_receipt" por ser um padrao generico da Infosimples (visto
+tambem no header de respostas de erro de outros servicos), mas isso e' uma
+extrapolacao, nao confirmacao direta pra esses 3.
 """
 import requests
 
@@ -96,7 +98,7 @@ def baixar_ficha_cadastral(nire, token, cpf, senha_nfp, destino_path, tipo="simp
         print("   [SP-Infosimples] erro ficha cadastral:", resultado["erro"])
         return False
     dados = resultado["dados"]
-    url_pdf = dados.get("ficha_emitida") or dados.get("arquivo") or dados.get("pdf")
+    url_pdf = dados.get("site_receipt") or dados.get("arquivo") or dados.get("pdf")
     if not url_pdf:
         print("   [SP-Infosimples] resposta sem link de PDF reconhecido, campos recebidos:", list(dados.keys()))
         return False
@@ -112,13 +114,10 @@ def baixar_certidao_simplificada(nire, token, cpf, senha_nfp, destino_path):
     existencia/regularidade da empresa perante terceiros (bancos, orgaos
     publicos, contratos).
 
-    Confirmado na doc publica (infosimples.com/consultas/junta-comercial-sp-
-    simplifica/): parametros de login (nire/login_cpf/login_senha, mesmos das
-    outras funcoes) e o campo de resposta 'certidao_emitida' (contem o link do
-    PDF - mesmo padrao de 'ficha_emitida' na ficha cadastral). O slug exato do
-    endpoint de API (ENDPOINT_CERTIDAO_SIMPLIFICADA acima) segue nao confirmado
-    tecnicamente, mesma ressalva do topo do arquivo - so a doc publica (sem
-    login) foi consultada.
+    Endpoint confirmado (junta-comercial/sp/simplifica), mas ainda sem uma
+    consulta 200 real neste servico especifico - ver ressalva no topo do
+    arquivo. Assume-se o mesmo campo 'site_receipt' confirmado em
+    baixar_ficha_cadastral (padrao generico da Infosimples), por extrapolacao.
     """
     params = {"token": token, "nire": nire, "login_cpf": cpf, "login_senha": senha_nfp}
     print("   [SP-Infosimples] emitindo certidao simplificada - NIRE " + str(nire))
@@ -127,7 +126,7 @@ def baixar_certidao_simplificada(nire, token, cpf, senha_nfp, destino_path):
         print("   [SP-Infosimples] erro certidao simplificada:", resultado["erro"])
         return False
     dados = resultado["dados"]
-    url_pdf = dados.get("certidao_emitida") or dados.get("arquivo") or dados.get("pdf")
+    url_pdf = dados.get("site_receipt") or dados.get("certidao_emitida") or dados.get("arquivo") or dados.get("pdf")
     if not url_pdf:
         print("   [SP-Infosimples] resposta sem link de PDF reconhecido, campos recebidos:", list(dados.keys()))
         return False
@@ -151,7 +150,7 @@ def baixar_documento(nire, numero_registro, token, cpf, senha_nfp, destino_path)
         print("   [SP-Infosimples] erro download documento:", resultado["erro"])
         return False
     dados = resultado["dados"]
-    url_pdf = dados.get("digitalizacao") or dados.get("arquivo") or dados.get("pdf")
+    url_pdf = dados.get("site_receipt") or dados.get("digitalizacao") or dados.get("arquivo") or dados.get("pdf")
     if not url_pdf:
         print("   [SP-Infosimples] resposta sem link de PDF reconhecido, campos recebidos:", list(dados.keys()))
         return False

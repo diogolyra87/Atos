@@ -33,7 +33,7 @@ class TestConsultaComSucesso(unittest.TestCase):
     @patch("jucesp_infosimples.requests.get")
     @patch("jucesp_infosimples.requests.post")
     def test_baixar_ficha_cadastral_sucesso(self, mock_post, mock_get):
-        mock_post.return_value = _resposta(200, data=[{"ficha_emitida": "https://exemplo.com/ficha.pdf"}])
+        mock_post.return_value = _resposta(200, data=[{"site_receipt": "https://exemplo.com/ficha.pdf", "ficha_emitida": True}])
         mock_get.return_value = MagicMock(content=b"%PDF-conteudo-fake")
         mock_get.return_value.raise_for_status = MagicMock()
 
@@ -51,7 +51,7 @@ class TestConsultaComSucesso(unittest.TestCase):
     @patch("jucesp_infosimples.requests.get")
     @patch("jucesp_infosimples.requests.post")
     def test_baixar_certidao_simplificada_sucesso(self, mock_post, mock_get):
-        mock_post.return_value = _resposta(200, data=[{"certidao_emitida": "https://exemplo.com/certidao.pdf"}])
+        mock_post.return_value = _resposta(200, data=[{"site_receipt": "https://exemplo.com/certidao.pdf"}])
         mock_get.return_value = MagicMock(content=b"%PDF-certidao-fake")
         mock_get.return_value.raise_for_status = MagicMock()
 
@@ -69,7 +69,7 @@ class TestConsultaComSucesso(unittest.TestCase):
     @patch("jucesp_infosimples.requests.get")
     @patch("jucesp_infosimples.requests.post")
     def test_baixar_documento_sucesso(self, mock_post, mock_get):
-        mock_post.return_value = _resposta(200, data=[{"digitalizacao": "https://exemplo.com/doc.pdf"}])
+        mock_post.return_value = _resposta(200, data=[{"site_receipt": "https://exemplo.com/doc.pdf"}])
         mock_get.return_value = MagicMock(content=b"conteudo-doc")
         mock_get.return_value.raise_for_status = MagicMock()
 

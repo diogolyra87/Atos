@@ -140,12 +140,15 @@ def _mover_para_processados(imap, num_msg):
 
 
 def _montar_criterio_busca():
-    criterios = ["UNSEEN"]
-    if REMETENTE_FILTRO:
-        criterios += ["FROM", f'"{REMETENTE_FILTRO}"']
-    if ASSUNTO_FILTRO:
-        criterios += ["SUBJECT", f'"{ASSUNTO_FILTRO}"']
-    return criterios
+    return ["UNSEEN"]
+
+
+def _corresponde_filtros(remetente, assunto):
+    if REMETENTE_FILTRO and REMETENTE_FILTRO.lower() not in (remetente or "").lower():
+        return False
+    if ASSUNTO_FILTRO and ASSUNTO_FILTRO.lower() not in (assunto or "").lower():
+        return False
+    return True
 
 
 def processar_caixa():
@@ -175,6 +178,13 @@ def processar_caixa():
                     continue
                 msg = email.message_from_bytes(msg_dados[0][1])
                 assunto = _decodificar(msg.get("Subject"))
+                remetente = _decodificar(msg.get("From"))
+                if not _corresponde_filtros(remetente, assunto):
+                    logger.info(
+                        "Msg %s (de=%s, assunto=%s) nao corresponde aos filtros - ignorando sem marcar como lida.",
+                        num_msg, remetente, assunto,
+                    )
+                    continue
                 corpo = _corpo_texto(msg)
                 data_email = email.utils.parsedate_to_datetime(msg.get("Date")) or datetime.now()
                 numero_processo = _extrair_numero_processo(assunto, corpo)

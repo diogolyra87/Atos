@@ -219,14 +219,6 @@ def _regex_protocolo(texto):
         return m.group(0)
     return None
 
-def _texto_pdf(caminho_pdf):
-    import subprocess
-    try:
-        out = subprocess.run(["pdftotext", caminho_pdf, "-"], capture_output=True, text=True, timeout=30)
-        return out.stdout or ""
-    except Exception:
-        return ""
-
 def _gemini_protocolo(caminho_pdf):
     import base64, json, urllib.request
     if not GEMINI_KEY:
@@ -251,22 +243,6 @@ def _gemini_protocolo(caminho_pdf):
         return _regex_protocolo(txt) or txt.strip()
     except Exception as e:
         print("Gemini protocolo falhou:", e)
-        return None
-
-def _tesseract_protocolo(caminho_pdf):
-    import subprocess, os, glob, tempfile
-    try:
-        d = tempfile.mkdtemp()
-        subprocess.run(["pdftoppm", "-r", "300", "-png", caminho_pdf, os.path.join(d, "pg")], check=True, timeout=60)
-        texto = ""
-        for img in sorted(glob.glob(os.path.join(d, "*.png"))):
-            out = subprocess.run(["tesseract", img, "stdout", "-l", "por"], capture_output=True, text=True, timeout=60)
-            if not out.stdout.strip():
-                out = subprocess.run(["tesseract", img, "stdout"], capture_output=True, text=True, timeout=60)
-            texto += out.stdout + "\n"
-        return _regex_protocolo(texto)
-    except Exception as e:
-        print("Tesseract protocolo falhou:", e)
         return None
 
 def _extrair_protocolo_barcode(caminho_pdf):
@@ -297,27 +273,32 @@ def _extrair_protocolo_barcode(caminho_pdf):
 
 
 def extrair_protocolo_ocr(caminho_pdf):
+    """Extrai o numero de protocolo de um comprovante (JUCESP ou JUCERJA),
+    usando a mesma cadeia de tentativas de extrair_texto_pdf_em_camadas
+    (texto direto via pdfplumber/fitz -> OCR via Gemini vision/pytesseract) -
+    necessario porque comprovantes da JUCERJA costumam ser prints de pagina
+    web salvos em PDF, sem nenhum texto selecionavel. Se nada for
+    reconhecido automaticamente, retorna None e o operador preenche
+    manualmente (o campo aceita texto livre, sem nenhuma restricao de
+    formato)."""
     # 0) Codigo de barras: deterministico, mais confiavel que qualquer OCR/IA
     num = _extrair_protocolo_barcode(caminho_pdf)
     if num:
         print("protocolo via codigo de barras:", num)
         return num
-    # 1) PDF editavel: texto direto (gratis, instantaneo)
-    texto = _texto_pdf(caminho_pdf)
-    if len(texto.strip()) > 30:
+    # 1) texto direto + 2) OCR (mesma cadeia usada pra leitura das atas)
+    texto, _leitura_parcial = extrair_texto_pdf_em_camadas(caminho_pdf)
+    if texto:
         num = _regex_protocolo(texto)
         if num:
-            print("protocolo via texto:", num)
+            print("protocolo via texto/OCR em camadas:", num)
             return num
-    # 2) PDF fechado: Gemini (preciso)
+    # 3) Gemini com prompt dedicado (pede so o numero do protocolo) - mais
+    # preciso que aplicar regex sobre o texto generico quando o layout do
+    # comprovante confunde a extracao acima
     num = _gemini_protocolo(caminho_pdf)
     if num:
-        print("protocolo via Gemini:", num)
-        return num
-    # 3) fallback: Tesseract
-    num = _tesseract_protocolo(caminho_pdf)
-    if num:
-        print("protocolo via Tesseract:", num)
+        print("protocolo via Gemini (prompt dedicado):", num)
     return num
 
 def corpo_status_cliente(p, status_label, frase_final):

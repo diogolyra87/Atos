@@ -548,7 +548,7 @@ function AppPainel({ onSair, sessao }) {
                   </div>
                   <div style={{ ...s.cell, fontWeight: 500, color: "#475569" }}>{p.uf || "—"}</div>
                   <div style={s.cell}>{abreviarAto(p.identificador_ato, p.data_ata, p.hora_ata)}</div>
-                  <div style={{ ...s.cell, fontFamily: "monospace", fontSize: 11 }}>{p.numero_protocolo ? p.numero_protocolo.replace(/\D/g, "") : "—"}</div>
+                  <div style={{ ...s.cell, fontFamily: "monospace", fontSize: 11 }}>{p.numero_protocolo || "—"}</div>
                   <div><span style={s.badge(p.status)}>{STATUS_CONFIG[p.status]?.label || p.status}</span></div>
                   <div><button style={s.btnVer} onClick={e => { e.stopPropagation(); setProcessoSelecionado(p); }}>Ver</button></div>
                 </div>

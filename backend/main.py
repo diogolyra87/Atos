@@ -473,22 +473,22 @@ def envolver_html(corpo_texto, titulo="Atualizacao do seu processo"):
 
 def _disparar_convites(nome, link, emails):
     corpo = (
-        "Ola!\n\n"
-        "Voce foi cadastrado para acessar o sistema Atos - Gestao Societaria, no grupo " + nome + ".\n\n"
-        "Para criar seu usuario e senha de acesso, clique no link abaixo:\n"
+        "Olá!\n\n"
+        "Você foi cadastrado para acessar o sistema Atos - Gestão Societária, no grupo " + nome + ".\n\n"
+        "Para criar seu usuário e senha de acesso, clique no link abaixo:\n"
         + link + "\n\n"
-        "Apos criar seu acesso, voce podera acompanhar seus processos pelo endereco " + BASE_URL_SISTEMA + ".\n\n"
+        "Após criar seu acesso, você poderá acompanhar seus processos pelo endereço " + BASE_URL_SISTEMA + ".\n\n"
         "Atenciosamente,\nEquipe Atos"
     )
     corpo_html = (
         '<div style="font-family:Arial,Helvetica,sans-serif;max-width:480px;margin:0 auto;color:#241b4a;">'
         '<h2 style="color:#111111;margin:0 0 4px;">atos<span style="color:#2d6cdf;">.</span></h2>'
-        '<p style="font-size:12px;color:#7a7790;margin:0 0 18px;">Gestao Societaria</p>'
-        '<p>Ola!</p>'
-        '<p>Voce foi cadastrado para acessar o sistema <strong>Atos - Gestao Societaria</strong>, no grupo <strong>' + nome + '</strong>.</p>'
-        '<p>Para criar seu usuario e senha de acesso, clique no botao abaixo:</p>'
+        '<p style="font-size:12px;color:#7a7790;margin:0 0 18px;">Gestão Societária</p>'
+        '<p>Olá!</p>'
+        '<p>Você foi cadastrado para acessar o sistema <strong>Atos - Gestão Societária</strong>, no grupo <strong>' + nome + '</strong>.</p>'
+        '<p>Para criar seu usuário e senha de acesso, clique no botão abaixo:</p>'
         '<p style="text-align:center;margin:24px 0;"><a href="' + link + '" style="background:#2563eb;color:#ffffff;text-decoration:none;padding:13px 28px;border-radius:8px;font-weight:bold;display:inline-block;">Criar meu acesso</a></p>'
-        '<p style="font-size:13px;color:#7a7790;">Ou copie e cole este endereco no navegador:<br><a href="' + link + '">' + link + '</a></p>'
+        '<p style="font-size:13px;color:#7a7790;">Ou copie e cole este endereço no navegador:<br><a href="' + link + '">' + link + '</a></p>'
         '<p style="margin-top:24px;">Atenciosamente,<br>Equipe Atos</p>'
         + rodape_atos() +
         '</div>'

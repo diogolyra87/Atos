@@ -230,6 +230,13 @@ def _regex_protocolo(texto):
     m = re.search(r"20\d{2}/\d{7,9}-\d", texto)
     if m:
         return m.group(0)
+    # Ultimo fallback: o numero pode ter sido quebrado por espaco/quebra de
+    # linha em qualquer lugar do texto, nao so perto da palavra "protocolo"
+    # (ex: layout de print de pagina web que virou a linha no meio do numero).
+    texto_sem_espaco = re.sub(r"\s", "", texto)
+    m2 = re.search(r"20\d{2}/\d{7,9}-\d", texto_sem_espaco)
+    if m2:
+        return m2.group(0)
     return None
 
 def _gemini_protocolo(caminho_pdf):
@@ -1270,7 +1277,14 @@ def _camada1_pdfplumber(caminho_pdf):
         print("   [PDF-camada1] pdfplumber falhou:", str(e)[:150])
         texto = ""
 
-    if _texto_printable_valido(texto, minimo=100):
+    # Alem da contagem de caracteres "legiveis" (_texto_printable_valido),
+    # exige tambem _texto_parece_valido: fonte de PDF sem mapeamento Unicode
+    # correto (comum em prints de pagina web) pode gerar uma sequencia de
+    # tokens "(cid:123)" que passa facilmente dos 100 caracteres printaveis
+    # (parenteses, letras, digitos - tudo ASCII) mas nao e texto de verdade -
+    # sem essa checagem extra, esse lixo era aceito como camada 1 valida e a
+    # camada 2 (OCR) nunca rodava, mesmo sendo o unico jeito de ler o PDF.
+    if _texto_printable_valido(texto, minimo=100) and _texto_parece_valido(texto):
         print("   [PDF-camada1] pdfplumber OK,", len(texto.strip()), "caracteres")
         return texto
 
@@ -1281,7 +1295,7 @@ def _camada1_pdfplumber(caminho_pdf):
         for page in doc:
             texto_fitz += page.get_text()
         doc.close()
-        if _texto_printable_valido(texto_fitz, minimo=100):
+        if _texto_printable_valido(texto_fitz, minimo=100) and _texto_parece_valido(texto_fitz):
             print("   [PDF-camada1] fitz (2a tentativa) OK,", len(texto_fitz.strip()), "caracteres")
             return texto_fitz
     except Exception as e:

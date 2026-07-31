@@ -542,7 +542,21 @@ criar_banco()
 # ============================================================
 # ANALISAR ATA COM IA
 # ============================================================
+_CAMPOS_VAZIOS_ATA = {
+    "empresa": "", "cnpj": "", "nire": "", "uf": "", "uf_destino_transferencia": "",
+    "tipo_sociedade": "", "tipo_ato": "", "identificador_ato": "", "data_ata": "",
+    "hora_ata": "", "email_cliente": "", "eventos": [], "requer_cpl": False,
+    "checklist": [], "observacoes": "",
+}
+
+
 def analisar_ata_ia(texto_ata: str) -> dict:
+    """PRIORIDADE MAXIMA: esta funcao NUNCA pode lancar excecao nem bloquear a
+    criacao do processo. Se a IA falhar (erro de rede/API) ou devolver algo
+    que nao seja JSON valido (texto de origem ruim/incompleto costuma causar
+    isso), devolve os campos vazios em vez de propagar o erro - quem chama
+    (criar_processo) ja trata campo vazio marcando o processo pra revisao
+    manual, sem nunca bloquear a insercao."""
     conhecimento = json.dumps(CONHECIMENTO, ensure_ascii=False)[:3000]
     prompt = f"""Analise esta ata/documento e extraia as informações no formato JSON exato abaixo.
 
@@ -553,6 +567,11 @@ DOCUMENTO:
 {texto_ata[:4000]}
 
 REGRA IMPORTANTE PARA UF: Identifique a UF (sigla do estado, 2 letras) da sede da sociedade. Em alteracoes contratuais de sociedades limitadas, a UF aparece no campo de qualificacao da sociedade, no padrao Cidade/UF (exemplo: 'Rio de Janeiro/RJ' significa UF=RJ; 'Sao Paulo/SP' significa UF=SP). Procure a cidade seguida de barra e a sigla do estado no endereco da sede. Retorne so a sigla de 2 letras maiuscula.
+
+IMPORTANTE - O TEXTO ACIMA PODE ESTAR INCOMPLETO, COM RUIDO DE OCR OU PARCIALMENTE ILEGIVEL (documento escaneado de baixa qualidade). Mesmo assim:
+- Faca sempre o seu MELHOR ESFORCO pra extrair o que for possivel identificar com confianca.
+- NUNCA se recuse a responder e NUNCA retorne uma mensagem de erro em vez do JSON - mesmo que o documento esteja quase todo ilegivel, responda com a estrutura JSON completa.
+- Para qualquer campo que voce nao conseguir identificar com confianca no texto disponivel, deixe-o vazio ("" ou [] ou false conforme o tipo) em vez de adivinhar ou recusar. E preferivel um campo vazio (revisado manualmente depois) do que um campo errado ou uma resposta fora do formato.
 
 Retorne APENAS um JSON válido com esta estrutura exata:
 {{
@@ -573,30 +592,37 @@ Retorne APENAS um JSON válido com esta estrutura exata:
   "observacoes": "alertas importantes"
 }}"""
 
-    resposta = client.chat.completions.create(
-        model="deepseek-chat",
-        messages=[{"role": "user", "content": prompt}],
-        max_tokens=1500,
-        temperature=0.1
-    )
-    texto = resposta.choices[0].message.content
-    texto_limpo = texto.replace("```json", "").replace("```", "").strip()
-    dados = json.loads(texto_limpo)
+    try:
+        resposta = client.chat.completions.create(
+            model="deepseek-chat",
+            messages=[{"role": "user", "content": prompt}],
+            max_tokens=1500,
+            temperature=0.1
+        )
+        texto = resposta.choices[0].message.content
+        texto_limpo = texto.replace("```json", "").replace("```", "").strip()
+        dados = json.loads(texto_limpo)
+    except Exception as e:
+        print("analisar_ata_ia falhou (IA indisponivel ou resposta invalida) - devolvendo campos vazios pra nao bloquear:", str(e)[:200])
+        return dict(_CAMPOS_VAZIOS_ATA)
 
     # Fallback: se a UF nao foi identificada pelo endereco da ata, infere pelo prefixo do NIRE
     # 333/332 = RJ | 353/352 = SP | 292/293 = BA | 262/263 = PE
     # (lista sera expandida com mais UFs futuramente)
-    if not (dados.get("uf") or "").strip():
-        nire_digitos = "".join(c for c in (dados.get("nire") or "") if c.isdigit())
-        prefixo_nire = nire_digitos[:3]
-        if prefixo_nire in ("333", "332"):
-            dados["uf"] = "RJ"
-        elif prefixo_nire in ("353", "352"):
-            dados["uf"] = "SP"
-        elif prefixo_nire in ("292", "293"):
-            dados["uf"] = "BA"
-        elif prefixo_nire in ("262", "263"):
-            dados["uf"] = "PE"
+    try:
+        if not (dados.get("uf") or "").strip():
+            nire_digitos = "".join(c for c in (dados.get("nire") or "") if c.isdigit())
+            prefixo_nire = nire_digitos[:3]
+            if prefixo_nire in ("333", "332"):
+                dados["uf"] = "RJ"
+            elif prefixo_nire in ("353", "352"):
+                dados["uf"] = "SP"
+            elif prefixo_nire in ("292", "293"):
+                dados["uf"] = "BA"
+            elif prefixo_nire in ("262", "263"):
+                dados["uf"] = "PE"
+    except Exception as e:
+        print("Fallback de UF por NIRE falhou (ignorado, nao bloqueia):", str(e)[:150])
 
     return dados
 
@@ -1186,6 +1212,127 @@ def _texto_parece_valido(texto: str) -> bool:
         return False
     return True
 
+def _texto_printable_valido(texto, minimo=100):
+    """Criterio simples pra camada 1 (pdfplumber): conta caracteres printaveis
+    ASCII/Latin (letras, digitos, pontuacao, acentos comuns em portugues).
+    Mais permissivo que _texto_parece_valido (que exige palavras inteiras em
+    portugues) - usado especificamente na estrategia de leitura em camadas,
+    onde a camada 1 so precisa confirmar que NAO e lixo binario/font corrompida."""
+    if not texto:
+        return False
+    printaveis = sum(
+        1 for c in texto
+        if c.isprintable() and (c.isascii() or c in "áàâãéêíóôõúüçÁÀÂÃÉÊÍÓÔÕÚÜÇñÑ")
+    )
+    return printaveis > minimo
+
+
+def _camada1_pdfplumber(caminho_pdf):
+    """Camada 1 da estrategia de leitura de PDF (prioridade maxima - nunca
+    bloquear insercao de processo por falha de leitura): extracao direta de
+    texto via pdfplumber (biblioteca principal pedida) e, se vier curta,
+    tambem via PyMuPDF/fitz como segunda tentativa da mesma camada (outra
+    biblioteca de extracao direta, ja usada em producao e complementar -
+    cada uma pode ter sucesso onde a outra falha, dependendo de como o PDF
+    foi gerado). Retorna o texto se tiver mais de 100 caracteres legiveis,
+    senao None (cai pra camada 2 - OCR)."""
+    texto = ""
+    try:
+        import pdfplumber
+        with pdfplumber.open(caminho_pdf) as pdf:
+            for pagina in pdf.pages:
+                texto += (pagina.extract_text() or "") + "\n"
+    except Exception as e:
+        print("   [PDF-camada1] pdfplumber falhou:", str(e)[:150])
+        texto = ""
+
+    if _texto_printable_valido(texto, minimo=100):
+        print("   [PDF-camada1] pdfplumber OK,", len(texto.strip()), "caracteres")
+        return texto
+
+    try:
+        import fitz
+        doc = fitz.open(caminho_pdf)
+        texto_fitz = ""
+        for page in doc:
+            texto_fitz += page.get_text()
+        doc.close()
+        if _texto_printable_valido(texto_fitz, minimo=100):
+            print("   [PDF-camada1] fitz (2a tentativa) OK,", len(texto_fitz.strip()), "caracteres")
+            return texto_fitz
+    except Exception as e:
+        print("   [PDF-camada1] fitz (2a tentativa) falhou:", str(e)[:150])
+
+    print("   [PDF-camada1] extracao direta insuficiente - tentando camada 2 (OCR)")
+    return None
+
+
+def _camada2_ocr_pytesseract(caminho_pdf):
+    """Camada 2 da estrategia de leitura de PDF: OCR. So chamada quando a
+    camada 1 (extracao direta) falhou ou veio curta demais. Tenta primeiro
+    Gemini vision (ja usado em producao, melhor em documentos escaneados
+    reais com carimbo/selo) e, se indisponivel ou falhar, pdf2image +
+    pytesseract com lang='por+eng' (biblioteca pedida). Retorna o texto
+    resultante, ou None se todas as tentativas falharem."""
+    texto_gemini = _gemini_texto_documento(caminho_pdf)
+    if texto_gemini and texto_gemini.strip():
+        print("   [PDF-camada2] OCR via Gemini vision OK,", len(texto_gemini.strip()), "caracteres")
+        return texto_gemini.strip()
+
+    try:
+        from pdf2image import convert_from_path
+        import pytesseract
+        paginas = convert_from_path(caminho_pdf, dpi=300)
+        texto = ""
+        for img in paginas:
+            texto += pytesseract.image_to_string(img, lang="por+eng") + "\n"
+        texto = texto.strip()
+        if texto:
+            print("   [PDF-camada2] OCR pytesseract (por+eng) OK,", len(texto), "caracteres")
+            return texto
+    except Exception as e:
+        print("   [PDF-camada2] OCR pytesseract falhou:", str(e)[:150])
+
+    texto_tess_cli = _tesseract_texto_documento(caminho_pdf)
+    if texto_tess_cli and texto_tess_cli.strip():
+        print("   [PDF-camada2] OCR via tesseract CLI (fallback extra) OK,", len(texto_tess_cli.strip()), "caracteres")
+        return texto_tess_cli.strip()
+
+    print("   [PDF-camada2] nenhuma tentativa de OCR retornou texto")
+    return None
+
+
+def extrair_texto_pdf_em_camadas(caminho_pdf):
+    """Estrategia de leitura de PDF em 3 camadas, em ordem de tentativa -
+    PRIORIDADE MAXIMA: o sistema NUNCA pode falhar em inserir um processo por
+    causa de um PDF dificil de ler.
+
+    Camada 1 - pdfplumber (texto direto). Aceito se >100 caracteres legiveis.
+    Camada 2 - OCR via pdf2image + pytesseract (lang='por+eng'), se a camada 1
+      falhar ou vier curta/vazia demais.
+    Camada 3 - fallback total: se o OCR tambem falhar ou vier com menos de 50
+      caracteres, NAO bloqueia - devolve o que tiver (mesmo vazio/parcial) e
+      sinaliza leitura_parcial=True pro chamador marcar o processo pra
+      revisao manual do operador, sem nunca impedir a insercao.
+
+    Retorna (texto: str, leitura_parcial: bool).
+    """
+    texto = _camada1_pdfplumber(caminho_pdf)
+    if texto:
+        return texto, False
+
+    texto_ocr = _camada2_ocr_pytesseract(caminho_pdf)
+    if texto_ocr and len(texto_ocr) >= 50:
+        return texto_ocr, False
+
+    # Camada 3: fallback total. Usa o melhor texto disponivel (mesmo curto),
+    # nunca levanta excecao, nunca bloqueia - so sinaliza leitura parcial.
+    melhor_texto = texto_ocr or ""
+    print("   [PDF-camada3] leitura parcial/sem sucesso (", len(melhor_texto),
+          "caracteres) - processo sera criado mesmo assim, marcado pra revisao manual")
+    return melhor_texto, True
+
+
 def _extrair_texto_bytes(conteudo: bytes, nome: str) -> str:
     import tempfile
     nm = (nome or "").lower()
@@ -1196,21 +1343,11 @@ def _extrair_texto_bytes(conteudo: bytes, nome: str) -> str:
             conteudo = img2pdf.convert(conteudo)
             nm = "convertida.pdf"
         if nm.endswith(".pdf"):
-            import fitz
             with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as f:
                 f.write(conteudo); tmp = f.name
-            doc = fitz.open(tmp)
-            for page in doc:
-                texto += page.get_text()
-            doc.close()
-            print("DEBUG_EXTRACAO nome=", repr(nome), "| texto_direto_len=", len(texto.strip()), "| trecho=", repr(texto.strip()[:150]))
-            if not _texto_parece_valido(texto):
-                texto_extra = _gemini_texto_documento(tmp)
-                if not texto_extra:
-                    texto_extra = _tesseract_texto_documento(tmp)
-                if texto_extra:
-                    texto = texto_extra
-                    print("Texto extraido via OCR/Gemini para:", nome, "| novo_len=", len(texto))
+            texto, _leitura_parcial = extrair_texto_pdf_em_camadas(tmp)
+            print("DEBUG_EXTRACAO nome=", repr(nome), "| texto_len=", len(texto.strip()),
+                  "| leitura_parcial=", _leitura_parcial, "| trecho=", repr(texto.strip()[:150]))
             os.unlink(tmp)
         elif nm.endswith(".docx"):
             import docx as docx_lib
@@ -1528,7 +1665,12 @@ async def analisar_pasta_multi(arquivos: list[UploadFile] = File(...), x_token: 
 
     principais_out = []
     for i in principais_itens:
-        dados = analisar_ata_ia(i["texto"]) if i["texto"].strip() else {}
+        # Camada 3 da leitura de PDF (prioridade maxima): texto insuficiente
+        # (<50 caracteres) nunca bloqueia - so marca leitura_parcial=True pra
+        # criar_processo sinalizar revisao manual do operador.
+        leitura_parcial = len((i["texto"] or "").strip()) < 50
+        dados = analisar_ata_ia(i["texto"]) if i["texto"].strip() else dict(_CAMPOS_VAZIOS_ATA)
+        dados["leitura_parcial"] = leitura_parcial
         numero_prot = await asyncio.to_thread(_tentar_extrair_protocolo, i["conteudo"], i["nome"])
         if numero_prot:
             dados["numero_protocolo"] = numero_prot
@@ -1585,7 +1727,8 @@ async def analisar_documento(arquivo: UploadFile = File(...), x_token: str = Hea
     nome = arquivo.filename or ""
     texto = await asyncio.to_thread(_extrair_texto_bytes, conteudo, nome)
 
-    dados = analisar_ata_ia(texto)
+    dados = analisar_ata_ia(texto) if texto.strip() else dict(_CAMPOS_VAZIOS_ATA)
+    dados["leitura_parcial"] = len((texto or "").strip()) < 50
     return dados
 
 @app.post("/processos")
@@ -1658,7 +1801,8 @@ async def criar_processo(
         status="aberto",
         arquivo_ata=arquivo_ata,
         grupo_id=grupo_id,
-        uf_destino_transferencia=(info.get("uf_destino_transferencia") or "").upper().strip()[:2] or None
+        uf_destino_transferencia=(info.get("uf_destino_transferencia") or "").upper().strip()[:2] or None,
+        leitura_parcial=bool(info.get("leitura_parcial", False))
     )
     db.add(p)
     db.flush()
@@ -1681,6 +1825,16 @@ async def criar_processo(
                 enviar_email(_e, _assunto_incompleto, _corpo_incompleto)
         except Exception as e:
             print("Erro ao notificar campos incompletos:", e)
+    if p.leitura_parcial:
+        try:
+            p.confirmacao_pendente = True
+            db.commit()
+            _assunto_leitura = "[Atos] ATENCAO - Leitura parcial de PDF - " + (p.empresa or processo_id)
+            _corpo_leitura = "O processo " + processo_id + " (" + (p.empresa or "sem nome") + ") foi inserido no sistema, mas a leitura do PDF (texto direto + OCR) nao conseguiu extrair conteudo suficiente.\n\nO processo entrou normalmente no sistema, mas revise manualmente o documento e complete/corrija os dados o quanto antes."
+            for _e in emails_admin(db):
+                enviar_email(_e, _assunto_leitura, _corpo_leitura)
+        except Exception as e:
+            print("Erro ao notificar leitura parcial:", e)
     return {"id": processo_id, "mensagem": "Processo criado com sucesso"}
 
 def _criar_processo_transferencia(db, p_origem):

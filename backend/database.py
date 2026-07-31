@@ -186,6 +186,11 @@ class Processo(Base):
     transferencia_criada = Column(Boolean, default=False)
     processo_origem_id = Column(String, nullable=True)
     confirmacao_pendente = Column(Boolean, default=False)
+    # True quando a leitura do PDF (texto direto + OCR, ver
+    # extrair_texto_pdf_em_camadas em main.py) nao conseguiu extrair texto
+    # suficiente (camada 3/fallback total) - processo e criado normalmente
+    # mesmo assim, so fica marcado pra revisao manual do operador.
+    leitura_parcial = Column(Boolean, default=False)
     tipo_ato_sugerido = Column(String, nullable=True)
     ultima_consulta_em = Column(DateTime, nullable=True)
     ultimo_alerta_em = Column(DateTime, nullable=True)

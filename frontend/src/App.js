@@ -707,6 +707,21 @@ function AppPainel({ onSair, sessao }) {
         if (tipo === "protocolo" && resp.data && resp.data.numero_protocolo) {
           setNumProtocolo(resp.data.numero_protocolo);
         }
+        const mensagensSucesso = {
+          protocolo: "Protocolo inserido com sucesso! O processo foi movido para Tramitação.",
+          registro: "Registro inserido com sucesso! O processo foi Finalizado.",
+          nd: "Nota de Débito inserida com sucesso.",
+          nf: "Nota Fiscal inserida com sucesso.",
+          ata: "Ata atualizada com sucesso.",
+        };
+        alert(mensagensSucesso[tipo] || "Arquivo inserido com sucesso.");
+        if (tipo === "protocolo" || tipo === "registro") {
+          // Muda o status do processo (tramitacao/finalizado) - volta pra tela
+          // inicial em vez de tentar sincronizar o estado local, garantindo
+          // que a lista/detalhe reflitam o status novo imediatamente.
+          setProcessoSelecionado(null);
+        }
+        carregar();
       } catch (e) {
         alert("Erro ao anexar o arquivo.");
       }
@@ -762,25 +777,21 @@ function AppPainel({ onSair, sessao }) {
         form.append("texto", textoExig);
         if (arqExig) form.append("arquivo", arqExig);
         await axios.post(`${API}/processos/${p.id}/exigencia`, form);
+        alert("Exigência registrada com sucesso! O processo foi atualizado.");
+        setProcessoSelecionado(null);
         carregar();
-        if (processoSelecionado?.id === p.id) {
-          const res = await axios.get(`${API}/processos/${p.id}`);
-          setProcessoSelecionado(res.data);
-        }
       } catch (e) {
         alert("Erro ao registrar exigência.");
+        setSalvandoExig(false);
       }
-      setSalvandoExig(false);
     }
 
     async function exigenciaCumprida() {
       try {
         await axios.post(`${API}/processos/${p.id}/exigencia/cumprida`);
+        alert("Exigência marcada como cumprida! O status do processo foi atualizado.");
+        setProcessoSelecionado(null);
         carregar();
-        if (processoSelecionado?.id === p.id) {
-          const res = await axios.get(`${API}/processos/${p.id}`);
-          setProcessoSelecionado(res.data);
-        }
       } catch (e) {
         alert("Erro ao marcar exigência como cumprida.");
       }
@@ -812,14 +823,13 @@ async function excluirProcesso() {
       setSalvandoProt(true);
       try {
         await axios.patch(`${API}/processos/${p.id}`, { numero_protocolo: numProtocolo });
-        if (processoSelecionado?.id === p.id) {
-          setProcessoSelecionado({ ...processoSelecionado, numero_protocolo: numProtocolo });
-        }
+        alert("Protocolo inserido com sucesso! O processo foi movido para Tramitação.");
+        setProcessoSelecionado(null);
         carregar();
       } catch (e) {
         alert("Erro ao salvar o número do protocolo.");
+        setSalvandoProt(false);
       }
-      setSalvandoProt(false);
     }
     async function excluirProtocolo() {
       if (!window.confirm("Tem certeza que deseja excluir o protocolo deste processo? O processo voltara para o status Aberto.")) return;

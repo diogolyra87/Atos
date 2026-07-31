@@ -198,6 +198,11 @@ def nome_usuario(usuario):
     return getattr(usuario, "nome", None) or usuario.login
 
 def _regex_protocolo(texto):
+    """Reconhece o numero de protocolo em texto livre (ja extraido via texto
+    direto ou OCR). Cobre JUCESP (0.000.000/00-0) e JUCERJA (AAAA/NNNNNNN-N,
+    com o miolo variando de 7 a 9 digitos conforme o volume de protocolos do
+    ano) - com ou sem separadores, ja que o print de pagina web as vezes
+    quebra a barra/hifen em espacos ou quebras de linha."""
     import re
     up = texto.upper()
     if "JUCESP PROTOCOLO" in up:
@@ -210,11 +215,19 @@ def _regex_protocolo(texto):
         return m.group(0)
     if "PROTOCOLO" in up:
         idx = up.rfind("PROTOCOLO")
-        mm = re.search(r"(20\d{2})\s*/\s*([\d/\s]+?)\s*-\s*(\d)", texto[idx: idx + 80])
+        janela = texto[idx: idx + 80]
+        mm = re.search(r"(20\d{2})\s*/\s*([\d\s]{7,11}?)\s*-\s*(\d)", janela)
         if mm:
-            meio = re.sub(r"[^0-9]", "", mm.group(2)).zfill(8)[-8:]
-            return mm.group(1) + "/" + meio + "-" + mm.group(3)
-    m = re.search(r"20\d{2}/\d{8}-\d", texto)
+            meio = re.sub(r"\D", "", mm.group(2))
+            if 7 <= len(meio) <= 9:
+                return mm.group(1) + "/" + meio + "-" + mm.group(3)
+        # variacao sem separador (barra/hifen perdidos na extracao): bloco
+        # continuo de digitos comecando com 20xx (ano) - ano(4) + miolo(7-9) + dv(1)
+        janela_digitos = re.sub(r"\s", "", janela)
+        mm2 = re.search(r"(20\d{2})(\d{7,9})(\d)(?!\d)", janela_digitos)
+        if mm2:
+            return mm2.group(1) + "/" + mm2.group(2) + "-" + mm2.group(3)
+    m = re.search(r"20\d{2}/\d{7,9}-\d", texto)
     if m:
         return m.group(0)
     return None
@@ -1662,6 +1675,22 @@ async def analisar_pasta_multi(arquivos: list[UploadFile] = File(...), x_token: 
         print("DEBUG_DEDUP antes: nome=", _pp.get("nome"), "| empresa=", _dd.get("empresa"), "| ato=", _dd.get("identificador_ato"), "| data=", _dd.get("data_ata"), "| uf=", _dd.get("uf"), "| uf_destino=", _dd.get("uf_destino_transferencia"))
     principais_out = _filtrar_origem_destino(principais_out)
     print("DEBUG_DEDUP depois: total=", len(principais_out))
+
+    # Fallback: comprovante de protocolo (JUCESP/JUCERJA) costuma vir como PDF
+    # separado da ata no mesmo lote (print de pagina web) e a classificacao por
+    # IA o marca como anexo, nao principal - nesse caso o protocolo nunca era
+    # procurado nele. So aplicado quando ha exatamente 1 processo principal no
+    # lote (evita ambiguidade de a qual processo o protocolo pertence).
+    if len(principais_out) == 1 and not (principais_out[0]["dados"].get("numero_protocolo") or "").strip():
+        indices_principais_final = {p["indice"] for p in principais_out}
+        for i in itens:
+            if i["indice"] in indices_principais_final:
+                continue
+            numero_prot_anexo = await asyncio.to_thread(_tentar_extrair_protocolo, i["conteudo"], i["nome"])
+            if numero_prot_anexo:
+                principais_out[0]["dados"]["numero_protocolo"] = numero_prot_anexo
+                print("Protocolo extraido de anexo do lote:", numero_prot_anexo, "arquivo:", i["nome"])
+                break
 
     return {
         "principais": principais_out,

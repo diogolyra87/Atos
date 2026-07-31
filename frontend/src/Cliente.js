@@ -393,6 +393,12 @@ export function Painel({ sessao, onSair }) {
   const [fUf, setFUf] = useState("");
   const [fAto, setFAto] = useState("");
   const [fStatus, setFStatus] = useState("");
+  // Precisa viver aqui (no componente estavel Painel), nao dentro de
+  // ListaProcessosAgrupada: essa funcao e recriada a cada render de Painel()
+  // (esta definida no corpo dele), entao um useState local nela reiniciava
+  // pra {} (tudo aberto) a cada atualizacao de estado do componente pai -
+  // era por isso que uma secao recolhida "voltava a abrir sozinha".
+  const [gruposFechados, setGruposFechados] = useState({});
   const ufsDisponiveis = [...new Set(processos.map(p => p.uf).filter(Boolean))].sort();
   const atosDisponiveis = [...new Set(processos.map(p => abreviarAto(p.identificador_ato, "").split(" ")[0]).filter(Boolean))].sort();
   const processosFiltrados = processos.filter(p => {
@@ -622,8 +628,6 @@ export function Painel({ sessao, onSair }) {
     else setDocsAbertos(p);
   }
   function ListaProcessosAgrupada() {
-    const [gruposFechados, setGruposFechados] = useState({});
-
     const grupos = processosFiltrados.reduce((acc, p) => {
       const chave = (p.criado_em || "").slice(0, 10) || "sem-data";
       if (!acc[chave]) acc[chave] = [];

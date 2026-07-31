@@ -185,6 +185,13 @@ function AppPainel({ onSair, sessao }) {
   const [fStatus, setFStatus] = useState("");
   const [fGrupo, setFGrupo] = useState("");
   const [grupos, setGrupos] = useState([]);
+  // Precisa viver aqui (no componente estavel), nao dentro de
+  // ListaProcessosAgrupada: essa funcao e recriada a cada render de
+  // AppPainel() (esta definida no corpo dele), entao um useState local nela
+  // reiniciava pra {} (tudo aberto) a cada atualizacao de estado do
+  // componente pai - era por isso que uma secao recolhida "voltava a abrir
+  // sozinha" (mesmo bug corrigido em Cliente.js).
+  const [gruposFechados, setGruposFechados] = useState({});
   const [upGrupo, setUpGrupo] = useState("");
   const [upSubindo, setUpSubindo] = useState(false);
   const [upProg, setUpProg] = useState({ feitos: 0, total: 0, erros: 0 });
@@ -500,8 +507,6 @@ function AppPainel({ onSair, sessao }) {
   };
 
   function ListaProcessosAgrupada() {
-    const [gruposFechados, setGruposFechados] = useState({});
-
     const grupos = processosFiltrados.reduce((acc, p) => {
       const chave = (p.criado_em || "").slice(0, 10) || "sem-data";
       if (!acc[chave]) acc[chave] = [];

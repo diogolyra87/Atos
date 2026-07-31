@@ -27,7 +27,7 @@ function abreviarAto(texto, data) {
 export default function Cliente() {
   const [params] = useSearchParams();
   const codigoGrupo = params.get("grupo") || "";
-  const [modo, setModo] = useState(codigoGrupo ? "cadastro" : "login");
+  const modo = codigoGrupo ? "cadastro" : "login"; // nunca muda em runtime (setModo nunca era chamado) - simplificado de useState pra constante derivada
   const [login, setLogin] = useState("");
   const [senha, setSenha] = useState("");
   const [erro, setErro] = useState("");

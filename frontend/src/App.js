@@ -449,13 +449,6 @@ function AppPainel({ onSair, sessao }) {
     carregar();
     alert(`Concluido: ${feitos} processo(s) criado(s)${erros ? `, ${erros} com erro` : ""}.`);
   }
-  async function uploadArquivo(id, tipo, arquivo) {
-    const form = new FormData();
-    form.append("arquivo", arquivo);
-    await axios.post(`${API}/processos/${id}/upload/${tipo}`, form);
-    carregar();
-  }
-
   const s = {
     layout: { display: "flex", minHeight: "100vh", fontFamily: "'Inter', sans-serif" },
     sidebar: { width: 220, background: "linear-gradient(165deg,#0e2a6e,#2563eb)", display: "flex", flexDirection: "column", padding: "24px 16px", gap: 8 },

@@ -239,9 +239,19 @@ def _gemini_protocolo(caminho_pdf):
     try:
         with open(caminho_pdf, "rb") as f:
             pdf_b64 = base64.b64encode(f.read()).decode()
-        prompt = ("Este e um comprovante de protocolo de Junta Comercial (JUCESP ou JUCERJA). "
-                  "Extraia APENAS o numero do protocolo e responda somente com ele, sem mais nada. "
-                  "JUCESP tem formato 0.000.000/00-0. JUCERJA tem formato 2026/00000000-0.")
+        prompt = ("Verifique se este documento e um COMPROVANTE de protocolo de Junta Comercial "
+                  "(JUCESP ou JUCERJA) - ou seja, a tela/recibo que confirma que um pedido acabou "
+                  "de ser protocolado, geralmente com o titulo 'PROTOCOLO GERADO COM SUCESSO' ou "
+                  "similar. NAO e uma ata, contrato, distrato ou qualquer outro documento societario "
+                  "que apenas MENCIONE um numero de registro antigo ou de outro processo - nesses "
+                  "casos, mesmo que existam numeros parecidos com protocolo no texto, eles NAO devem "
+                  "ser extraidos. "
+                  "Se for de fato um comprovante de protocolo, responda APENAS com o numero do "
+                  "protocolo, sem mais nada. JUCESP tem formato 0.000.000/00-0. JUCERJA tem formato "
+                  "2026/00000000-0 (miolo pode variar de 7 a 9 digitos). "
+                  "Se o documento NAO for um comprovante de protocolo, ou se voce nao tiver certeza "
+                  "de que o numero encontrado e realmente o protocolo (e nao um NIRE, CNPJ ou numero "
+                  "de registro de outro ato), responda exatamente: NENHUM")
         body = {
             "contents": [{"parts": [
                 {"text": prompt},
@@ -253,7 +263,21 @@ def _gemini_protocolo(caminho_pdf):
         resp = urllib.request.urlopen(req, timeout=40)
         data = json.loads(resp.read().decode())
         txt = data["candidates"][0]["content"]["parts"][0]["text"].strip()
-        return _regex_protocolo(txt) or txt.strip()
+        if "NENHUM" in txt.upper():
+            return None
+        num = _regex_protocolo(txt)
+        if num:
+            return num
+        # Resposta livre da IA que nao bate em nenhum padrao conhecido: so
+        # aceita se parecer mesmo um numero de protocolo (token curto,
+        # majoritariamente digitos, sem espacos) - evita aceitar como
+        # protocolo uma frase/explicacao ou um numero de outro contexto
+        # (NIRE, CNPJ, registro antigo mencionado no corpo de uma ata) que a
+        # IA tenha confundido.
+        candidato = txt.strip()
+        if candidato and len(candidato) <= 30 and " " not in candidato and sum(c.isdigit() for c in candidato) >= 6:
+            return candidato
+        return None
     except Exception as e:
         print("Gemini protocolo falhou:", e)
         return None

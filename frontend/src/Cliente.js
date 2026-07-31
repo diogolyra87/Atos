@@ -971,7 +971,7 @@ function estilos() {
     aviso: { background: "#dcfce7", color: "#166534", borderRadius: 8, padding: "8px 12px", fontSize: 13, marginBottom: 14 },
     grupoBox: { background: "#e8efee", color: "#2563eb", borderRadius: 8, padding: "8px 12px", fontSize: 12, marginBottom: 14, textAlign: "center" },
     btnSair: { background: "none", border: "0.5px solid #334155", color: "#94a3b8", borderRadius: 6, padding: "5px 12px", fontSize: 12, cursor: "pointer" },
-    conteudo: { padding: 28, maxWidth: 920, margin: "0 auto" },
+    conteudo: { padding: 28 },
     h1: { fontSize: 18, fontWeight: 500, color: "#23282a", marginBottom: 18 },
     metrics: { display: "grid", gridTemplateColumns: "repeat(5,1fr)", gap: 12, marginBottom: 24 },
     metricCard: { background: "#fff", border: "0.5px solid #e2e8f0", borderRadius: 10, padding: 16, cursor: "pointer" },

@@ -402,6 +402,11 @@ Maranhão (possível WAF anti-scraping detectado), Piauí, Alagoas, Rio Grande d
 
 > Fonte: Pesquisa 4 (tabelas oficiais JUCESP, JUCERJA, JUCEB, JUCEMG; Lei 8.934/94; IN DREI 81/2020; Lei 14.063/2020)
 
+
+> **Atualizacao automatica (01/08/2026, Nivel 1)** — fonte: [DREI - Instrucoes Normativas (IN 81/2020 atualizada)](https://www.gov.br/empresas-e-negocios/pt-br/drei/legislacao)
+> [TESTE AUTOMATIZADO - NAO E UMA MUDANCA REAL] Valor de taxa de teste da JUCESP em 2027: R$ 999,99.
+>
+> *Justificativa: Teste automatizado do mecanismo de aplicacao (sera revertido em seguida).*
 ### 5.1. Taxas — vigência 2026 (valores em R$, sede)
 
 ⚠️ **Valores mudam anualmente** (a maioria em janeiro; JucisRS reajusta em abril). Revisar a cada início de ano.
@@ -543,6 +548,7 @@ Quando a mudança é ambígua, contraditória entre fontes, ou a IA não consegu
 
 | Data | Mudança | Responsável |
 |---|---|---|
+| 01/08/2026 | [auto] DREI - Instrucoes Normativas (IN 81/2020 atualizada): [TESTE AUTOMATIZADO - NAO E UMA MUDANCA REAL] Valor de taxa de teste da JUCESP em 2027: R$ 999,99. | Vigia normativo (Nivel 1, automatico) |
 | 01/08/2026 | Consolidação inicial das 3 pesquisas em documento único | Claude (a pedido de Diogo) |
 | 01/08/2026 | Adicionada Parte IV (taxas/emolumentos e assinaturas) | Claude (a pedido de Diogo) |
 | 01/08/2026 | Desenhado sistema de atualização autônoma (3 níveis) — implementação técnica pendente | Claude (a pedido de Diogo) |

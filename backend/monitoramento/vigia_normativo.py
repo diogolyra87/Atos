@@ -37,6 +37,17 @@ BASE_CONHECIMENTO_PATH = os.path.join(REPO_DIR, "docs", "base_conhecimento_atos_
 # (Onde encontrar as tabelas oficiais) do base_conhecimento - nao inventadas. Quando o
 # documento nao trouxe uma URL de pagina especifica pra uma Junta (so o dominio geral),
 # isso fica marcado no nome da fonte com "(dominio geral)" pra revisao futura.
+#
+# Correcoes pos-primeira-execucao (01/08/2026), 2 fontes que erraram no baseline:
+# - JUCEC: certificado SSL do dominio e' de "www.jucec.ce.gov.br", nao "jucec.ce.gov.br"
+#   (sem www) - requests recusa por hostname mismatch. Corrigido adicionando o www.
+# - JucisRS: a URL "/tabela-de-precos" do documento-fonte esta desatualizada (404 real,
+#   nao bloqueio novo). O CMS da JucisRS gera um slug com hash novo a cada republicacao
+#   da pagina (ex: "tabela-de-precos-660af5d9a6344", "...-5e444edd72a22" em versoes
+#   anteriores - confirmado via busca) - ou seja, monitorar a URL direta da tabela
+#   quebraria de novo no proximo reajuste de preco. Trocado pela URL do catalogo de
+#   servicos ("carta-de-servicos/servicos?servico=815"), que aponta PRA a tabela atual
+#   mas e' um link de catalogo mais estavel (nao republicado a cada mudanca de preco).
 FONTES_SEED = [
     {"nome": "DREI - Instrucoes Normativas (IN 81/2020 atualizada)", "url": "https://www.gov.br/empresas-e-negocios/pt-br/drei/legislacao", "tipo": "drei", "estado": None},
     {"nome": "DOU - Consulta (Ministerio do Empreendedorismo)", "url": "https://www.in.gov.br/consulta/-/buscar/dou", "tipo": "dou", "estado": None},
@@ -46,11 +57,11 @@ FONTES_SEED = [
     {"nome": "JUCEB - Tabela de Precos Capital", "url": "https://www.ba.gov.br/juceb/tabelas-de-precos-capital", "tipo": "junta_estadual", "estado": "BA"},
     {"nome": "JUCEMG - Tabela de Precos", "url": "https://jucemg.mg.gov.br/pagina/52/tabela-de-precos", "tipo": "junta_estadual", "estado": "MG"},
     {"nome": "JUCEPE (dominio geral)", "url": "https://www.jucepe.pe.gov.br", "tipo": "junta_estadual", "estado": "PE"},
-    {"nome": "JucisRS - Tabela de Precos", "url": "https://jucisrs.rs.gov.br/tabela-de-precos", "tipo": "junta_estadual", "estado": "RS"},
+    {"nome": "JucisRS - Tabela de Precos", "url": "https://jucisrs.rs.gov.br/carta-de-servicos/servicos?servico=815", "tipo": "junta_estadual", "estado": "RS"},
     {"nome": "JUCESC - Base de Conhecimento (Atendimento)", "url": "https://atendimento.jucesc.sc.gov.br/help", "tipo": "junta_estadual", "estado": "SC"},
     {"nome": "JUCEPAR (dominio geral)", "url": "https://www.juntacomercial.pr.gov.br", "tipo": "junta_estadual", "estado": "PR"},
     {"nome": "JUCEG (dominio geral)", "url": "https://www.goias.gov.br/juceg", "tipo": "junta_estadual", "estado": "GO"},
-    {"nome": "JUCEC - Tabela de Precos", "url": "https://jucec.ce.gov.br/tabela-de-precos/", "tipo": "junta_estadual", "estado": "CE"},
+    {"nome": "JUCEC - Tabela de Precos", "url": "https://www.jucec.ce.gov.br/tabela-de-precos/", "tipo": "junta_estadual", "estado": "CE"},
     {"nome": "JUCEMS (dominio geral)", "url": "https://www.jucems.ms.gov.br", "tipo": "junta_estadual", "estado": "MS"},
     {"nome": "JUCIS-DF (dominio geral)", "url": "https://jucis.df.gov.br", "tipo": "junta_estadual", "estado": "DF"},
 ]

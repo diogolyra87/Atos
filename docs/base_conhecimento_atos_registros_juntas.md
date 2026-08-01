@@ -546,6 +546,8 @@ Quando a mudança é ambígua, contraditória entre fontes, ou a IA não consegu
 | 01/08/2026 | Consolidação inicial das 3 pesquisas em documento único | Claude (a pedido de Diogo) |
 | 01/08/2026 | Adicionada Parte IV (taxas/emolumentos e assinaturas) | Claude (a pedido de Diogo) |
 | 01/08/2026 | Desenhado sistema de atualização autônoma (3 níveis) — implementação técnica pendente | Claude (a pedido de Diogo) |
+| 01/08/2026 | Implementados Assistente ATOS (RAG + chat) e Vigia Normativo (job semanal + 3 níveis + Telegram), testados ponta a ponta em produção. Desvios documentados em `docs/DESVIOS_IMPLEMENTACAO_ASSISTENTE_ATOS.md` (paleta real vs. "Ametista" pedida, botões inline Telegram construídos do zero) | Claude (a pedido de Diogo) |
+| 01/08/2026 | Vigia Normativo: corrigidas 2 URLs de fonte com erro no primeiro run (JUCEC - hostname sem www; JucisRS - URL desatualizada, trocada por link de catálogo mais estável) — ver detalhe em `docs/DESVIOS_IMPLEMENTACAO_ASSISTENTE_ATOS.md` | Claude (a pedido de Diogo) |
 | — | Pendente: pesquisa complementar de JUCERJA/JUCEPE/JUCIS-DF/JUCEC/JUCEMS com mesmo nível de detalhe das demais | — |
 | — | Pendente: validar codificação exata de eventos por Junta antes de automatizar preenchimento | — |
 | — | Pendente: confirmar valores JUCEMG 2026 (S.A., atas, procuração, RDIC) em fonte oficial | — |

@@ -945,24 +945,36 @@ def _buscar_secoes_relevantes(termo_busca, top_n=2):
 
 
 def _gemini_assistente_atos(prompt):
-    """Chama o Gemini pedindo JSON estruturado {resposta, confianca}.
-    Mesma convencao ja usada em _gemini_protocolo/_gemini_texto_documento
+    """Chama o Gemini pedindo JSON estruturado {resposta, confianca}. Tenta
+    ate 3 vezes (1 tentativa original + 2 retries, com backoff de 1s/2s)
+    antes de desistir - o iatos. precisa estar sempre disponivel pro
+    cliente, uma falha ou timeout pontual da API nao pode virar erro na
+    hora. Mesma convencao ja usada em _gemini_protocolo/_gemini_texto_documento
     (chamada REST direta via urllib, modelo gemini-flash-latest)."""
-    import json as _json, urllib.request
+    import json as _json, urllib.request, time as _time
     if not GEMINI_KEY:
         return None
-    try:
-        body = {"contents": [{"parts": [{"text": prompt}]}]}
-        url = "https://generativelanguage.googleapis.com/v1beta/models/gemini-flash-latest:generateContent?key=" + GEMINI_KEY
-        req = urllib.request.Request(url, data=_json.dumps(body).encode(), headers={"Content-Type": "application/json"})
-        resp = urllib.request.urlopen(req, timeout=40)
-        data = _json.loads(resp.read().decode())
-        txt = data["candidates"][0]["content"]["parts"][0]["text"].strip()
-        txt = txt.replace("```json", "").replace("```", "").strip()
-        return _json.loads(txt)
-    except Exception as e:
-        print("Erro no Gemini (Assistente ATOS):", str(e)[:200])
-        return None
+    ultimo_erro = None
+    for tentativa in range(3):
+        try:
+            body = {"contents": [{"parts": [{"text": prompt}]}]}
+            url = "https://generativelanguage.googleapis.com/v1beta/models/gemini-flash-latest:generateContent?key=" + GEMINI_KEY
+            req = urllib.request.Request(url, data=_json.dumps(body).encode(), headers={"Content-Type": "application/json"})
+            resp = urllib.request.urlopen(req, timeout=40)
+            data = _json.loads(resp.read().decode())
+            txt = data["candidates"][0]["content"]["parts"][0]["text"].strip()
+            txt = txt.replace("```json", "").replace("```", "").strip()
+            resultado = _json.loads(txt)
+            if resultado.get("resposta"):
+                return resultado
+            ultimo_erro = "resposta do Gemini sem campo 'resposta' valido"
+        except Exception as e:
+            ultimo_erro = str(e)[:200]
+        if tentativa < 2:
+            print(f"   [iatos.] tentativa {tentativa + 1}/3 falhou ({ultimo_erro}), retentando...")
+            _time.sleep(1 + tentativa)
+    print("   [iatos.] todas as 3 tentativas falharam:", ultimo_erro)
+    return None
 
 
 def _contexto_processo_assistente(p):
@@ -999,22 +1011,32 @@ async def assistente_perguntar(dados: dict = Body(...), x_token: str = Header(No
     if not _tem_acesso_admin(usuario) and p.grupo_id != usuario.grupo_id:
         raise HTTPException(status_code=403, detail="Sem permissao para este processo")
 
-    termo_busca = (p.tipo_ato or "") + " " + (p.identificador_ato or "")
-    secoes = _buscar_secoes_relevantes(termo_busca, top_n=2)
-    secoes_texto = "\n\n---\n\n".join(s["corpo"] for s in secoes) if secoes else "(nenhuma secao especifica encontrada na base para esse tipo de ato)"
+    # Mensagem unica, literal, pros dois motivos de escalonamento (falha tecnica do
+    # Gemini mesmo apos os retries, OU baixa confianca de conteudo) - do ponto de
+    # vista do cliente o resultado e' o mesmo (alguem da equipe assume), entao NUNCA
+    # mostra um erro tecnico cru nem a resposta parcial de baixa confianca.
+    MENSAGEM_FALLBACK_IATOS = "Sua dúvida é específica e por isso um Operador Atos vai entrar em contato. Obrigado."
 
-    historico_texto = ""
-    if historico:
-        linhas_hist = []
-        for h in historico[-6:]:
-            papel = "Cliente" if h.get("autor") == "usuario" else "Assistente"
-            linhas_hist.append(papel + ": " + str(h.get("texto") or ""))
-        historico_texto = "\n".join(linhas_hist)
+    resultado = None
+    motivo_escalonamento = None
+    secoes = []
+    try:
+        termo_busca = (p.tipo_ato or "") + " " + (p.identificador_ato or "")
+        secoes = _buscar_secoes_relevantes(termo_busca, top_n=2)
+        secoes_texto = "\n\n---\n\n".join(s["corpo"] for s in secoes) if secoes else "(nenhuma secao especifica encontrada na base para esse tipo de ato)"
 
-    prompt = f"""Voce e o "Assistente ATOS", que ajuda clientes do sistema ATOS (gestao de registros
-em Juntas Comerciais) a entender o andamento e as implicacoes juridicas do ato societario
-especifico deles. Responda em portugues, de forma direta e acessivel (o usuario normalmente
-NAO e advogado).
+        historico_texto = ""
+        if historico:
+            linhas_hist = []
+            for h in historico[-6:]:
+                papel = "Cliente" if h.get("autor") == "usuario" else "iatos."
+                linhas_hist.append(papel + ": " + str(h.get("texto") or ""))
+            historico_texto = "\n".join(linhas_hist)
+
+        prompt = f"""Voce e o "iatos.", assistente de IA que ajuda clientes do sistema ATOS (gestao de
+registros em Juntas Comerciais) a entender o andamento e as implicacoes juridicas do ato
+societario especifico deles. Responda em portugues, de forma direta e acessivel (o usuario
+normalmente NAO e advogado).
 
 REGRA CRITICA: responda SOMENTE com base no CONTEXTO DO PROCESSO e na BASE DE CONHECIMENTO
 fornecidos abaixo. NUNCA invente informacao juridica que nao esteja no texto fornecido -
@@ -1038,30 +1060,45 @@ Responda APENAS com um JSON no formato exato:
 Use "baixa" sempre que a base de conhecimento fornecida nao cobrir claramente a pergunta,
 ou quando a resposta exigir julgamento juridico especifico do caso que voce nao pode garantir."""
 
-    resultado = _gemini_assistente_atos(prompt)
+        resultado = _gemini_assistente_atos(prompt)
+    except Exception as e:
+        # Qualquer excecao NAO tratada aqui (RAG, montagem de contexto, etc, nao so'
+        # a chamada do Gemini em si) tambem cai no fallback - o iatos. tem que
+        # responder sempre, nunca devolver um 500 cru pro cliente.
+        print("   [iatos.] excecao inesperada montando resposta:", str(e)[:300])
+        resultado = None
+
     if not resultado or not resultado.get("resposta"):
-        resposta_final = ("Nao consegui processar sua pergunta agora. Um especialista do ATOS "
-                           "vai revisar e te responder em breve.")
+        resposta_final = MENSAGEM_FALLBACK_IATOS
         confianca = "baixa"
+        motivo_escalonamento = "falha_tecnica"
     else:
-        resposta_final = resultado["resposta"]
         confianca = (resultado.get("confianca") or "media").lower()
         if confianca not in ("alta", "media", "baixa"):
             confianca = "media"
+        if confianca == "baixa":
+            resposta_final = MENSAGEM_FALLBACK_IATOS
+            motivo_escalonamento = "baixa_confianca"
+        else:
+            resposta_final = resultado["resposta"]
 
-    escalado = confianca == "baixa"
+    escalado = motivo_escalonamento is not None
     if escalado:
-        if "especialista" not in resposta_final.lower():
-            resposta_final += ("\n\nNao tenho certeza sobre esse ponto especifico - um especialista "
-                                "do ATOS vai revisar e te responder em breve.")
         _grupo = db.query(Grupo).filter(Grupo.id == p.grupo_id).first()
         _empresa_nome = (_grupo.nome if _grupo else None) or p.empresa or "cliente"
         _ato = p.identificador_ato or p.tipo_ato or "processo"
+        motivo_label = (
+            "FALHA TECNICA (Gemini indisponivel/erro mesmo apos retries, ou excecao no backend)"
+            if motivo_escalonamento == "falha_tecnica"
+            else "BAIXA CONFIANCA (base de conhecimento nao cobre com seguranca)"
+        )
+        resposta_ia_bruta = resultado.get("resposta") if resultado else None
         aviso = (
-            "[Assistente ATOS - baixa confianca, revisar]\n"
+            f"[iatos. - escalonado: {motivo_label}]\n"
             f"Cliente: {_empresa_nome} | Processo: {_ato} | Usuario: {usuario.login}\n\n"
             f"Pergunta: {pergunta}\n\n"
-            f"Resposta dada pela IA (baixa confianca): {resposta_final}"
+            + (f"Resposta que a IA daria (nao mostrada ao cliente): {resposta_ia_bruta}\n\n" if resposta_ia_bruta else "")
+            + "Cliente recebeu a mensagem padrao de encaminhamento a um operador."
         )
         notificar_telegram(aviso)
 
@@ -1074,6 +1111,7 @@ ou quando a resposta exigir julgamento juridico especifico do caso que voce nao 
         nivel_confianca=confianca,
         secao_usada=", ".join(s["titulo"] for s in secoes) if secoes else None,
         escalado_admin=escalado,
+        motivo_escalonamento=motivo_escalonamento,
     )
     db.add(conversa)
     db.commit()

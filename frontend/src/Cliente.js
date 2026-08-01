@@ -1,7 +1,7 @@
 ﻿import { useState, useEffect } from "react";
 import { useSearchParams } from "react-router-dom";
 import axios from "axios";
-import { STATUS_CONFIG, formatarDataExtenso, StatCard, FluxoDoDiaCard, AtividadeRecente, StatusDonut, AssistenteAtos } from "./components/Compartilhados";
+import { STATUS_CONFIG, formatarDataExtenso, StatCard, FluxoDoDiaCard, AtividadeRecente, StatusDonut, BotaoIatos, IatosChat } from "./components/Compartilhados";
 
 const API = "";
 
@@ -258,6 +258,7 @@ function ChatProcessoCliente({ processoId, token }) {
 function DetalheProcessoCliente({ p, sessao, onVoltar }) {
   const [anexos, setAnexos] = useState([]);
   const [enviando, setEnviando] = useState(false);
+  const [iatosAberto, setIatosAberto] = useState(false);
 
   async function carregarAnexos() {
     try {
@@ -323,7 +324,8 @@ function DetalheProcessoCliente({ p, sessao, onVoltar }) {
             CNPJ {p.cnpj} - NIRE {p.nire}
           </div>
         </div>
-        <div style={{ display: "flex", gap: 8 }}>
+        <div style={{ display: "flex", gap: 16, alignItems: "center" }}>
+          <BotaoIatos processo={p} onAbrir={() => setIatosAberto(true)} />
           {p.arquivo_registro && (
             <button style={{ background: "#2563eb", color: "#fff", border: "none", borderRadius: 8, padding: "9px 18px", fontSize: 13, cursor: "pointer" }} onClick={baixarRegistro}>
               Baixar registro
@@ -332,6 +334,7 @@ function DetalheProcessoCliente({ p, sessao, onVoltar }) {
           <button style={sD.btnSecondary} onClick={onVoltar}>Voltar</button>
         </div>
       </div>
+      {iatosAberto && <IatosChat processo={p} token={sessao.token} onFechar={() => setIatosAberto(false)} />}
 
       <div style={{ fontSize: 13, color: "#64748b", marginBottom: 12 }}>Status:</div>
       <div style={sD.statusRow}>
@@ -373,7 +376,6 @@ function DetalheProcessoCliente({ p, sessao, onVoltar }) {
           <input type="file" style={{ display: "none" }} disabled={enviando} onChange={e => enviarAnexo(e.target.files[0])} />
         </label>
       </div>
-      <AssistenteAtos processo={p} token={sessao.token} modoAdmin={false} />
     </div>
   );
 }
@@ -383,6 +385,7 @@ export function Painel({ sessao, onSair }) {
   const [fluxoAtivo, setFluxoAtivo] = useState(null);
   const [eventosRecentes, setEventosRecentes] = useState([]);
   const [processoSelecionado, setProcessoSelecionado] = useState(null);
+  const [iatosAberto, setIatosAberto] = useState(null);
   const [carregando, setCarregando] = useState(true);
   const [erro, setErro] = useState("");
   const [exigenciaAberta, setExigenciaAberta] = useState(null);
@@ -627,8 +630,7 @@ export function Painel({ sessao, onSair }) {
     const listaAtualizada = await carregar();
     alert(`Concluido: ${feitos} processo(s) criado(s)${erros ? `, ${erros} com erro` : ""}.`);
     // Se so' um processo foi criado (fluxo mais comum: inserir um ato por vez), abre
-    // direto o modal de documentos dele - e' onde mora o Assistente ATOS. Sem isso, o
-    // cliente so' veria o widget clicando de novo no item na lista depois de recarregar.
+    // direto o modal de documentos dele, ja com o botao do iatos. disponivel ali.
     if (feitos === 1 && ultimoProcessoId && listaAtualizada) {
       const novo = listaAtualizada.find(p => p.id === ultimoProcessoId);
       if (novo) setDocsAbertos(novo);
@@ -697,11 +699,12 @@ export function Painel({ sessao, onSair }) {
                       {p.status === "exigencia" ? " ›" : " ↓"}
                     </span>
                   </div>
-                  <div>
+                  <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
                     <button onClick={() => setProcessoSelecionado(p)}
                       style={{ background: "transparent", border: "0.5px solid #2563eb", color: "#2563eb", borderRadius: 6, padding: "5px 12px", fontSize: 12, cursor: "pointer", fontFamily: "'Inter', sans-serif" }}>
                       Ver processo
                     </button>
+                    <BotaoIatos processo={p} onAbrir={setIatosAberto} />
                   </div>
                 </div>
               ))}
@@ -931,7 +934,9 @@ export function Painel({ sessao, onSair }) {
                   ))}
                 </div>
               )}
-              <AssistenteAtos processo={docsAbertos} token={sessao.token} modoAdmin={false} />
+              <div style={{ marginTop: 16, marginBottom: 8 }}>
+                <BotaoIatos processo={docsAbertos} onAbrir={setIatosAberto} />
+              </div>
               <ChatProcessoCliente processoId={docsAbertos.id} token={sessao.token} />
               <div style={s.modalBtns}>
                 <button style={s.btnFechar} onClick={() => setDocsAbertos(null)}>Fechar</button>
@@ -940,6 +945,7 @@ export function Painel({ sessao, onSair }) {
           </div>
         );
       })()}
+      {iatosAberto && <IatosChat processo={iatosAberto} token={sessao.token} onFechar={() => setIatosAberto(null)} />}
       {exigenciaAberta && (
         <div style={s.overlay} onClick={() => setExigenciaAberta(null)}>
           <div style={s.modal} onClick={e => e.stopPropagation()}>

@@ -113,6 +113,10 @@ class AssistenteConversa(Base):
     nivel_confianca = Column(String, nullable=True)  # alta | media | baixa
     secao_usada = Column(String, nullable=True)  # ancora da base de conhecimento usada como contexto (auditoria/debug)
     escalado_admin = Column(Boolean, default=False)
+    # so' preenchido quando escalado_admin=True: "falha_tecnica" (Gemini fora do ar/erro
+    # mesmo apos retries) ou "baixa_confianca" (base de conhecimento nao cobre a pergunta).
+    # Permite monitorar se um dos dois motivos esta acontecendo com frequencia demais.
+    motivo_escalonamento = Column(String, nullable=True)
     criado_em = Column(DateTime, default=datetime.now)
 
 

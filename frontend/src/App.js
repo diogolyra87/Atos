@@ -1,7 +1,7 @@
 ﻿import { useState, useEffect } from "react";
 import axios from "axios";
 import { Painel as PainelCliente } from "./Cliente";
-import { STATUS_CONFIG, formatarDataExtenso, StatCard, FluxoDoDiaCard, AtividadeRecente, StatusDonut, AssistenteAtos } from "./components/Compartilhados";
+import { STATUS_CONFIG, formatarDataExtenso, StatCard, FluxoDoDiaCard, AtividadeRecente, StatusDonut, BotaoIatos, IatosChat } from "./components/Compartilhados";
 
 const API = "";
 
@@ -178,6 +178,7 @@ function AppPainel({ onSair, sessao }) {
   const [eventosRecentes, setEventosRecentes] = useState([]);
   const [tela, setTela] = useState("processos");
   const [processoSelecionado, setProcessoSelecionado] = useState(null);
+  const [iatosAberto, setIatosAberto] = useState(null);
   const [modalNovo, setModalNovo] = useState(false);
   const [fBusca, setFBusca] = useState("");
   const [fUf, setFUf] = useState("");
@@ -550,7 +551,10 @@ function AppPainel({ onSair, sessao }) {
                   <div style={s.cell}>{abreviarAto(p.identificador_ato, p.data_ata, p.hora_ata)}</div>
                   <div style={{ ...s.cell, fontFamily: "monospace", fontSize: 11 }}>{p.numero_protocolo || "—"}</div>
                   <div><span style={s.badge(p.status)}>{STATUS_CONFIG[p.status]?.label || p.status}</span></div>
-                  <div><button style={s.btnVer} onClick={e => { e.stopPropagation(); setProcessoSelecionado(p); }}>Ver</button></div>
+                  <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+                    <button style={s.btnVer} onClick={e => { e.stopPropagation(); setProcessoSelecionado(p); }}>Ver</button>
+                    <div onClick={e => e.stopPropagation()}><BotaoIatos processo={p} onAbrir={setIatosAberto} /></div>
+                  </div>
                 </div>
               ))}
             </div>
@@ -1026,7 +1030,9 @@ async function excluirProcesso() {
           </div>
         </div>
 
-        <AssistenteAtos processo={p} token={null} modoAdmin={true} />
+        <div style={{ marginTop: 16, marginBottom: 8 }}>
+          <BotaoIatos processo={p} onAbrir={setIatosAberto} />
+        </div>
         <ChatProcesso processoId={p.id} />
         {p.observacoes && (
           <div style={{ background: "#f8fafc", borderRadius: 8, padding: 12, fontSize: 13, color: "#475569" }}>
@@ -1294,6 +1300,7 @@ async function excluirProcesso() {
           </div>
         </div>
       )}
+      {iatosAberto && <IatosChat processo={iatosAberto} token={sessao.token} onFechar={() => setIatosAberto(null)} />}
     </>
   );
 }

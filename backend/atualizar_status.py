@@ -17,7 +17,9 @@ from jucesp_infosimples import descobrir_registro as descobrir_registro_infosimp
 from consultar_jucerja import consultar_jucerja, classificar_status_rj, baixar_documento_jucerja
 from consultar_juceb import consultar_juceb, classificar_status_ba, baixar_documento_juceb
 from consultar_jucepe import consultar_jucepe, classificar_status_pe, baixar_documento_jucepe
+from empreendedor_digital_scraper import consultar_empreendedor_digital
 from bot import enviar as enviar_telegram, ADMIN_CHAT_ID
+import json as _json
 
 load_dotenv("/root/atos/.env")
 
@@ -462,6 +464,57 @@ def processar_pe(db, agora):
                 print("   [PE] erro ao baixar documento automaticamente:", e)
 
 
+def _carregar_estados_empreendedor_digital():
+    """Le automacao/estados_empreendedor_digital.json (estados ativos na
+    plataforma publica compartilhada 'Empreendedor Digital' - MG/DF/CE/MS/
+    MT/AP confirmados rodando o mesmo template). Nunca derruba o processo
+    principal se o arquivo faltar ou estiver invalido - so desativa essa
+    parte da consulta."""
+    caminho = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "automacao", "estados_empreendedor_digital.json")
+    try:
+        with open(caminho, "r", encoding="utf-8") as f:
+            return _json.load(f)
+    except Exception as e:
+        print("   [Empreendedor Digital] falha ao carregar config de estados:", e)
+        return {}
+
+
+def processar_empreendedor_digital(db, agora):
+    """Consulta generica pra qualquer estado configurado como ativo em
+    estados_empreendedor_digital.json (plataforma publica 'Empreendedor
+    Digital', sem login). Erro em um estado ou em um processo especifico
+    NUNCA interrompe os demais - mesmo padrao de isolamento de erro usado
+    em processar_rj/ba/pe."""
+    estados = _carregar_estados_empreendedor_digital()
+    for uf, cfg in estados.items():
+        if not cfg.get("ativo") or not cfg.get("dominio"):
+            continue
+        try:
+            processos = db.query(Processo).filter(
+                Processo.uf == uf,
+                Processo.numero_protocolo.isnot(None),
+                Processo.numero_protocolo != "",
+            ).all()
+            pendentes = [p for p in processos if (p.status or "").lower() != "finalizado"]
+            print("[" + uf + "] " + str(len(pendentes)) + " processo(s) com protocolo (Empreendedor Digital).\n")
+            for p in pendentes:
+                print("-> [" + uf + "] " + str(p.empresa) + " | prot " + str(p.numero_protocolo) + " | status: " + (p.status or ""))
+                try:
+                    res = consultar_empreendedor_digital(cfg["dominio"], p.numero_protocolo, headless=True)
+                except Exception as e:
+                    print("   ERRO consulta " + uf + " (mantem):", e)
+                    continue
+                if res.get("erro"):
+                    print("   " + uf + " erro (mantem status):", res["erro"])
+                    continue
+                print("   " + uf + ":", res)
+                p.status_jucesp = res.get("status_texto")
+                aplicar_classificacao(db, p, res.get("classificacao", "tramitacao"), agora)
+                print()
+        except Exception as e:
+            print("   ERRO GERAL processando " + uf + " (Empreendedor Digital, mantem demais estados):", e)
+
+
 def verificar_atrasos_deferido(db, agora):
     """Verifica processos parados em deferido ha mais de 24h (UFs com download
     automatico) e alerta o admin via bot + email, uma unica vez por processo."""
@@ -507,6 +560,7 @@ def processar():
     processar_rj(db, agora)
     processar_ba(db, agora)
     processar_pe(db, agora)
+    processar_empreendedor_digital(db, agora)
     db.close()
     print("FIM.")
 

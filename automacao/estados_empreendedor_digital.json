@@ -1,0 +1,74 @@
+{
+  "MG": {
+    "nome_junta": "JUCEMG",
+    "dominio": "portalservicos.jucemg.mg.gov.br",
+    "ativo": true,
+    "captcha_no_dom": false,
+    "validado_com_protocolo_real": false,
+    "observacao": "Sem captcha no DOM. Testado com protocolo fake (999999999) - fluxo de 'nao encontrado' confirmado. Sem protocolo real disponivel no banco ainda pra confirmar o caminho de sucesso."
+  },
+  "DF": {
+    "nome_junta": "JUCIS-DF",
+    "dominio": "portalservicos.jucis.df.gov.br",
+    "ativo": true,
+    "captcha_no_dom": true,
+    "validado_com_protocolo_real": true,
+    "observacao": "Cloudflare Turnstile presente no HTML mas NAO bloqueou a consulta headless. Validado 01/08/2026 com protocolo real de producao (262347954, Neoenergia Distribuicao Brasilia) - retornou PENDENTE/exigencia corretamente, batendo com o banco."
+  },
+  "RS": {
+    "nome_junta": "JucisRS",
+    "dominio": "portalservicos.jucisrs.rs.gov.br",
+    "ativo": false,
+    "captcha_no_dom": true,
+    "validado_com_protocolo_real": false,
+    "observacao": "BLOQUEADO: Cloudflare Turnstile impede a consulta via Chromium headless (checkbox nao valida, submissao retorna 'Erro: null'). Precisa de servico de resolucao de captcha (2Captcha/CapSolver) pra ativar - nao implementado. Mantido inativo ate decisao."
+  },
+  "CE": {
+    "nome_junta": "JUCEC",
+    "dominio": "portalservicos.jucec.ce.gov.br",
+    "ativo": true,
+    "captcha_no_dom": true,
+    "validado_com_protocolo_real": false,
+    "observacao": "Mesma plataforma confirmada (campo #protocolo presente), Turnstile no DOM igual DF/RS. NAO testado com protocolo real (nenhum processo CE no banco ainda) - ativo por extrapolacao do comportamento do DF, requer validacao no primeiro uso real."
+  },
+  "MS": {
+    "nome_junta": "JUCEMS",
+    "dominio": "portalservicos.jucems.ms.gov.br",
+    "ativo": true,
+    "captcha_no_dom": true,
+    "validado_com_protocolo_real": false,
+    "observacao": "Mesma situacao do CE: plataforma confirmada, nao validado com protocolo real ainda."
+  },
+  "MT": {
+    "nome_junta": "JUCEMAT",
+    "dominio": "portalservicos.jucemat.mt.gov.br",
+    "ativo": true,
+    "captcha_no_dom": true,
+    "validado_com_protocolo_real": false,
+    "observacao": "Mesma situacao do CE: plataforma confirmada, nao validado com protocolo real ainda."
+  },
+  "AP": {
+    "nome_junta": "JUCAP",
+    "dominio": "portalservicos.jucap.ap.gov.br",
+    "ativo": true,
+    "captcha_no_dom": true,
+    "validado_com_protocolo_real": false,
+    "observacao": "Mesma situacao do CE: plataforma confirmada, nao validado com protocolo real ainda."
+  },
+  "AC": {
+    "nome_junta": "JUCEAC",
+    "dominio": null,
+    "ativo": false,
+    "captcha_no_dom": null,
+    "validado_com_protocolo_real": false,
+    "observacao": "Dominio nao confirmado - tentativa 'portalservicos.juceac.ac.gov.br' nao resolveu (DNS). Precisa achar a URL correta antes de ativar."
+  },
+  "RR": {
+    "nome_junta": "JUCERR",
+    "dominio": null,
+    "ativo": false,
+    "captcha_no_dom": null,
+    "validado_com_protocolo_real": false,
+    "observacao": "Dominio nao confirmado - tentativa 'portalservicos.jucerr.rr.gov.br' nao resolveu (DNS). Precisa achar a URL correta antes de ativar."
+  }
+}

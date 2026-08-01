@@ -1,7 +1,7 @@
 ﻿import { useState, useEffect } from "react";
 import { useSearchParams } from "react-router-dom";
 import axios from "axios";
-import { STATUS_CONFIG, formatarDataExtenso, StatCard, FluxoDoDiaCard, AtividadeRecente, StatusDonut, BotaoIatos, IatosChat } from "./components/Compartilhados";
+import { STATUS_CONFIG, formatarDataExtenso, StatCard, FluxoDoDiaCard, AtividadeRecente, StatusDonut, BotaoIatos, IatosChat, subtituloProcesso } from "./components/Compartilhados";
 
 const API = "";
 
@@ -686,7 +686,7 @@ export function Painel({ sessao, onSair }) {
                 <div key={p.id} style={s.row}>
                   <div>
                     <div style={s.empresa}>{p.empresa}</div>
-                    <div style={s.metaEmp}>CNPJ {p.cnpj}{p.nire ? ` · NIRE ${p.nire}` : ""}</div>
+                    <div style={s.metaEmp}>{subtituloProcesso(p)}</div>
                   </div>
                   <div style={s.cell}>{p.uf || "—"}</div>
                   <div style={s.cell}>{abreviarAto(p.identificador_ato, p.data_ata)}</div>
@@ -701,7 +701,7 @@ export function Painel({ sessao, onSair }) {
                   </div>
                   <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
                     <button onClick={() => setProcessoSelecionado(p)}
-                      style={{ background: "transparent", border: "0.5px solid #2563eb", color: "#2563eb", borderRadius: 6, padding: "5px 12px", fontSize: 12, cursor: "pointer", fontFamily: "'Inter', sans-serif" }}>
+                      style={{ background: "#fff", border: "0.5px solid #c9c9c4", color: "#1a1a1a", borderRadius: 8, padding: "10px 16px", fontSize: 13.5, cursor: "pointer", fontFamily: "'Inter', sans-serif" }}>
                       Ver processo
                     </button>
                     <BotaoIatos processo={p} onAbrir={setIatosAberto} />
@@ -1001,8 +1001,8 @@ function estilos() {
     thead: { display: "grid", gridTemplateColumns: "2.5fr 0.5fr 1.3fr 1.2fr 1fr", padding: "10px 16px", background: "#f1f5f9", borderBottom: "0.5px solid #e2e8f0" },
     th: { fontSize: 11, fontWeight: 500, color: "#64748b" },
     row: { display: "grid", gridTemplateColumns: "2.2fr 0.5fr 1.2fr 1fr 0.9fr 0.9fr", padding: "13px 16px", borderBottom: "0.5px solid #f1f5f9", alignItems: "center" },
-    empresa: { fontSize: 13, fontWeight: 500, color: "#23282a" },
-    metaEmp: { fontFamily: "monospace", fontSize: 11, color: "#94a3b8", marginTop: 2 },
+    empresa: { fontSize: 15, fontWeight: 500, color: "#1a1a1a", margin: "0 0 3px" },
+    metaEmp: { fontSize: 13, color: "#6b6b68", margin: 0 },
     cell: { fontSize: 12, color: "#475569" },
     badge: { display: "inline-block", padding: "4px 12px", borderRadius: 20, fontSize: 12, fontWeight: 500 },
     overlay: { position: "fixed", inset: 0, background: "rgba(0,0,0,0.5)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 1000 },

@@ -11,6 +11,24 @@ export const STATUS_CONFIG = {
   finalizado: { label: "Finalizado", bg: "#cfe8d8", color: "#15803d" },
 };
 
+export const JUNTA_POR_UF = {
+  AC: "JUCEAC", AL: "JUCEAL", AP: "JUCAP", AM: "JUCEA", BA: "JUCEB", CE: "JUCEC",
+  DF: "JUCIS-DF", ES: "JUCEES", GO: "JUCEG", MA: "JUCEMA", MT: "JUCEMAT", MS: "JUCEMS",
+  MG: "JUCEMG", PA: "JUCEPA", PB: "JUCEP", PR: "JUCEPAR", PE: "JUCEPE", PI: "JUCEPI",
+  RJ: "JUCERJA", RN: "JUCERN", RS: "JucisRS", RO: "JUCER", RR: "JUCERR", SC: "JUCESC",
+  SP: "JUCESP", SE: "JUCESE", TO: "JUCETO",
+};
+
+export function nomeJunta(uf) {
+  const sigla = (uf || "").toUpperCase().trim();
+  return JUNTA_POR_UF[sigla] || sigla || "-";
+}
+
+export function subtituloProcesso(p) {
+  const ato = p.identificador_ato || p.tipo_ato || "-";
+  return ato + " · " + nomeJunta(p.uf);
+}
+
 export function chaveDataAta(dataAta) {
   const m = (dataAta || "").match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
   if (!m) return null;
@@ -179,16 +197,40 @@ function mensagemInicialIatos(p) {
   return "Esse ato ainda está sendo preparado para protocolo. Posso te ajudar a entender os próximos passos.";
 }
 
-// Botao compacto pra barra de acoes (ao lado de "Ver processo"/"Ver") - so'
-// dispara onAbrir(processo), quem guarda o estado "qual processo esta com o
-// chat aberto" e renderiza <IatosChat> e' o componente pai (Cliente.js/App.js).
-export function BotaoIatos({ processo, onAbrir }) {
+// Icone oficial do iatos. (quadrado azul + "a." em serifada preta) - reusado
+// identico no botao fechado e no cabecalho do chat aberto, conforme
+// docs/iatos_referencia_visual.html. "AtosBrand" e' a fonte oficial da logo
+// "atos." (@font-face em public/index.html) - cai pra Georgia se o arquivo
+// da fonte nao estiver disponivel (ver nota no relatorio).
+function IconeIatos({ tamanho = 22 }) {
   return (
-    <div onClick={() => onAbrir(processo)}
-      style={{ cursor: "pointer", lineHeight: 1.25, userSelect: "none" }}>
-      <div style={{ fontSize: 10, color: "#94a3b8" }}>Precisa de ajuda?</div>
-      <div style={{ fontSize: 12, fontWeight: 600, color: "#7c3aed" }}>✨ Falar com o iatos.</div>
-    </div>
+    <span style={{ width: tamanho, height: tamanho, borderRadius: 5, background: "#0091D4", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+      <span style={{ fontFamily: "AtosBrand, Georgia, 'Times New Roman', serif", fontWeight: 700, fontSize: 15, color: "#000000", lineHeight: 1, display: "flex", alignItems: "baseline" }}>
+        a<span style={{ fontSize: 10, marginLeft: 1 }}>.</span>
+      </span>
+    </span>
+  );
+}
+
+// Botao pra barra de acoes (ao lado de "Ver processo"/"Ver") - area clicavel
+// UNICA: onClick fica so' no <button> pai, os spans internos (icone/texto/
+// separador) nao tem handler proprio nenhum, entao qualquer clique dentro
+// borbulha pro botao (comportamento nativo do <button>). Dispara
+// onAbrir(processo); quem guarda "qual processo esta com o chat aberto" e
+// renderiza <IatosChat> e' o componente pai (Cliente.js/App.js).
+export function BotaoIatos({ processo, onAbrir }) {
+  const [hover, setHover] = useState(false);
+  return (
+    <button
+      onClick={() => onAbrir(processo)}
+      onMouseEnter={() => setHover(true)}
+      onMouseLeave={() => setHover(false)}
+      style={{ display: "inline-flex", alignItems: "center", gap: 7, padding: "10px 14px", border: "0.5px solid #c9c9c4", borderRadius: 8, background: hover ? "#f5f5f3" : "#fff", cursor: "pointer", fontFamily: "inherit" }}>
+      <IconeIatos />
+      <span style={{ fontSize: 13.5, color: "#2451D6", whiteSpace: "nowrap" }}>iatos.</span>
+      <span style={{ width: 1, height: 14, background: "#d5d5d0" }} />
+      <span style={{ fontSize: 12, color: "#6b6b68", whiteSpace: "nowrap" }}>Posso ajudar?</span>
+    </button>
   );
 }
 
@@ -248,24 +290,27 @@ export function IatosChat({ processo, token, onFechar }) {
   return (
     <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.5)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 1100 }}
       onClick={onFechar}>
-      <div style={{ width: 420, maxWidth: "92vw", maxHeight: "80vh", border: "0.5px solid #ddd6fe", borderRadius: 10, overflow: "hidden", boxShadow: "0 10px 50px rgba(20,10,50,0.35)" }}
+      <div style={{ width: 420, maxWidth: "92vw", maxHeight: "80vh", border: "0.5px solid #e0e0dc", borderRadius: 12, overflow: "hidden", boxShadow: "0 10px 50px rgba(20,10,50,0.25)" }}
         onClick={e => e.stopPropagation()}>
-        <div style={{ background: "linear-gradient(135deg,#7c3aed,#2dd4bf)", padding: "10px 16px", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-          <span style={{ fontSize: 14, fontWeight: 600, color: "#fff" }}>✨ iatos.</span>
-          <span onClick={onFechar} style={{ fontSize: 12, color: "#fff", cursor: "pointer", opacity: 0.85 }}>fechar ✕</span>
+        <div style={{ padding: "10px 14px", borderBottom: "0.5px solid #e0e0dc", display: "flex", justifyContent: "space-between", alignItems: "center", background: "#fff" }}>
+          <span style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
+            <IconeIatos />
+            <span style={{ fontSize: 14.5, color: "#1a1a1a" }}>iatos<span style={{ color: "#2451D6" }}>.</span></span>
+          </span>
+          <span onClick={onFechar} style={{ fontSize: 14, color: "#999", cursor: "pointer" }}>✕</span>
         </div>
         <div style={{ padding: 14, background: "#fff" }}>
           <div style={{ maxHeight: 340, overflowY: "auto", display: "flex", flexDirection: "column", gap: 8, marginBottom: 12 }}>
             {msgs.map((m, i) => {
               const meu = m.autor === "usuario";
               return (
-                <div key={i} style={{ alignSelf: meu ? "flex-end" : "flex-start", maxWidth: "85%", background: meu ? "#dbeafe" : "#f5f3ff", borderRadius: 10, padding: "8px 12px" }}>
-                  <div style={{ fontSize: 13, color: "#23282a", whiteSpace: "pre-wrap", wordBreak: "break-word" }}>{m.texto}</div>
+                <div key={i} style={{ alignSelf: meu ? "flex-end" : "flex-start", maxWidth: "85%", background: meu ? "#dbeafe" : "#f5f5f3", borderRadius: 10, padding: "8px 12px" }}>
+                  <div style={{ fontSize: 13, color: "#1a1a1a", whiteSpace: "pre-wrap", wordBreak: "break-word" }}>{m.texto}</div>
                 </div>
               );
             })}
             {enviando && (
-              <div style={{ alignSelf: "flex-start", maxWidth: "85%", background: "#f5f3ff", borderRadius: 10, padding: "8px 12px", fontSize: 13, color: "#94a3b8" }}>
+              <div style={{ alignSelf: "flex-start", maxWidth: "85%", background: "#f5f5f3", borderRadius: 10, padding: "8px 12px", fontSize: 13, color: "#94a3b8" }}>
                 digitando...
               </div>
             )}
@@ -276,7 +321,7 @@ export function IatosChat({ processo, token, onFechar }) {
               placeholder="Digite sua pergunta..."
               style={{ flex: 1, minHeight: 40, maxHeight: 120, padding: "8px 12px", border: "0.5px solid #e2e8f0", borderRadius: 8, fontSize: 13, outline: "none", resize: "vertical", fontFamily: "sans-serif" }} />
             <button onClick={enviar} disabled={enviando}
-              style={{ background: "linear-gradient(135deg,#7c3aed,#2dd4bf)", color: "#fff", border: "none", padding: "10px 18px", borderRadius: 8, fontSize: 13, cursor: "pointer", height: 40 }}>
+              style={{ background: "#2451D6", color: "#fff", border: "none", padding: "10px 18px", borderRadius: 8, fontSize: 13, cursor: "pointer", height: 40 }}>
               {enviando ? "..." : "Enviar"}
             </button>
           </div>

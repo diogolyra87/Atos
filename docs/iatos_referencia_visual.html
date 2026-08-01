@@ -1,0 +1,219 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<title>iatos. — referência visual aprovada</title>
+<style>
+  body {
+    font-family: -apple-system, "Segoe UI", Roboto, sans-serif;
+    background: #f7f7f5;
+    padding: 40px;
+  }
+  .label {
+    font-size: 12px;
+    color: #888;
+    margin-bottom: 8px;
+  }
+  .card {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    background: #fff;
+    border: 0.5px solid #e0e0dc;
+    border-radius: 12px;
+    padding: 14px 16px;
+    max-width: 700px;
+    margin-bottom: 20px;
+  }
+  .empresa {
+    font-size: 15px;
+    font-weight: 500;
+    margin: 0 0 3px;
+    color: #1a1a1a;
+  }
+  .subtitulo {
+    font-size: 13px;
+    margin: 0;
+    color: #6b6b68;
+  }
+  .actions {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex-shrink: 0;
+  }
+  .btn-ver-processo {
+    font-size: 13.5px;
+    padding: 10px 16px;
+    border: 0.5px solid #c9c9c4;
+    border-radius: 8px;
+    background: #fff;
+    cursor: pointer;
+    color: #1a1a1a;
+  }
+  /* ===== BOTÃO IATOS — ÁREA CLICÁVEL ÚNICA ===== */
+  .btn-iatos {
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    padding: 10px 14px;
+    border: 0.5px solid #c9c9c4;
+    border-radius: 8px;
+    background: #fff;
+    cursor: pointer;
+  }
+  .btn-iatos:hover {
+    background: #f5f5f3;
+  }
+  /* ===== ÍCONE: quadrado azul com "a." preto, tipografia da logo ===== */
+  .icone-iatos {
+    width: 22px;
+    height: 22px;
+    border-radius: 5px;
+    background: #0091D4;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+  }
+  .icone-iatos span {
+    font-family: Georgia, "Times New Roman", serif;
+    font-weight: 700;
+    font-size: 15px;
+    color: #000000;
+    line-height: 1;
+    display: flex;
+    align-items: baseline;
+  }
+  .icone-iatos .ponto {
+    font-size: 10px;
+    margin-left: 1px;
+  }
+  .texto-iatos {
+    font-size: 13.5px;
+    color: #2451D6;
+    white-space: nowrap;
+  }
+  .separador {
+    width: 1px;
+    height: 14px;
+    background: #d5d5d0;
+  }
+  .texto-posso-ajudar {
+    font-size: 12px;
+    color: #6b6b68;
+    white-space: nowrap;
+  }
+  /* ===== CABEÇALHO DO CHAT (versão aberta) ===== */
+  .chat-preview {
+    border: 0.5px solid #e0e0dc;
+    border-radius: 12px;
+    overflow: hidden;
+    max-width: 340px;
+    background: #fff;
+  }
+  .chat-header {
+    padding: 10px 14px;
+    border-bottom: 0.5px solid #e0e0dc;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+  .chat-header-left {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .chat-header .icone-iatos {
+    width: 22px;
+    height: 22px;
+  }
+  .chat-header .texto-iatos-header {
+    font-size: 14.5px;
+    color: #1a1a1a;
+  }
+  .chat-header .texto-iatos-header .ponto-azul {
+    color: #2451D6;
+  }
+</style>
+</head>
+<body>
+
+  <p class="label">Referência 1 — botão iatos. na barra de ações (área INTEIRA clicável, abre o chat)</p>
+  <div class="card">
+    <div>
+      <p class="empresa">CONSORCIO POT M 475</p>
+      <p class="subtitulo">Alteração de representante legal · JUCERJA</p>
+    </div>
+    <div class="actions">
+      <button class="btn-ver-processo">Ver processo</button>
+      <button class="btn-iatos" onclick="alert('Abriria o chat do iatos.')">
+        <span class="icone-iatos">
+          <span>a<span class="ponto">.</span></span>
+        </span>
+        <span class="texto-iatos">iatos.</span>
+        <span class="separador"></span>
+        <span class="texto-posso-ajudar">Posso ajudar?</span>
+      </button>
+    </div>
+  </div>
+
+  <p class="label">Referência 2 — segunda linha de exemplo (confirmar consistência em lista)</p>
+  <div class="card">
+    <div>
+      <p class="empresa">QUESTGLOBAL BRAZIL LTDA.</p>
+      <p class="subtitulo">Redução de capital social · JUCEMG</p>
+    </div>
+    <div class="actions">
+      <button class="btn-ver-processo">Ver processo</button>
+      <button class="btn-iatos" onclick="alert('Abriria o chat do iatos.')">
+        <span class="icone-iatos">
+          <span>a<span class="ponto">.</span></span>
+        </span>
+        <span class="texto-iatos">iatos.</span>
+        <span class="separador"></span>
+        <span class="texto-posso-ajudar">Posso ajudar?</span>
+      </button>
+    </div>
+  </div>
+
+  <p class="label">Referência 3 — cabeçalho do chat aberto (mesmo ícone, versão compacta)</p>
+  <div class="chat-preview">
+    <div class="chat-header">
+      <span class="chat-header-left">
+        <span class="icone-iatos">
+          <span style="font-size: 15px;">a<span class="ponto">.</span></span>
+        </span>
+        <span class="texto-iatos-header">iatos<span class="ponto-azul">.</span></span>
+      </span>
+      <span style="color:#999; cursor:pointer;">✕</span>
+    </div>
+    <div style="padding: 14px;">
+      <div style="background:#f5f5f3; border-radius:10px; padding:10px 12px; font-size:13px; color:#1a1a1a; max-width:90%;">
+        Como posso ajudar com esse processo?
+      </div>
+    </div>
+  </div>
+
+  <hr style="margin: 40px 0; border: none; border-top: 1px solid #ddd;">
+
+  <p class="label">ESPECIFICAÇÃO EXATA DE CORES E MEDIDAS (para implementação fiel)</p>
+  <ul style="font-size: 13px; color: #333; line-height: 1.8;">
+    <li>Ícone: 22x22px, border-radius 5px, background #0091D4</li>
+    <li>Letra "a" dentro do ícone: font-family Georgia/serif, weight 700, 15px, cor #000000 (preto)</li>
+    <li>Ponto ao lado do "a" dentro do ícone: mesmo estilo, 10px, margin-left 1px</li>
+    <li>Texto "iatos." (no botão fechado): 13.5px, cor #2451D6 (azul)</li>
+    <li>Separador vertical: 1px largura, 14px altura, cor #d5d5d0</li>
+    <li>Texto "Posso ajudar?": 12px, cor #6b6b68 (cinza secundário)</li>
+    <li>Botão inteiro (.btn-iatos): área clicável única — onClick no elemento pai, não em partes internas</li>
+    <li>Nome da empresa (linha 1 do card): 15px, weight 500, cor #1a1a1a</li>
+    <li>Subtítulo tipo de ato + Junta (linha 2 do card): 13px, cor #6b6b68</li>
+  </ul>
+
+  <p style="font-size:11px; color:#999; margin-top:20px;">
+    NOTA: cor azul #0091D4 (ícone) e #2451D6 (texto) são aproximações — ajustar para o azul exato 
+    da marca ATOS se o Diogo fornecer o hex oficial da logo.
+  </p>
+
+</body>
+</html>

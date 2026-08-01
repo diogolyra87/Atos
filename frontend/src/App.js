@@ -1,7 +1,7 @@
 ﻿import { useState, useEffect } from "react";
 import axios from "axios";
 import { Painel as PainelCliente } from "./Cliente";
-import { STATUS_CONFIG, formatarDataExtenso, StatCard, FluxoDoDiaCard, AtividadeRecente, StatusDonut, BotaoIatos, IatosChat } from "./components/Compartilhados";
+import { STATUS_CONFIG, formatarDataExtenso, StatCard, FluxoDoDiaCard, AtividadeRecente, StatusDonut, BotaoIatos, IatosChat, subtituloProcesso } from "./components/Compartilhados";
 
 const API = "";
 
@@ -468,11 +468,11 @@ function AppPainel({ onSair, sessao }) {
     tableHead: { display: "grid", gridTemplateColumns: "2.5fr 0.5fr 1.3fr 1.2fr 1fr 70px", padding: "10px 16px", background: "#f1f5f9", borderBottom: "0.5px solid #e2e8f0" },
     th: { fontSize: 11, fontWeight: 500, color: "#64748b" },
     row: { display: "grid", gridTemplateColumns: "2.5fr 0.5fr 1.3fr 1.2fr 1fr 70px", padding: "13px 16px", borderBottom: "0.5px solid #f1f5f9", alignItems: "center", cursor: "pointer" },
-    company: { fontSize: 13, fontWeight: 500, color: "#23282a" },
-    cnpj: { fontFamily: "monospace", fontSize: 11, color: "#94a3b8", marginTop: 2 },
+    company: { fontSize: 15, fontWeight: 500, color: "#1a1a1a", margin: "0 0 3px" },
+    cnpj: { fontSize: 13, color: "#6b6b68", margin: 0 },
     cell: { fontSize: 12, color: "#475569" },
     badge: (status) => ({ display: "inline-block", padding: "3px 10px", borderRadius: 20, fontSize: 11, fontWeight: 500, background: STATUS_CONFIG[status]?.bg || "#f1f5f9", color: STATUS_CONFIG[status]?.color || "#475569" }),
-    btnVer: { background: "none", border: "0.5px solid #e2e8f0", borderRadius: 6, padding: "5px 10px", fontSize: 11, color: "#2563eb", cursor: "pointer" },
+    btnVer: { background: "#fff", border: "0.5px solid #c9c9c4", borderRadius: 8, padding: "10px 16px", fontSize: 13.5, color: "#1a1a1a", cursor: "pointer" },
     overlay: { position: "fixed", inset: 0, background: "rgba(0,0,0,0.5)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 1000 },
     modal: { background: "#fff", borderRadius: 12, padding: 28, width: 560, maxHeight: "80vh", overflowY: "auto" },
     modalTitle: { fontSize: 16, fontWeight: 500, color: "#23282a", marginBottom: 20 },
@@ -545,7 +545,7 @@ function AppPainel({ onSair, sessao }) {
                 <div key={p.id} style={s.row} onClick={() => setProcessoSelecionado(p)}>
                   <div>
                     <div style={s.company}>{p.empresa}</div>
-                    <div style={s.cnpj}>CNPJ {p.cnpj} · NIRE {p.nire}</div>
+                    <div style={s.cnpj}>{subtituloProcesso(p)}</div>
                   </div>
                   <div style={{ ...s.cell, fontWeight: 500, color: "#475569" }}>{p.uf || "—"}</div>
                   <div style={s.cell}>{abreviarAto(p.identificador_ato, p.data_ata, p.hora_ata)}</div>

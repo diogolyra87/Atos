@@ -258,6 +258,11 @@ class Processo(Base):
     deferido_em = Column(DateTime, nullable=True)
     alertado_atraso_deferido = Column(Boolean, default=False)
     fluxo_id = Column(String, nullable=True)
+    # Texto integral extraido do documento/ata deste processo (mesma extracao
+    # ja feita na insercao para classificacao via IA) - antes era descartado
+    # apos a classificacao; agora persistido pra alimentar o contexto do
+    # iatos. (nao precisa re-OCRizar o PDF a cada pergunta do cliente).
+    texto_documento_extraido = Column(Text, nullable=True)
 
 
 def criar_banco():

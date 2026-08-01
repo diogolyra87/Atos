@@ -986,11 +986,97 @@ def _contexto_processo_assistente(p):
         "Identificador do ato: " + (p.identificador_ato or "-"),
         "UF/Junta: " + (p.uf or "-"),
         "Status atual: " + (p.status or "-"),
+        "Data de insercao no sistema: " + (p.criado_em.strftime("%d/%m/%Y %H:%M") if p.criado_em else "-"),
         "Numero de protocolo: " + (p.numero_protocolo or "ainda nao protocolado"),
     ]
+    if p.status_jucesp:
+        partes.append("Ultimo status retornado pela Junta: " + p.status_jucesp)
     if p.texto_exigencia:
         partes.append("Texto da exigencia atual: " + p.texto_exigencia)
     return "\n".join(partes)
+
+
+def _obter_texto_documento_processo(db, p):
+    """Texto integral do documento/ata deste processo. Se ja foi salvo na
+    insercao (fluxo normal, a partir desta mudanca), usa direto. Se for um
+    processo antigo (inserido antes dessa coluna existir) e ainda tiver o
+    PDF salvo, extrai na hora e PERSISTE de volta - assim so' precisa
+    re-OCRizar uma vez por processo antigo, nao a cada pergunta."""
+    if p.texto_documento_extraido:
+        return p.texto_documento_extraido
+    if not p.arquivo_ata:
+        return ""
+    caminho = os.path.join(UPLOADS_DIR, p.arquivo_ata)
+    if not os.path.exists(caminho):
+        return ""
+    try:
+        texto, _parcial = extrair_texto_pdf_em_camadas(caminho)
+        if texto:
+            p.texto_documento_extraido = texto
+            db.commit()
+        return texto or ""
+    except Exception as e:
+        print("   [iatos.] falha ao extrair texto do documento sob demanda:", str(e)[:200])
+        return ""
+
+
+# Cache em memoria do pacote de contexto completo por processo (texto integral
+# do documento + dados estruturados + secao(oes) da base de conhecimento) -
+# montado UMA VEZ (ao abrir o chat, ou na 1a pergunta se "abrir" nao foi
+# chamado) e reutilizado em toda pergunta subsequente da mesma sessao, nunca
+# remontado/decidido pergunta a pergunta pela IA. TTL curto so' pra nao ficar
+# desatualizado numa sessao de chat muito longa (status pode mudar entre
+# perguntas, ex: o cron rodou no meio da conversa).
+_CONTEXTO_IATOS_CACHE = {}
+_CONTEXTO_IATOS_TTL_SEGUNDOS = 60 * 60
+
+
+def _montar_contexto_iatos(db, p, forcar=False):
+    agora = datetime.now()
+    cache = _CONTEXTO_IATOS_CACHE.get(p.id)
+    if not forcar and cache and (agora - cache["montado_em"]).total_seconds() < _CONTEXTO_IATOS_TTL_SEGUNDOS:
+        return cache
+
+    texto_doc = _obter_texto_documento_processo(db, p)
+    termo_busca = (p.tipo_ato or "") + " " + (p.identificador_ato or "")
+    secoes = _buscar_secoes_relevantes(termo_busca, top_n=3)
+    secoes_texto = "\n\n---\n\n".join(s["corpo"] for s in secoes) if secoes else "(nenhuma secao especifica encontrada na base para esse tipo de ato)"
+
+    bloco = f"""CONTEXTO DO PROCESSO:
+{_contexto_processo_assistente(p)}
+
+TEXTO INTEGRAL DO DOCUMENTO/ATA DESTE PROCESSO ESPECIFICO:
+{texto_doc[:12000] if texto_doc else "(texto do documento nao disponivel - nem salvo no processo, nem foi possivel extrair do arquivo)"}
+
+BASE DE CONHECIMENTO NORMATIVA (secao(oes) relevante(s) ao tipo de ato deste processo):
+{secoes_texto}"""
+
+    entrada = {"texto": bloco, "montado_em": agora, "secoes_titulos": [s["titulo"] for s in secoes], "tinha_texto_doc": bool(texto_doc)}
+    _CONTEXTO_IATOS_CACHE[p.id] = entrada
+    return entrada
+
+
+@app.post("/assistente/abrir")
+async def assistente_abrir(dados: dict = Body(...), x_token: str = Header(None), db: Session = Depends(get_db)):
+    """Chamado no exato momento em que o cliente clica no icone do iatos.,
+    ANTES de qualquer pergunta - monta (ou remonta, forcado) o pacote de
+    contexto completo do processo e deixa cacheado, pronto pra ser
+    reutilizado em toda pergunta feita durante a sessao de chat."""
+    if not x_token:
+        raise HTTPException(status_code=401, detail="Token necessario")
+    usuario = validar_token(x_token, db)
+    if not usuario:
+        raise HTTPException(status_code=401, detail="Token invalido ou sessao expirada")
+    processo_id = dados.get("processo_id")
+    if not processo_id:
+        raise HTTPException(status_code=400, detail="processo_id e obrigatorio")
+    p = db.query(Processo).filter(Processo.id == processo_id).first()
+    if not p:
+        raise HTTPException(status_code=404, detail="Processo nao encontrado")
+    if not _tem_acesso_admin(usuario) and p.grupo_id != usuario.grupo_id:
+        raise HTTPException(status_code=403, detail="Sem permissao para este processo")
+    entrada = _montar_contexto_iatos(db, p, forcar=True)
+    return {"ok": True, "tem_texto_documento": entrada["tinha_texto_doc"], "secoes_usadas": entrada["secoes_titulos"]}
 
 
 @app.post("/assistente/perguntar")
@@ -1019,11 +1105,13 @@ async def assistente_perguntar(dados: dict = Body(...), x_token: str = Header(No
 
     resultado = None
     motivo_escalonamento = None
-    secoes = []
+    secoes_titulos = []
     try:
-        termo_busca = (p.tipo_ato or "") + " " + (p.identificador_ato or "")
-        secoes = _buscar_secoes_relevantes(termo_busca, top_n=2)
-        secoes_texto = "\n\n---\n\n".join(s["corpo"] for s in secoes) if secoes else "(nenhuma secao especifica encontrada na base para esse tipo de ato)"
+        # Reusa o contexto ja montado (ao abrir o chat, ou em pergunta anterior
+        # da mesma sessao) - NUNCA decide pergunta a pergunta se busca o
+        # documento/base; isso ja esta garantido e cacheado desde o "abrir".
+        contexto = _montar_contexto_iatos(db, p)
+        secoes_titulos = contexto["secoes_titulos"]
 
         historico_texto = ""
         if historico:
@@ -1038,17 +1126,20 @@ registros em Juntas Comerciais) a entender o andamento e as implicacoes juridica
 societario especifico deles. Responda em portugues, de forma direta e acessivel (o usuario
 normalmente NAO e advogado).
 
-REGRA CRITICA: responda SOMENTE com base no CONTEXTO DO PROCESSO e na BASE DE CONHECIMENTO
-fornecidos abaixo. NUNCA invente informacao juridica que nao esteja no texto fornecido -
-nem prazo, nem valor, nem norma. Se a base de conhecimento fornecida nao cobrir o que foi
-perguntado, ou se voce nao tiver certeza da resposta, diga isso claramente ao usuario em vez
-de arriscar uma resposta.
+Voce TEM ACESSO ao documento/ata completo deste processo especifico E a secao pertinente da
+base de conhecimento normativa (ambos fornecidos abaixo) - CRUZE as duas fontes pra responder:
+use o documento pra saber o que JA FOI DEFINIDO nesse caso especifico (fundamento legal citado,
+publicacoes ja autorizadas, prazos ja fixados na propria ata, etc.) e a base de conhecimento pra
+confirmar/completar com a regra normativa geral (proximos passos, codigo de evento, requisitos
+de DBE, etc.). NUNCA invente informacao que nao esteja em nenhuma das duas fontes.
 
-CONTEXTO DO PROCESSO:
-{_contexto_processo_assistente(p)}
+So' escale a resposta ao Operador Atos (classificando confianca como "baixa") se a pergunta
+exigir informacao que nao esta em NENHUMA das duas fontes (nem no documento, nem na base), ou
+envolver interpretacao juridica de nuance/caso concreto que a base nao resolve com seguranca.
+Se o documento ou a base ja tem a resposta, responda com confianca "alta" ou "media" - nao
+escale so' por precaucao quando a informacao esta disponivel.
 
-BASE DE CONHECIMENTO (trecho relevante ao tipo de ato deste processo):
-{secoes_texto}
+{contexto["texto"]}
 
 {"HISTORICO DA CONVERSA ATE AGORA:\n" + historico_texto if historico_texto else ""}
 
@@ -1056,9 +1147,7 @@ PERGUNTA DO CLIENTE:
 {pergunta}
 
 Responda APENAS com um JSON no formato exato:
-{{"resposta": "sua resposta ao cliente, em texto corrido", "confianca": "alta" | "media" | "baixa"}}
-Use "baixa" sempre que a base de conhecimento fornecida nao cobrir claramente a pergunta,
-ou quando a resposta exigir julgamento juridico especifico do caso que voce nao pode garantir."""
+{{"resposta": "sua resposta ao cliente, em texto corrido", "confianca": "alta" | "media" | "baixa"}}"""
 
         resultado = _gemini_assistente_atos(prompt)
     except Exception as e:
@@ -1109,7 +1198,7 @@ ou quando a resposta exigir julgamento juridico especifico do caso que voce nao 
         mensagem=pergunta,
         resposta=resposta_final,
         nivel_confianca=confianca,
-        secao_usada=", ".join(s["titulo"] for s in secoes) if secoes else None,
+        secao_usada=", ".join(secoes_titulos) if secoes_titulos else None,
         escalado_admin=escalado,
         motivo_escalonamento=motivo_escalonamento,
     )
@@ -1842,6 +1931,7 @@ async def analisar_pasta(arquivos: list[UploadFile] = File(...), x_token: str = 
     empatados_topo = [i for i in ordenados if i["score"] == maior]
     pendente = (len(bateram_principal) != 1) or (maior <= 0) or (len(empatados_topo) > 1)
     dados = analisar_ata_ia(melhor["texto"]) if melhor["texto"].strip() else {}
+    dados["texto_extraido"] = melhor["texto"]
     if melhor["tipo"]:
         dados["tipo_ato"] = dados.get("tipo_ato") or melhor["tipo"]
     numero_prot = await asyncio.to_thread(_tentar_extrair_protocolo, melhor["conteudo"], melhor["nome"])
@@ -1998,6 +2088,7 @@ async def analisar_pasta_multi(arquivos: list[UploadFile] = File(...), x_token: 
         leitura_parcial = len((i["texto"] or "").strip()) < 50
         dados = analisar_ata_ia(i["texto"]) if i["texto"].strip() else dict(_CAMPOS_VAZIOS_ATA)
         dados["leitura_parcial"] = leitura_parcial
+        dados["texto_extraido"] = i["texto"]
         numero_prot = await asyncio.to_thread(_tentar_extrair_protocolo, i["conteudo"], i["nome"])
         if numero_prot:
             dados["numero_protocolo"] = numero_prot
@@ -2072,6 +2163,7 @@ async def analisar_documento(arquivo: UploadFile = File(...), x_token: str = Hea
 
     dados = analisar_ata_ia(texto) if texto.strip() else dict(_CAMPOS_VAZIOS_ATA)
     dados["leitura_parcial"] = len((texto or "").strip()) < 50
+    dados["texto_extraido"] = texto
     return dados
 
 @app.post("/processos")
@@ -2145,7 +2237,8 @@ async def criar_processo(
         arquivo_ata=arquivo_ata,
         grupo_id=grupo_id,
         uf_destino_transferencia=(info.get("uf_destino_transferencia") or "").upper().strip()[:2] or None,
-        leitura_parcial=bool(info.get("leitura_parcial", False))
+        leitura_parcial=bool(info.get("leitura_parcial", False)),
+        texto_documento_extraido=info.get("texto_extraido") or None,
     )
     db.add(p)
     db.flush()

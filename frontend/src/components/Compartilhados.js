@@ -203,6 +203,13 @@ export function IatosChat({ processo, token, onFechar }) {
   useEffect(() => {
     if (!processo) return;
     (async () => {
+      // Monta (ou remonta) o contexto completo do processo - documento integral +
+      // dados estruturados + base de conhecimento - ANTES de qualquer pergunta,
+      // no exato momento em que o chat abre. Ver /assistente/abrir em main.py.
+      try {
+        await axios.post(`${API}/assistente/abrir`, { processo_id: processo.id },
+          token ? { headers: { "x-token": token } } : {});
+      } catch (e) { /* silencioso - /assistente/perguntar monta na 1a pergunta se isso falhar */ }
       let historico = [];
       try {
         const r = await axios.get(`${API}/processos/${processo.id}/assistente/historico`, token ? { headers: { "x-token": token } } : {});

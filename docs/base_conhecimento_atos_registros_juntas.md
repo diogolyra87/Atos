@@ -96,6 +96,20 @@ Dispensadas de **qualquer publicação** (art. 71 LC 123/2006), independente do 
 Fundamento geral: arts. 1.082-1.084, 1.152 §1º CC; art. 36 Lei 8.934/94; arts. 70-71 LC 123/2006; Anexo IV IN 81/2020.
 **Confiança: ALTA.**
 
+#### 2.3.5. DBE exigido para redução de capital
+**Toda alteração de capital social exige emissão de DBE** — evento **247 (Alteração de capital social)**, sempre acompanhado do evento **QSA** (Quadro de Sócios e Administradores), pois a redução altera o percentual de participação e/ou valor do capital de cada sócio. Fonte: Manual de Deferimento — Central de Informação (IRTDPJRS, 2022), seção 1.3.2/1.3.3.
+- **NÃO exige consulta prévia de viabilidade** — o evento 247 não está na lista de eventos que exigem viabilidade (essa lista é: 225-natureza jurídica, 244-atividades econômicas, 211/210/209-endereço, 220-nome empresarial). Pode-se emitir o DBE direto no Coletor Nacional (Portal Redesim), sem esperar aprovação de nome/endereço.
+- **Prazo de validade do DBE: 180 dias** a partir da emissão. Não emitir cedo demais: o ideal é emitir próximo ao momento real do protocolo (ex: perto do fim do prazo de 90 dias de oposição de credores, para já refletir a composição final de capital), evitando expirar.
+- **Sequência lógica completa para redução por capital excessivo (o caso mais comum e mais formal)**:
+  1. Deliberação em ata/reunião de sócios (fundamento art. 1.082, II + art. 1.084 CC)
+  2. Publicação da ata no Diário Oficial (União ou Estadual, conforme definido na própria ata) **e** em jornal de grande circulação da sede
+  3. Aguardar **90 dias corridos** contados da **última** publicação, para eventual oposição de credor quirografário
+  4. Sem oposição no prazo: considerar aprovada a alteração contratual refletindo a redução
+  5. **Emitir o DBE (evento 247 + QSA)** com a nova composição de capital
+  6. Redigir e assinar a alteração contratual consolidada
+  7. Protocolar o conjunto (ata + alteração contratual + DBE) na Junta Comercial competente
+- **Confiança: ALTA** (fonte oficial de manual de deferimento REDESIM, códigos de evento nacionais).
+
 ### 2.4. ATO — Aumento de Capital Social
 
 **Eventos**: Ato 002-Alteração; evento 021/022; evento 051 se consolidar.
@@ -460,6 +474,64 @@ Maranhão (possível WAF anti-scraping detectado), Piauí, Alagoas, Rio Grande d
 ---
 
 <a name="glossario"></a>
+<a name="dbe"></a>
+## 5.5. DBE — Documento Básico de Entrada (guia geral, todos os atos)
+
+> Fonte: Manual de Deferimento — Central de Informação (IRTDPJRS, 2022), disponível em
+> irtdpjrs.com.br/docs/manual-redesim.pdf. Códigos de evento são **nacionais** (padrão Receita
+> Federal/REDESIM), válidos para qualquer estado — o que muda por estado é apenas quem defere
+> (Junta Comercial para sociedades empresárias; cartório de RCPJ só para naturezas jurídicas
+> específicas como associações, fundações, entidades religiosas).
+
+**O que é:** documento eletrônico gerado no Coletor Nacional (Portal Redesim), de apresentação
+obrigatória junto com constituições, alterações ou extinções levadas à Junta/cartório, com a
+finalidade de inscrever/alterar/baixar o cadastro simultaneamente na Receita Federal e nas
+Receitas Estaduais e Municipais.
+
+**Ordem geral do processo:**
+1. Consulta de Viabilidade (só para os eventos que exigem — ver lista abaixo)
+2. Emissão do DBE (Coletor Nacional)
+3. Registro/averbação na Junta ou cartório + deferimento do DBE
+
+### Eventos que EXIGEM DBE (deferidos pela Junta/cartório)
+202 (alteração de representante — mas ver nota abaixo), 204 (cisão parcial, sucedida), 209/210/211
+(alteração de endereço), 220 (alteração de nome empresarial), 221 (título do estabelecimento/nome
+fantasia), 222 (enquadramento ME/EPP), 225 (alteração de natureza jurídica), 237-240 (preposto),
+244 (atividades econômicas), 246 (indicação de estabelecimento matriz), **247 (alteração de
+capital social)**, 248 (tipo de unidade), 249 (forma de atuação).
+
+### Eventos que EXIGEM consulta prévia de viabilidade (antes de emitir o DBE)
+Apenas: **225** (natureza jurídica), **244** (atividades econômicas), **211/210/209** (endereço),
+**220** (nome empresarial). **Todos os demais eventos, incluindo 247 (capital social) e QSA,
+NÃO exigem viabilidade** — pode-se emitir o DBE diretamente.
+
+### QSA (Quadro de Sócios e Administradores)
+Não exige viabilidade. É **obrigatório em conjunto** sempre que houver: entrada/saída de sócio,
+alteração de cargo do sócio, **alteração do percentual de participação e/ou valor do capital
+social**, alteração da qualificação dos sócios. Isso significa que **qualquer redução ou aumento
+de capital que mude a distribuição de quotas entre sócios exige DBE com evento 247 + QSA em
+conjunto** — são sempre selecionados juntos.
+
+### Evento 202 — nota importante
+O evento 202 (alteração de responsável perante o CNPJ) isolado é deferido **na Receita Federal,
+não na Junta/cartório**. Só é levado à Junta/cartório quando vem acompanhado de outro evento (ex:
+202 + alteração de endereço).
+
+### Situações em que NÃO é possível/necessário apresentar DBE
+- Alteração contratual/estatutária que não contém nenhum evento de impacto cadastral na RFB.
+- CPF de sócio falecido (cancelado) — trata-se via Declaração Final de Espólio, à parte.
+- Inscrição simultânea de matriz e filial no mesmo ato — só se emite DBE da matriz; a filial é
+  criada depois via "ato de legado".
+
+### Prazo de validade do DBE
+**180 dias** a partir da emissão. Não emitir prematuramente: o ideal é emitir próximo ao momento
+real do protocolo, especialmente em atos que dependem de prazo legal de espera (ex: redução de
+capital com 90 dias de oposição de credores — ver seção 2.3.5), para não expirar antes do uso.
+
+**Confiança: ALTA** (fonte oficial, manual de deferimento REDESIM; códigos de evento nacionais).
+
+---
+
 ## 6. Glossário unificado de códigos de Ato/Evento REDESIM
 
 | Código | Descrição | Aplicação |
@@ -486,19 +558,32 @@ Maranhão (possível WAF anti-scraping detectado), Piauí, Alagoas, Rio Grande d
 | 050 | Absorção de parte cindida | LTDA/S.A. |
 | 051 | Consolidação | Todos |
 | 059/210 | Desistência de transferência de sede | Todos |
-| 202 | Alteração de responsável perante CNPJ | Todos (nível RFB) |
+| 101/102 | Inscrição de Matriz/Filial (DBE) | Todos — exige DBE sempre |
+| 202 | Alteração de responsável perante CNPJ (DBE) | Isolado: defere-se na RFB, não na Junta |
+| 204 | Cisão parcial — sucedida (DBE) | LTDA/S.A. |
 | 206 | Procuração (arquivamento isolado ou evento auxiliar) | Todos |
 | 207 | Revogação de procuração | Todos |
-| 220 | Alteração de nome para "EM LIQUIDAÇÃO" (DBE/CNPJ) | Todos |
+| 209/210/211 | Alteração de endereço — mesmo município/entre municípios/entre estados (DBE) | Todos — exige viabilidade prévia |
+| 220 | Alteração de nome empresarial (DBE/CNPJ) — também usado para "EM LIQUIDAÇÃO" | Todos — exige viabilidade prévia |
+| 221 | Alteração do título do estabelecimento/nome fantasia (DBE) | Todos |
+| 222 | Enquadramento/Reenquadramento/Desenquadramento ME/EPP (DBE) | Todos |
+| 225 | Alteração do código da natureza jurídica (DBE) | Todos — exige viabilidade prévia |
+| 237-240 | Indicação/Substituição/Exclusão/Renúncia de preposto (DBE) | Todos |
+| 244 | Alteração de atividades econômicas (DBE) | Todos — exige viabilidade prévia |
+| 246 | Indicação de Estabelecimento Matriz (DBE) | Todos |
+| **247** | **Alteração de capital social (DBE)** | **Todos — sempre + QSA; NÃO exige viabilidade** |
+| 248 | Alteração do tipo de unidade (DBE) | Todos |
+| 249 | Alteração da forma de atuação (DBE) | Todos |
 | 310 | Outros documentos de interesse da companhia (RDIC) | S.A. principalmente |
+| 407 | Espólio de Empresário (DBE) | Empresário Individual |
+| 414 | Restabelecimento de inscrição da entidade matriz (DBE) | Todos — direciona à RFB, não à Junta |
 | 417 | Início de liquidação extrajudicial (DBE/CNPJ) | Todos |
+| 517 | Pedido de baixa (DBE) — vários motivos (extinção, incorporação, fusão, cisão total, falência) | Todos |
 | 980 | Escritura de emissão de debêntures (não mais obrigatório por lei desde a Lei 14.711/2023) | S.A. |
 | 981 | Aditamento de escritura de emissão de debêntures | S.A. |
 | 985 | Ata (evento genérico, usado em conjunto com outros) | Todos |
+| QSA | Quadro de Sócios e Administradores (DBE) — sempre junto com mudança de sócio/capital | Todos — não exige viabilidade |
 | 215-1 | Natureza jurídica — Consórcio de Sociedades/Empresas | Consórcio |
-
-⚠️ Códigos podem variar ligeiramente entre Juntas estaduais — validar contra o manual local antes de automatizar preenchimento.
-
 ---
 
 <a name="atualizacao-autonoma"></a>
@@ -546,8 +631,7 @@ Quando a mudança é ambígua, contraditória entre fontes, ou a IA não consegu
 | 01/08/2026 | Consolidação inicial das 3 pesquisas em documento único | Claude (a pedido de Diogo) |
 | 01/08/2026 | Adicionada Parte IV (taxas/emolumentos e assinaturas) | Claude (a pedido de Diogo) |
 | 01/08/2026 | Desenhado sistema de atualização autônoma (3 níveis) — implementação técnica pendente | Claude (a pedido de Diogo) |
-| 01/08/2026 | Implementados Assistente ATOS (RAG + chat) e Vigia Normativo (job semanal + 3 níveis + Telegram), testados ponta a ponta em produção. Desvios documentados em `docs/DESVIOS_IMPLEMENTACAO_ASSISTENTE_ATOS.md` (paleta real vs. "Ametista" pedida, botões inline Telegram construídos do zero) | Claude (a pedido de Diogo) |
-| 01/08/2026 | Vigia Normativo: corrigidas 2 URLs de fonte com erro no primeiro run (JUCEC - hostname sem www; JucisRS - URL desatualizada, trocada por link de catálogo mais estável) — ver detalhe em `docs/DESVIOS_IMPLEMENTACAO_ASSISTENTE_ATOS.md` | Claude (a pedido de Diogo) |
+| 01/08/2026 | Adicionada seção 5.5 (DBE — guia geral) + subseção 2.3.5 (DBE para redução de capital) + expansão do glossário com eventos DBE/CNPJ (fonte: Manual IRTDPJRS 2022). Motivo: lacuna identificada pelo iatos. ao não conseguir responder pergunta real de cliente sobre documentos necessários (evento 247, QSA, ordem de viabilidade) | Claude (a pedido de Diogo) |
 | — | Pendente: pesquisa complementar de JUCERJA/JUCEPE/JUCIS-DF/JUCEC/JUCEMS com mesmo nível de detalhe das demais | — |
 | — | Pendente: validar codificação exata de eventos por Junta antes de automatizar preenchimento | — |
 | — | Pendente: confirmar valores JUCEMG 2026 (S.A., atas, procuração, RDIC) em fonte oficial | — |

@@ -373,6 +373,7 @@ function DetalheProcessoCliente({ p, sessao, onVoltar }) {
           <input type="file" style={{ display: "none" }} disabled={enviando} onChange={e => enviarAnexo(e.target.files[0])} />
         </label>
       </div>
+      <AssistenteAtos processo={p} token={sessao.token} modoAdmin={false} />
     </div>
   );
 }

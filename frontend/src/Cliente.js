@@ -442,9 +442,11 @@ export function Painel({ sessao, onSair }) {
   }, []);
   async function carregar() {
     setCarregando(true); setErro("");
+    let listaAtualizada = null;
     try {
       const res = await axios.get(`${API}/processos`, { headers: { "x-token": sessao.token } });
       setProcessos(res.data);
+      listaAtualizada = res.data;
       const m = await axios.get(API + "/metricas", { headers: { "x-token": sessao.token } });
       setMetricas(m.data);
     } catch (e) {
@@ -452,6 +454,7 @@ export function Painel({ sessao, onSair }) {
       setErro("Erro ao carregar processos.");
     }
     setCarregando(false);
+    return listaAtualizada;
   }
   async function baixar(processoId, tipo, nomeBase) {
     try {
@@ -599,7 +602,7 @@ export function Painel({ sessao, onSair }) {
     if (arquivos.length === 0) { alert("Nenhum PDF encontrado na pasta."); return; }
     setSubindo(true);
     setProgresso({ feitos: 0, total: arquivos.length, erros: 0 });
-    let feitos = 0, erros = 0;
+    let feitos = 0, erros = 0, ultimoProcessoId = null;
     for (const arq of arquivos) {
       try {
         const fd1 = new FormData();
@@ -611,7 +614,8 @@ export function Painel({ sessao, onSair }) {
         const fd2 = new FormData();
         fd2.append("arquivo", arq);
         fd2.append("dados", JSON.stringify(dados));
-        await axios.post(`${API}/processos`, fd2, { headers: { "x-token": sessao.token } });
+        const criado = await axios.post(`${API}/processos`, fd2, { headers: { "x-token": sessao.token } });
+        ultimoProcessoId = criado.data && (criado.data.id || criado.data.processo_id);
         feitos++;
       } catch (e) {
         erros++;
@@ -619,8 +623,15 @@ export function Painel({ sessao, onSair }) {
       setProgresso({ feitos, total: arquivos.length, erros });
     }
     setSubindo(false);
-    await carregar();
+    const listaAtualizada = await carregar();
     alert(`Concluido: ${feitos} processo(s) criado(s)${erros ? `, ${erros} com erro` : ""}.`);
+    // Se so' um processo foi criado (fluxo mais comum: inserir um ato por vez), abre
+    // direto o modal de documentos dele - e' onde mora o Assistente ATOS. Sem isso, o
+    // cliente so' veria o widget clicando de novo no item na lista depois de recarregar.
+    if (feitos === 1 && ultimoProcessoId && listaAtualizada) {
+      const novo = listaAtualizada.find(p => p.id === ultimoProcessoId);
+      if (novo) setDocsAbertos(novo);
+    }
   }
   function clicarStatus(p) {
     if (p.status === "exigencia") setExigenciaAberta(p);

@@ -1,7 +1,7 @@
 ﻿from fastapi import FastAPI, Depends, UploadFile, File, Form, HTTPException, Header, BackgroundTasks, Request, Body
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, defer
 from sqlalchemy import func
 from database import get_db, Processo, Grupo, Usuario, EmailGrupo, criar_banco, AuditLog, Codigo2FA, Anexo, RegraAprendizado, MensagemProcesso, TelegramVinculo, Fluxo, Evento, AssistenteConversa
 from cnpj_utils import normalizar_cnpj, validar_cnpj, formatar_cnpj
@@ -1406,7 +1406,10 @@ def listar_processos(codigo_grupo: str = None, x_token: str = Header(None), db: 
     usuario = validar_token(x_token, db)
     if not usuario:
         raise HTTPException(status_code=401, detail="Token invalido ou sessao expirada")
-    query = db.query(Processo)
+    # defer: o texto integral do documento (pode ser 10k+ caracteres, conteudo
+    # sensivel de ata societaria) nunca precisa ir pro frontend na listagem -
+    # so' e' lido server-side, sob demanda, pelo iatos. (ver _montar_contexto_iatos).
+    query = db.query(Processo).options(defer(Processo.texto_documento_extraido))
     if _tem_acesso_admin(usuario):
         if codigo_grupo:
             grupo = db.query(Grupo).filter(Grupo.codigo == codigo_grupo).first()
@@ -1459,7 +1462,7 @@ def obter_processo(processo_id: str, request: Request = None, x_token: str = Hea
     usuario = validar_token(x_token, db)
     if not usuario:
         raise HTTPException(status_code=401, detail="Token invalido ou sessao expirada")
-    p = db.query(Processo).filter(Processo.id == processo_id).first()
+    p = db.query(Processo).options(defer(Processo.texto_documento_extraido)).filter(Processo.id == processo_id).first()
     if p and not _tem_acesso_admin(usuario) and p.grupo_id != usuario.grupo_id:
         raise HTTPException(status_code=403, detail="Sem permissao para este processo")
     if not p:

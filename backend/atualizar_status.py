@@ -13,7 +13,6 @@ sys.path.insert(0, "/root/atos/backend")
 from main import corpo_status_cliente, enviar_email_anexo, emails_do_grupo, UPLOADS_DIR, recalcular_status, emails_admin
 from consultar_jucesp import consultar
 from jucesp_infosimples import baixar_documento as baixar_documento_infosimples_sp
-from jucesp_infosimples import descobrir_registro as descobrir_registro_infosimples_sp
 from consultar_jucerja import consultar_jucerja, classificar_status_rj, baixar_documento_jucerja
 from consultar_juceb import consultar_juceb, classificar_status_ba, baixar_documento_juceb
 from consultar_jucepe import consultar_jucepe, classificar_status_pe, baixar_documento_jucepe

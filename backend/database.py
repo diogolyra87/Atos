@@ -103,6 +103,60 @@ class TelegramVinculo(Base):
     processo_id = Column(String, nullable=False)
     criado_em = Column(DateTime, default=datetime.now)
 
+class AssistenteConversa(Base):
+    __tablename__ = "assistente_conversas"
+    id = Column(String, primary_key=True)
+    processo_id = Column(String, nullable=False)
+    usuario_id = Column(String, nullable=True)
+    mensagem = Column(Text, nullable=False)
+    resposta = Column(Text, nullable=False)
+    nivel_confianca = Column(String, nullable=True)  # alta | media | baixa
+    secao_usada = Column(String, nullable=True)  # ancora da base de conhecimento usada como contexto (auditoria/debug)
+    escalado_admin = Column(Boolean, default=False)
+    criado_em = Column(DateTime, default=datetime.now)
+
+
+class FonteMonitoramentoNormativo(Base):
+    __tablename__ = "fontes_monitoramento_normativo"
+    id = Column(String, primary_key=True)
+    nome_fonte = Column(String, nullable=False)
+    url = Column(String, nullable=False)
+    tipo = Column(String, nullable=False)  # drei | cvm | junta_estadual | dou
+    estado = Column(String, nullable=True)  # UF, se aplicavel
+    ultimo_snapshot_hash = Column(String, nullable=True)
+    ultimo_snapshot_texto = Column(Text, nullable=True)
+    ultima_verificacao = Column(DateTime, nullable=True)
+    ativo = Column(Boolean, default=True)
+    criado_em = Column(DateTime, default=datetime.now)
+
+
+class MudancaNormativaPendente(Base):
+    __tablename__ = "mudancas_normativas_pendentes"
+    id = Column(String, primary_key=True)
+    fonte_id = Column(String, nullable=False)
+    nivel = Column(Integer, nullable=False)
+    secao_afetada = Column(String, nullable=True)
+    trecho_sugerido = Column(Text, nullable=True)
+    justificativa = Column(Text, nullable=True)
+    diff_texto = Column(Text, nullable=True)
+    status = Column(String, default="pendente")  # pendente | aprovado | rejeitado
+    telegram_chat_id = Column(String, nullable=True)
+    telegram_message_id = Column(Integer, nullable=True)
+    resolvido_por = Column(String, nullable=True)
+    resolvido_em = Column(DateTime, nullable=True)
+    criado_em = Column(DateTime, default=datetime.now)
+
+
+class LogAtualizacaoNormativa(Base):
+    __tablename__ = "logs_atualizacao_normativa"
+    id = Column(String, primary_key=True)
+    fonte_id = Column(String, nullable=True)
+    acao = Column(String, nullable=False)  # verificacao | classificacao | aplicacao | aprovacao | rejeicao | resumo_semanal
+    nivel = Column(Integer, nullable=True)
+    detalhe = Column(Text, nullable=True)
+    criado_em = Column(DateTime, default=datetime.now)
+
+
 class AuditLog(Base):
     __tablename__ = "audit_logs"
     id = Column(String, primary_key=True)

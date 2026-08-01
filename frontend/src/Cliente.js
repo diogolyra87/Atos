@@ -1,7 +1,7 @@
 ﻿import { useState, useEffect } from "react";
 import { useSearchParams } from "react-router-dom";
 import axios from "axios";
-import { STATUS_CONFIG, formatarDataExtenso, StatCard, FluxoDoDiaCard, AtividadeRecente, StatusDonut } from "./components/Compartilhados";
+import { STATUS_CONFIG, formatarDataExtenso, StatCard, FluxoDoDiaCard, AtividadeRecente, StatusDonut, AssistenteAtos } from "./components/Compartilhados";
 
 const API = "";
 
@@ -919,6 +919,7 @@ export function Painel({ sessao, onSair }) {
                   ))}
                 </div>
               )}
+              <AssistenteAtos processo={docsAbertos} token={sessao.token} modoAdmin={false} />
               <ChatProcessoCliente processoId={docsAbertos.id} token={sessao.token} />
               <div style={s.modalBtns}>
                 <button style={s.btnFechar} onClick={() => setDocsAbertos(null)}>Fechar</button>

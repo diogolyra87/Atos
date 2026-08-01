@@ -1,3 +1,6 @@
+import { useState, useEffect } from "react";
+import axios from "axios";
+
 export const STATUS_CONFIG = {
   recebido: { label: "Aberto", bg: "#eceae2", color: "#6b6c66" },
   aberto: { label: "Aberto", bg: "#eceae2", color: "#6b6c66" },
@@ -153,6 +156,123 @@ export function StatusDonut({ metricas }) {
           </div>
         </div>
       )}
+    </div>
+  );
+}
+
+const API = "";
+
+function mensagemInicialAssistente(p) {
+  const status = (p.status || "").toLowerCase();
+  if (status === "exigencia") {
+    return "Esse ato está em exigência" + (p.numero_protocolo ? " (protocolo " + p.numero_protocolo + ")" : "") + ". Posso te explicar o que precisa ser feito para cumprir a exigência — é só perguntar.";
+  }
+  if (status === "deferido" || status === "aprovado") {
+    return "Esse ato já foi deferido! Assim que a Junta liberar o registro, você recebe o documento por aqui. Posso te explicar os próximos passos.";
+  }
+  if (status === "finalizado") {
+    return "Esse ato está finalizado — o registro já foi liberado e está disponível pra download. Posso esclarecer alguma dúvida sobre ele.";
+  }
+  if (status === "tramitacao") {
+    return "Esse ato já está protocolado. Só falta aguardar o deferimento — eu aviso quando mudar. Alguma dúvida sobre esse processo?";
+  }
+  return "Esse ato ainda está sendo preparado para protocolo. Posso te ajudar a entender os próximos passos.";
+}
+
+export function AssistenteAtos({ processo, token, modoAdmin }) {
+  const [aberto, setAberto] = useState(false);
+  const [msgs, setMsgs] = useState([]);
+  const [pergunta, setPergunta] = useState("");
+  const [enviando, setEnviando] = useState(false);
+  const [carregado, setCarregado] = useState(false);
+
+  useEffect(() => {
+    if (!aberto || carregado) return;
+    (async () => {
+      let historico = [];
+      try {
+        const r = await axios.get(`${API}/processos/${processo.id}/assistente/historico`, token ? { headers: { "x-token": token } } : {});
+        historico = r.data || [];
+      } catch (e) { /* silencioso - segue so com a mensagem inicial */ }
+      const iniciais = [{ autor: "assistente", texto: mensagemInicialAssistente(processo) }];
+      for (const h of historico) {
+        iniciais.push({ autor: "usuario", texto: h.mensagem });
+        iniciais.push({ autor: "assistente", texto: h.resposta });
+      }
+      setMsgs(iniciais);
+      setCarregado(true);
+    })();
+    /* eslint-disable-next-line */
+  }, [aberto]);
+
+  async function enviar() {
+    const t = pergunta.trim();
+    if (!t || enviando) return;
+    setEnviando(true);
+    const historicoParaEnvio = msgs.slice(1).map(m => ({ autor: m.autor, texto: m.texto }));
+    setMsgs(m => [...m, { autor: "usuario", texto: t }]);
+    setPergunta("");
+    try {
+      const r = await axios.post(`${API}/assistente/perguntar`,
+        { processo_id: processo.id, pergunta: t, historico: historicoParaEnvio },
+        token ? { headers: { "x-token": token } } : {});
+      setMsgs(m => [...m, { autor: "assistente", texto: r.data.resposta }]);
+    } catch (e) {
+      setMsgs(m => [...m, { autor: "assistente", texto: "Não consegui responder agora. Tente novamente em instantes." }]);
+    }
+    setEnviando(false);
+  }
+
+  const titulo = modoAdmin ? "Assistente ATOS — modo administrador" : "Assistente ATOS";
+
+  if (!aberto) {
+    return (
+      <div style={{ marginTop: 16, marginBottom: 8, background: "#f5f3ff", border: "0.5px solid #ddd6fe", borderRadius: 10, padding: "14px 16px" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4 }}>
+          <span style={{ fontSize: 16 }}>✨</span>
+          <span style={{ fontSize: 13, fontWeight: 600, color: "#5b21b6" }}>Precisa de ajuda com esse registro?</span>
+        </div>
+        <button onClick={() => setAberto(true)}
+          style={{ marginTop: 8, width: "100%", background: "linear-gradient(135deg,#7c3aed,#2dd4bf)", color: "#fff", border: "none", borderRadius: 8, padding: "9px 16px", fontSize: 13, fontWeight: 600, cursor: "pointer" }}>
+          ✨ Assistente ATOS
+        </button>
+      </div>
+    );
+  }
+
+  return (
+    <div style={{ marginTop: 16, marginBottom: 8, border: "0.5px solid #ddd6fe", borderRadius: 10, overflow: "hidden" }}>
+      <div style={{ background: "linear-gradient(135deg,#7c3aed,#2dd4bf)", padding: "10px 16px", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+        <span style={{ fontSize: 13, fontWeight: 600, color: "#fff" }}>✨ {titulo}</span>
+        <span onClick={() => setAberto(false)} style={{ fontSize: 12, color: "#fff", cursor: "pointer", opacity: 0.85 }}>fechar ▲</span>
+      </div>
+      <div style={{ padding: 14, background: "#fff" }}>
+        <div style={{ maxHeight: 300, overflowY: "auto", display: "flex", flexDirection: "column", gap: 8, marginBottom: 12 }}>
+          {msgs.map((m, i) => {
+            const meu = m.autor === "usuario";
+            return (
+              <div key={i} style={{ alignSelf: meu ? "flex-end" : "flex-start", maxWidth: "85%", background: meu ? "#dbeafe" : "#f5f3ff", borderRadius: 10, padding: "8px 12px" }}>
+                <div style={{ fontSize: 13, color: "#23282a", whiteSpace: "pre-wrap", wordBreak: "break-word" }}>{m.texto}</div>
+              </div>
+            );
+          })}
+          {enviando && (
+            <div style={{ alignSelf: "flex-start", maxWidth: "85%", background: "#f5f3ff", borderRadius: 10, padding: "8px 12px", fontSize: 13, color: "#94a3b8" }}>
+              digitando...
+            </div>
+          )}
+        </div>
+        <div style={{ display: "flex", gap: 8, alignItems: "flex-end" }}>
+          <textarea value={pergunta} onChange={e => setPergunta(e.target.value)}
+            onKeyDown={e => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); enviar(); } }}
+            placeholder="Digite sua pergunta..."
+            style={{ flex: 1, minHeight: 40, maxHeight: 120, padding: "8px 12px", border: "0.5px solid #e2e8f0", borderRadius: 8, fontSize: 13, outline: "none", resize: "vertical", fontFamily: "sans-serif" }} />
+          <button onClick={enviar} disabled={enviando}
+            style={{ background: "linear-gradient(135deg,#7c3aed,#2dd4bf)", color: "#fff", border: "none", padding: "10px 18px", borderRadius: 8, fontSize: 13, cursor: "pointer", height: 40 }}>
+            {enviando ? "..." : "Enviar"}
+          </button>
+        </div>
+      </div>
     </div>
   );
 }

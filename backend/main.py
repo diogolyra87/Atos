@@ -1,9 +1,9 @@
-﻿from fastapi import FastAPI, Depends, UploadFile, File, Form, HTTPException, Header, BackgroundTasks, Request
+﻿from fastapi import FastAPI, Depends, UploadFile, File, Form, HTTPException, Header, BackgroundTasks, Request, Body
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from sqlalchemy.orm import Session
 from sqlalchemy import func
-from database import get_db, Processo, Grupo, Usuario, EmailGrupo, criar_banco, AuditLog, Codigo2FA, Anexo, RegraAprendizado, MensagemProcesso, TelegramVinculo, Fluxo, Evento
+from database import get_db, Processo, Grupo, Usuario, EmailGrupo, criar_banco, AuditLog, Codigo2FA, Anexo, RegraAprendizado, MensagemProcesso, TelegramVinculo, Fluxo, Evento, AssistenteConversa
 from cnpj_utils import normalizar_cnpj, validar_cnpj, formatar_cnpj
 from datetime import datetime, timedelta, date
 from openai import OpenAI
@@ -793,6 +793,32 @@ def notificar_telegram(texto: str):
         pass
     return None
 
+
+def notificar_telegram_com_botoes(texto: str, botoes: list):
+    """Igual notificar_telegram, mas com teclado inline (reply_markup).
+    botoes: lista de {"texto": "...", "callback_data": "..."} - cada item
+    vira um botao em linha propria. Usado pelo vigia normativo (Parte B)
+    para as aprovacoes de Nivel 3 - primeira vez que o bot usa botao inline
+    no projeto; bot.py precisa tratar callback_query (ver processar_callback)."""
+    try:
+        import os, requests, json as _json
+        token = os.getenv("TELEGRAM_TOKEN")
+        chat_id = os.getenv("TELEGRAM_CHAT_ID")
+        if not token or not chat_id:
+            return None
+        teclado = {"inline_keyboard": [[{"text": b["texto"], "callback_data": b["callback_data"]}] for b in botoes]}
+        r = requests.post(
+            f"https://api.telegram.org/bot{token}/sendMessage",
+            data={"chat_id": chat_id, "text": texto, "reply_markup": _json.dumps(teclado)},
+            timeout=5,
+        )
+        j = r.json()
+        if j.get("ok"):
+            return (str(chat_id), j["result"]["message_id"])
+    except Exception as e:
+        print("Erro notificar_telegram_com_botoes:", str(e)[:150])
+    return None
+
 @app.post("/processos/{processo_id}/mensagens")
 async def enviar_mensagem(processo_id: str, dados: str = Form(...), request: Request = None, x_token: str = Header(None), db: Session = Depends(get_db)):
     if not x_token:
@@ -849,6 +875,231 @@ async def listar_mensagens(processo_id: str, x_token: str = Header(None), db: Se
         raise HTTPException(status_code=403, detail="Sem permissao para este processo")
     msgs = db.query(MensagemProcesso).filter(MensagemProcesso.processo_id == processo_id).order_by(MensagemProcesso.criado_em.asc()).all()
     return [{"id": mm.id, "autor_login": mm.autor_login, "autor_tipo": mm.autor_tipo, "texto": mm.texto, "criado_em": mm.criado_em.isoformat() if mm.criado_em else None} for mm in msgs]
+
+BASE_CONHECIMENTO_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "docs", "base_conhecimento_atos_registros_juntas.md")
+
+
+def _carregar_secoes_base_conhecimento():
+    """Le o arquivo de base de conhecimento e devolve uma lista de secoes
+    (### ou ## do markdown) com titulo e corpo. Recarrega do disco a cada
+    chamada de proposito - o vigia normativo (Parte B) pode editar o
+    arquivo entre uma pergunta e outra, e o Assistente sempre deve usar a
+    versao mais atual."""
+    try:
+        with open(BASE_CONHECIMENTO_PATH, "r", encoding="utf-8") as f:
+            texto = f.read()
+    except Exception as e:
+        print("Erro ao carregar base de conhecimento:", e)
+        return []
+    linhas = texto.split("\n")
+    secoes = []
+    titulo_atual = None
+    corpo_atual = []
+    for linha in linhas:
+        if linha.startswith("### ") or linha.startswith("## "):
+            if titulo_atual is not None:
+                secoes.append({"titulo": titulo_atual, "corpo": "\n".join(corpo_atual).strip()})
+            titulo_atual = linha.lstrip("#").strip()
+            corpo_atual = [linha]
+        else:
+            corpo_atual.append(linha)
+    if titulo_atual is not None:
+        secoes.append({"titulo": titulo_atual, "corpo": "\n".join(corpo_atual).strip()})
+    return secoes
+
+
+def _normalizar_busca_texto(txt):
+    import unicodedata
+    t = unicodedata.normalize("NFKD", txt or "")
+    t = "".join(c for c in t if not unicodedata.combining(c))
+    return t.lower()
+
+
+def _buscar_secoes_relevantes(termo_busca, top_n=2):
+    """RAG simples por sobreposicao de palavras-chave (sem embeddings - a
+    base tem ~40 secoes, e' suficiente e muito mais barato/rapido). Busca
+    pelo tipo_ato/identificador_ato ja classificado no processo, nao manda
+    o arquivo inteiro pro Gemini a cada pergunta."""
+    import re
+    secoes = _carregar_secoes_base_conhecimento()
+    if not secoes:
+        return []
+    termo_norm = _normalizar_busca_texto(termo_busca)
+    palavras_termo = set(w for w in re.split(r"\W+", termo_norm) if len(w) > 3)
+    if not palavras_termo:
+        return []
+    pontuadas = []
+    for s in secoes:
+        titulo_norm = _normalizar_busca_texto(s["titulo"])
+        corpo_norm = _normalizar_busca_texto(s["corpo"][:2000])
+        pontos = 0
+        for palavra in palavras_termo:
+            if palavra in titulo_norm:
+                pontos += 5
+            elif palavra in corpo_norm:
+                pontos += 1
+        if pontos > 0:
+            pontuadas.append((pontos, s))
+    pontuadas.sort(key=lambda x: x[0], reverse=True)
+    return [s for _, s in pontuadas[:top_n]]
+
+
+def _gemini_assistente_atos(prompt):
+    """Chama o Gemini pedindo JSON estruturado {resposta, confianca}.
+    Mesma convencao ja usada em _gemini_protocolo/_gemini_texto_documento
+    (chamada REST direta via urllib, modelo gemini-flash-latest)."""
+    import json as _json, urllib.request
+    if not GEMINI_KEY:
+        return None
+    try:
+        body = {"contents": [{"parts": [{"text": prompt}]}]}
+        url = "https://generativelanguage.googleapis.com/v1beta/models/gemini-flash-latest:generateContent?key=" + GEMINI_KEY
+        req = urllib.request.Request(url, data=_json.dumps(body).encode(), headers={"Content-Type": "application/json"})
+        resp = urllib.request.urlopen(req, timeout=40)
+        data = _json.loads(resp.read().decode())
+        txt = data["candidates"][0]["content"]["parts"][0]["text"].strip()
+        txt = txt.replace("```json", "").replace("```", "").strip()
+        return _json.loads(txt)
+    except Exception as e:
+        print("Erro no Gemini (Assistente ATOS):", str(e)[:200])
+        return None
+
+
+def _contexto_processo_assistente(p):
+    partes = [
+        "Empresa: " + (p.empresa or "-"),
+        "CNPJ: " + (p.cnpj or "-"),
+        "Tipo de sociedade: " + (p.tipo_sociedade or "-"),
+        "Tipo de ato: " + (p.tipo_ato or "-"),
+        "Identificador do ato: " + (p.identificador_ato or "-"),
+        "UF/Junta: " + (p.uf or "-"),
+        "Status atual: " + (p.status or "-"),
+        "Numero de protocolo: " + (p.numero_protocolo or "ainda nao protocolado"),
+    ]
+    if p.texto_exigencia:
+        partes.append("Texto da exigencia atual: " + p.texto_exigencia)
+    return "\n".join(partes)
+
+
+@app.post("/assistente/perguntar")
+async def assistente_perguntar(dados: dict = Body(...), x_token: str = Header(None), db: Session = Depends(get_db)):
+    if not x_token:
+        raise HTTPException(status_code=401, detail="Token necessario")
+    usuario = validar_token(x_token, db)
+    if not usuario:
+        raise HTTPException(status_code=401, detail="Token invalido ou sessao expirada")
+    processo_id = dados.get("processo_id")
+    pergunta = (dados.get("pergunta") or "").strip()
+    historico = dados.get("historico") or []
+    if not processo_id or not pergunta:
+        raise HTTPException(status_code=400, detail="processo_id e pergunta sao obrigatorios")
+    p = db.query(Processo).filter(Processo.id == processo_id).first()
+    if not p:
+        raise HTTPException(status_code=404, detail="Processo nao encontrado")
+    if not _tem_acesso_admin(usuario) and p.grupo_id != usuario.grupo_id:
+        raise HTTPException(status_code=403, detail="Sem permissao para este processo")
+
+    termo_busca = (p.tipo_ato or "") + " " + (p.identificador_ato or "")
+    secoes = _buscar_secoes_relevantes(termo_busca, top_n=2)
+    secoes_texto = "\n\n---\n\n".join(s["corpo"] for s in secoes) if secoes else "(nenhuma secao especifica encontrada na base para esse tipo de ato)"
+
+    historico_texto = ""
+    if historico:
+        linhas_hist = []
+        for h in historico[-6:]:
+            papel = "Cliente" if h.get("autor") == "usuario" else "Assistente"
+            linhas_hist.append(papel + ": " + str(h.get("texto") or ""))
+        historico_texto = "\n".join(linhas_hist)
+
+    prompt = f"""Voce e o "Assistente ATOS", que ajuda clientes do sistema ATOS (gestao de registros
+em Juntas Comerciais) a entender o andamento e as implicacoes juridicas do ato societario
+especifico deles. Responda em portugues, de forma direta e acessivel (o usuario normalmente
+NAO e advogado).
+
+REGRA CRITICA: responda SOMENTE com base no CONTEXTO DO PROCESSO e na BASE DE CONHECIMENTO
+fornecidos abaixo. NUNCA invente informacao juridica que nao esteja no texto fornecido -
+nem prazo, nem valor, nem norma. Se a base de conhecimento fornecida nao cobrir o que foi
+perguntado, ou se voce nao tiver certeza da resposta, diga isso claramente ao usuario em vez
+de arriscar uma resposta.
+
+CONTEXTO DO PROCESSO:
+{_contexto_processo_assistente(p)}
+
+BASE DE CONHECIMENTO (trecho relevante ao tipo de ato deste processo):
+{secoes_texto}
+
+{"HISTORICO DA CONVERSA ATE AGORA:\n" + historico_texto if historico_texto else ""}
+
+PERGUNTA DO CLIENTE:
+{pergunta}
+
+Responda APENAS com um JSON no formato exato:
+{{"resposta": "sua resposta ao cliente, em texto corrido", "confianca": "alta" | "media" | "baixa"}}
+Use "baixa" sempre que a base de conhecimento fornecida nao cobrir claramente a pergunta,
+ou quando a resposta exigir julgamento juridico especifico do caso que voce nao pode garantir."""
+
+    resultado = _gemini_assistente_atos(prompt)
+    if not resultado or not resultado.get("resposta"):
+        resposta_final = ("Nao consegui processar sua pergunta agora. Um especialista do ATOS "
+                           "vai revisar e te responder em breve.")
+        confianca = "baixa"
+    else:
+        resposta_final = resultado["resposta"]
+        confianca = (resultado.get("confianca") or "media").lower()
+        if confianca not in ("alta", "media", "baixa"):
+            confianca = "media"
+
+    escalado = confianca == "baixa"
+    if escalado:
+        if "especialista" not in resposta_final.lower():
+            resposta_final += ("\n\nNao tenho certeza sobre esse ponto especifico - um especialista "
+                                "do ATOS vai revisar e te responder em breve.")
+        _grupo = db.query(Grupo).filter(Grupo.id == p.grupo_id).first()
+        _empresa_nome = (_grupo.nome if _grupo else None) or p.empresa or "cliente"
+        _ato = p.identificador_ato or p.tipo_ato or "processo"
+        aviso = (
+            "[Assistente ATOS - baixa confianca, revisar]\n"
+            f"Cliente: {_empresa_nome} | Processo: {_ato} | Usuario: {usuario.login}\n\n"
+            f"Pergunta: {pergunta}\n\n"
+            f"Resposta dada pela IA (baixa confianca): {resposta_final}"
+        )
+        notificar_telegram(aviso)
+
+    conversa = AssistenteConversa(
+        id=str(uuid.uuid4()),
+        processo_id=processo_id,
+        usuario_id=usuario.id,
+        mensagem=pergunta,
+        resposta=resposta_final,
+        nivel_confianca=confianca,
+        secao_usada=", ".join(s["titulo"] for s in secoes) if secoes else None,
+        escalado_admin=escalado,
+    )
+    db.add(conversa)
+    db.commit()
+
+    return {"resposta": resposta_final, "confianca": confianca, "escalado": escalado}
+
+
+@app.get("/processos/{processo_id}/assistente/historico")
+async def assistente_historico(processo_id: str, x_token: str = Header(None), db: Session = Depends(get_db)):
+    if not x_token:
+        raise HTTPException(status_code=401, detail="Token necessario")
+    usuario = validar_token(x_token, db)
+    if not usuario:
+        raise HTTPException(status_code=401, detail="Token invalido ou sessao expirada")
+    p = db.query(Processo).filter(Processo.id == processo_id).first()
+    if not p:
+        raise HTTPException(status_code=404, detail="Processo nao encontrado")
+    if not _tem_acesso_admin(usuario) and p.grupo_id != usuario.grupo_id:
+        raise HTTPException(status_code=403, detail="Sem permissao para este processo")
+    conversas = db.query(AssistenteConversa).filter(AssistenteConversa.processo_id == processo_id).order_by(AssistenteConversa.criado_em.asc()).all()
+    return [{
+        "id": c.id, "mensagem": c.mensagem, "resposta": c.resposta,
+        "nivel_confianca": c.nivel_confianca, "escalado_admin": c.escalado_admin,
+        "criado_em": c.criado_em.isoformat() if c.criado_em else None,
+    } for c in conversas]
+
 
 @app.post("/processos/{processo_id}/anexos")
 async def enviar_anexo(processo_id: str, arquivo: UploadFile = File(...), descricao: str = Form(None), request: Request = None, x_token: str = Header(None), db: Session = Depends(get_db)):

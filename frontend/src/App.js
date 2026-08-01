@@ -1,7 +1,7 @@
 ﻿import { useState, useEffect } from "react";
 import axios from "axios";
 import { Painel as PainelCliente } from "./Cliente";
-import { STATUS_CONFIG, formatarDataExtenso, StatCard, FluxoDoDiaCard, AtividadeRecente, StatusDonut } from "./components/Compartilhados";
+import { STATUS_CONFIG, formatarDataExtenso, StatCard, FluxoDoDiaCard, AtividadeRecente, StatusDonut, AssistenteAtos } from "./components/Compartilhados";
 
 const API = "";
 
@@ -1026,6 +1026,7 @@ async function excluirProcesso() {
           </div>
         </div>
 
+        <AssistenteAtos processo={p} token={null} modoAdmin={true} />
         <ChatProcesso processoId={p.id} />
         {p.observacoes && (
           <div style={{ background: "#f8fafc", borderRadius: 8, padding: 12, fontSize: 13, color: "#475569" }}>

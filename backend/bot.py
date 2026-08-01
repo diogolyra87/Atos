@@ -1,13 +1,16 @@
 ﻿import os, time, sys, uuid
+from datetime import datetime
 sys.path.insert(0, os.path.dirname(__file__))
 from dotenv import load_dotenv
 load_dotenv("/root/atos/.env")
 
 import requests
-from database import SessionLocal, Processo, MensagemProcesso, TelegramVinculo, Usuario
+from database import SessionLocal, Processo, MensagemProcesso, TelegramVinculo, Usuario, MudancaNormativaPendente, FonteMonitoramentoNormativo
 import sys as _sys
 _sys.path.insert(0, os.path.dirname(__file__))
+_sys.path.insert(0, os.path.join(os.path.dirname(__file__), "monitoramento"))
 from main import extrair_protocolo_ocr, recalcular_status, UPLOADS_DIR, GEMINI_KEY, notificar_tramitacao_cliente, registrar_evento
+from vigia_normativo import aplicar_mudanca_no_arquivo, log_acao as _log_acao_normativa
 
 TOKEN = os.getenv("TELEGRAM_TOKEN")
 ADMIN_CHAT_ID = str(os.getenv("TELEGRAM_CHAT_ID") or "")
@@ -337,6 +340,81 @@ def processar_confirmacao_anexo(chat_id, msg):
     del _PENDENTES_ANEXO[mid]
     return True
 
+def _responder_callback(callback_query_id, texto_toast=None):
+    data = {"callback_query_id": callback_query_id}
+    if texto_toast:
+        data["text"] = texto_toast
+    try:
+        requests.post(f"{API}/answerCallbackQuery", data=data, timeout=10)
+    except Exception as e:
+        print("erro answerCallbackQuery:", e)
+
+
+def _editar_mensagem(chat_id, message_id, novo_texto):
+    try:
+        requests.post(f"{API}/editMessageText", data={"chat_id": chat_id, "message_id": message_id, "text": novo_texto}, timeout=10)
+    except Exception as e:
+        print("erro editMessageText:", e)
+
+
+def processar_callback(callback):
+    """Trata cliques nos botoes inline do vigia normativo (Parte B):
+    'vigia_aprovar:<id>' ou 'vigia_rejeitar:<id>'. Unico uso de callback_query
+    no bot ate agora - so' o admin autorizado pode agir."""
+    chat_id = str(callback["message"]["chat"]["id"])
+    message_id = callback["message"]["message_id"]
+    callback_id = callback["id"]
+    dados = (callback.get("data") or "").strip()
+
+    if chat_id != ADMIN_CHAT_ID:
+        _responder_callback(callback_id, "Nao autorizado.")
+        return
+    if not (dados.startswith("vigia_aprovar:") or dados.startswith("vigia_rejeitar:")):
+        _responder_callback(callback_id)
+        return
+
+    acao, mudanca_id = dados.split(":", 1)
+    quem_aprovou = callback.get("from", {}).get("first_name") or callback.get("from", {}).get("username") or "admin"
+
+    db = SessionLocal()
+    try:
+        mudanca = db.query(MudancaNormativaPendente).filter(MudancaNormativaPendente.id == mudanca_id).first()
+        if not mudanca:
+            _responder_callback(callback_id, "Mudanca nao encontrada (pode ja ter sido resolvida).")
+            return
+        if mudanca.status != "pendente":
+            _responder_callback(callback_id, f"Ja estava '{mudanca.status}'.")
+            return
+        fonte = db.query(FonteMonitoramentoNormativo).filter(FonteMonitoramentoNormativo.id == mudanca.fonte_id).first()
+
+        if acao == "vigia_aprovar":
+            ok = aplicar_mudanca_no_arquivo(mudanca, fonte, aprovado_por=quem_aprovou) if fonte else False
+            mudanca.status = "aprovado" if ok else "pendente"
+            if ok:
+                mudanca.resolvido_por = quem_aprovou
+                mudanca.resolvido_em = datetime.now()
+                db.commit()
+                _log_acao_normativa(db, mudanca.fonte_id, "aprovacao", nivel=mudanca.nivel, detalhe=f"Aprovado manualmente via Telegram por {quem_aprovou}. Mudanca id={mudanca.id}")
+                _responder_callback(callback_id, "Aplicado!")
+                _editar_mensagem(chat_id, message_id, callback["message"]["text"] + f"\n\n✅ APROVADO E APLICADO por {quem_aprovou}")
+            else:
+                db.commit()
+                _responder_callback(callback_id, "Erro ao aplicar - veja o log.")
+        else:
+            mudanca.status = "rejeitado"
+            mudanca.resolvido_por = quem_aprovou
+            mudanca.resolvido_em = datetime.now()
+            db.commit()
+            _log_acao_normativa(db, mudanca.fonte_id, "rejeicao", nivel=mudanca.nivel, detalhe=f"Rejeitado manualmente via Telegram por {quem_aprovou}. Mudanca id={mudanca.id}")
+            _responder_callback(callback_id, "Rejeitado.")
+            _editar_mensagem(chat_id, message_id, callback["message"]["text"] + f"\n\n❌ REJEITADO por {quem_aprovou}")
+    except Exception as e:
+        print("erro processar_callback:", e)
+        _responder_callback(callback_id, "Erro ao processar.")
+    finally:
+        db.close()
+
+
 AJUDA = (
     "Comandos do ATOS:\n"
     "/resumo - totais por status\n"
@@ -464,6 +542,10 @@ def main():
             data = r.json()
             for upd in data.get("result", []):
                 offset = upd["update_id"] + 1
+                callback = upd.get("callback_query")
+                if callback:
+                    processar_callback(callback)
+                    continue
                 msg = upd.get("message")
                 if not msg:
                     continue

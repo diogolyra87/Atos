@@ -7,6 +7,10 @@ load_dotenv("/root/atos/.env")
 DB = "/root/atos/backend/mane.db"
 ADMIN_EMAIL = os.getenv("ADMIN_EMAIL")
 
+HEARTBEAT_CONSULTA = os.path.join(os.path.dirname(__file__), "ultima_consulta_ok.txt")
+FLAG_ALERTA_CRON = os.path.join(os.path.dirname(__file__), "cron_saude_alerta_enviado.txt")
+LIMITE_HORAS_SEM_RODAR = 3  # timer de consulta roda a cada 2h - 3h de folga antes de alertar
+
 # Reusa funcoes do backend (email Brevo + telegram + lista de destinatarios admin)
 try:
     from main import enviar_email, notificar_telegram, emails_admin
@@ -45,7 +49,55 @@ def parse(dt):
         except: pass
     return None
 
+def verificar_saude_cron_consulta():
+    """REGRA 4 (independente das demais, nao depende do banco de processos):
+    atos-consulta.timer roda a cada 2h e grava um heartbeat em
+    ultima_consulta_ok.txt ao terminar sem erro. Se esse arquivo nao existir
+    ou estiver mais velho que LIMITE_HORAS_SEM_RODAR, o cron de consulta
+    parou de rodar (crash no import, exececao nao tratada, timer desabilitado
+    etc.) - alerta uma unica vez por episodio (flag em FLAG_ALERTA_CRON,
+    removida assim que um heartbeat fresco aparecer de novo)."""
+    if not os.path.exists(HEARTBEAT_CONSULTA):
+        idade_horas = None
+    else:
+        try:
+            ultima = datetime.fromisoformat(open(HEARTBEAT_CONSULTA, encoding="utf-8").read().strip())
+            idade_horas = (AGORA - ultima).total_seconds() / 3600
+        except Exception as e:
+            print("erro lendo heartbeat do cron de consulta:", e)
+            idade_horas = None
+
+    parado = idade_horas is None or idade_horas >= LIMITE_HORAS_SEM_RODAR
+    ja_alertado = os.path.exists(FLAG_ALERTA_CRON)
+
+    if parado and not ja_alertado:
+        detalhe = (
+            "sem nenhum registro de execucao bem-sucedida (arquivo de heartbeat ausente)"
+            if idade_horas is None
+            else f"ultima execucao bem-sucedida ha {idade_horas:.1f}h"
+        )
+        alertar(
+            "[Atos] ALERTA - cron de consulta (RJ/BA/PE/SP/Empreendedor Digital) parado",
+            "O cron atos-consulta.timer nao completa uma execucao com sucesso ha mais de "
+            f"{LIMITE_HORAS_SEM_RODAR}h ({detalhe}). Processos podem estar sem consulta de "
+            "status ativa. Verificar journalctl -u atos-consulta.service no servidor.",
+        )
+        try:
+            with open(FLAG_ALERTA_CRON, "w", encoding="utf-8") as f:
+                f.write(AGORA.isoformat())
+        except Exception as e:
+            print("erro gravando flag de alerta do cron:", e)
+    elif not parado and ja_alertado:
+        try:
+            os.remove(FLAG_ALERTA_CRON)
+            print("cron de consulta voltou a rodar normalmente - flag de alerta limpa.")
+        except Exception as e:
+            print("erro limpando flag de alerta do cron:", e)
+
+
 def main():
+    verificar_saude_cron_consulta()
+
     con = sqlite3.connect(DB)
     con.row_factory = sqlite3.Row
     cur = con.cursor()

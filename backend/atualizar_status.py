@@ -550,6 +550,23 @@ def verificar_atrasos_deferido(db, agora):
         except Exception as e:
             print("   erro ao processar alerta de atraso:", e)
 
+def _marcar_execucao_ok():
+    """Grava um heartbeat de sucesso (so' chega aqui se processar() completou
+    sem excecao nao tratada, inclusive sem erro de import no carregamento do
+    modulo). monitor_sla.py - processo INDEPENDENTE, com seu proprio timer,
+    que nao importa este arquivo - le esse heartbeat e alerta (email+
+    telegram) se ele parar de ser atualizado. Precisa ser um processo
+    separado: se este script quebrar no import (como aconteceu de
+    31/07 a 01/08, crash-loop nunca detectado), ele mesmo nao teria como se
+    auto-alertar."""
+    caminho = os.path.join(os.path.dirname(os.path.abspath(__file__)), "ultima_consulta_ok.txt")
+    try:
+        with open(caminho, "w", encoding="utf-8") as f:
+            f.write(datetime.now().isoformat())
+    except Exception as e:
+        print("   [aviso] falha ao gravar heartbeat de saude do cron:", e)
+
+
 def processar():
     db = SessionLocal()
     agora = datetime.now()
@@ -561,6 +578,7 @@ def processar():
     processar_pe(db, agora)
     processar_empreendedor_digital(db, agora)
     db.close()
+    _marcar_execucao_ok()
     print("FIM.")
 
 

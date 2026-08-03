@@ -1018,7 +1018,7 @@ async function excluirProcesso() {
           )}
           <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", borderTop: "0.5px solid #e2e8f0", paddingTop: 12 }}>
             <input style={{ ...s.input, flex: "1 1 200px", minWidth: 160 }} value={descAnexo}
-              onChange={e => setDescAnexo(e.target.value)} placeholder="Descri\u00e7\u00e3o (opcional): ex. procura\u00e7\u00e3o, RG..." />
+              onChange={e => setDescAnexo(e.target.value)} placeholder="Descrição (opcional): ex. procuração, RG..." />
             <label style={{ cursor: enviandoAnexo ? "not-allowed" : "pointer" }}>
               <span style={{ ...s.uploadPend, opacity: enviandoAnexo ? 0.5 : 1 }}>
                 {enviandoAnexo ? "Enviando..." : "+ Enviar anexo"}

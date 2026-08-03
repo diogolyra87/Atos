@@ -1,7 +1,7 @@
 ﻿import { useState, useEffect } from "react";
 import { useSearchParams } from "react-router-dom";
 import axios from "axios";
-import { STATUS_CONFIG, formatarDataExtenso, StatCard, FluxoDoDiaCard, AtividadeRecente, StatusDonut, BotaoIatos, IatosChat, subtituloProcesso } from "./components/Compartilhados";
+import { STATUS_CONFIG, formatarDataExtenso, FluxoDoDiaCardEscuro, AtividadeRecenteEscura, BotaoIatos, IatosChat, subtituloProcesso, SidebarAtos, IconeProcessos, IconeRelatorios, DonutStatusCard, TelaLogin, TelaCriarAcesso, PainelDownloadStatus, FONTE_CORPO, FONTE_TITULO } from "./components/Compartilhados";
 
 const API = "";
 
@@ -90,100 +90,26 @@ export default function Cliente() {
   if (sessao) return <Painel sessao={sessao} onSair={limparSessao} />;
 
   const ehCadastro = modo === "cadastro";
-  const s = estilos();
+  if (ehCadastro) {
+    return (
+      <TelaCriarAcesso
+        codigoGrupo={codigoGrupo}
+        login={login} senha={senha}
+        erro={erro} aviso={aviso} carregando={carregando}
+        onChangeLogin={setLogin} onChangeSenha={setSenha}
+        onCadastrar={cadastrar}
+      />
+    );
+  }
   return (
-    <>
-﻿      <style>{`
-        @keyframes atosWaveMove { 0% { transform: translate(0,0) rotate(0deg); } 50% { transform: translate(-3%,2%) rotate(5deg); } 100% { transform: translate(0,0) rotate(0deg); } }
-        @keyframes atosSplashOut { 0%,62% { opacity:1; visibility:visible; } 80%,100% { opacity:0; visibility:hidden; } }
-        @keyframes atosLogoIn { 0%,6% { opacity:0; transform: translateY(16px); } 26%,60% { opacity:1; transform: translateY(0); } 76%,100% { opacity:0; transform: translateY(-8px); } }
-        @keyframes atosSubIn { 0%,28% { opacity:0; transform: translateY(10px); } 44%,60% { opacity:1; transform: translateY(0); } 76%,100% { opacity:0; transform: translateY(-6px); } }
-        @keyframes atosFormIn { 0%,66% { opacity:0; transform: translateY(12px); } 86%,100% { opacity:1; transform: translateY(0); } }
-        .atos-splash { position:fixed; inset:0; z-index:50; background:linear-gradient(180deg,#dff3f0 0%,#7fd0d8 38%,#3b82f6 72%,#1e3a8a 100%); display:flex; flex-direction:column; align-items:center; justify-content:center; animation: atosSplashOut 5s ease-in-out forwards; pointer-events:none; }
-        .atos-splash-wave { position:absolute; top:-35%; left:-30%; width:80%; height:130%; filter:blur(24px); border-radius:45%; background: radial-gradient(circle at 30% 30%, #2dd4bf, transparent 60%), radial-gradient(circle at 60% 60%, #3b82f6, transparent 55%); animation: atosWaveMove 9s ease-in-out infinite; }
-        .atos-splash-frame { position:relative; z-index:4; -webkit-backdrop-filter:blur(14px); backdrop-filter:blur(14px); border:1px solid rgba(255,255,255,0.5); border-radius:24px; padding:36px 60px; display:flex; flex-direction:column; align-items:center; background:rgba(255,255,255,0.28); opacity:0; transform:scale(0.85); animation: atosFrameIn 5s ease-in-out forwards; }
-        .atos-splash-glow { position:absolute; z-index:3; width:260px; height:260px; border-radius:50%; background:radial-gradient(circle, rgba(255,255,255,0.55), transparent 70%); animation: atosGlowPulse 4s ease-in-out infinite; }
-        @keyframes atosGlowPulse { 0%,100% { transform:scale(1); opacity:0.6; } 50% { transform:scale(1.15); opacity:0.9; } }
-        .atos-splash-cloud { position:absolute; left:-220px; z-index:2; animation-name:atosCloudDrift; animation-timing-function:linear; animation-iteration-count:infinite; }
-        .atos-cloud-base, .atos-cloud-bump { position:absolute; background:#ffffff; border-radius:50%; filter:blur(1px); }
-        .atos-cloud-base { border-radius:100px; }
-        @keyframes atosCloudDrift { 0% { left:-220px; } 100% { left:110%; } }
-        .atos-splash-logo { position:relative; z-index:2; margin:0; font-family:Inter,sans-serif; font-size:68px; font-weight:800; color:#111; line-height:1; letter-spacing:-2px; animation: atosLogoIn 5s ease-in-out forwards; }
-        .atos-splash-sub { position:relative; z-index:2; margin:12px 0 0; font-size:22px; color:#163a6b; letter-spacing:0.5px; animation: atosSubIn 5s ease-in-out forwards; }
-        .atos-login-card { animation: atosFormIn 3s ease-in-out forwards; }
-      `}</style>
-      <div className="atos-splash">
-        
-        <div className="atos-splash-cloud" style={{ top: "14%", opacity: 0.75, transform: "scale(1.15)", animationDuration: "36s" }}>
-          <div className="atos-cloud-base" style={{ width: 170, height: 56 }}></div>
-          <div className="atos-cloud-bump" style={{ width: 80, height: 80, left: 16, top: -34 }}></div>
-          <div className="atos-cloud-bump" style={{ width: 100, height: 100, left: 58, top: -46 }}></div>
-          <div className="atos-cloud-bump" style={{ width: 70, height: 70, left: 108, top: -28 }}></div>
-        </div>
-        <div className="atos-splash-cloud" style={{ top: "62%", opacity: 0.6, transform: "scale(0.85)", animationDuration: "44s", animationDelay: "-12s" }}>
-          <div className="atos-cloud-base" style={{ width: 170, height: 56 }}></div>
-          <div className="atos-cloud-bump" style={{ width: 80, height: 80, left: 16, top: -34 }}></div>
-          <div className="atos-cloud-bump" style={{ width: 100, height: 100, left: 58, top: -46 }}></div>
-          <div className="atos-cloud-bump" style={{ width: 70, height: 70, left: 108, top: -28 }}></div>
-        </div>
-        <div className="atos-splash-cloud" style={{ top: "35%", opacity: 0.45, transform: "scale(0.6)", animationDuration: "52s", animationDelay: "-28s" }}>
-          <div className="atos-cloud-base" style={{ width: 170, height: 56 }}></div>
-          <div className="atos-cloud-bump" style={{ width: 80, height: 80, left: 16, top: -34 }}></div>
-          <div className="atos-cloud-bump" style={{ width: 100, height: 100, left: 58, top: -46 }}></div>
-          <div className="atos-cloud-bump" style={{ width: 70, height: 70, left: 108, top: -28 }}></div>
-        </div>
-        <div className="atos-splash-glow"></div>
-        <div className="atos-splash-frame">
-          <div className="atos-splash-logo" style={{ fontFamily: "AtosBrand" }}>atos<span style={{ color: "#2d6cdf" }}>.</span></div>
-        <div className="atos-splash-sub">Gestao Societaria</div>
-        </div>
-      </div>
-      <div style={s.wrap}>
-        <div className="atos-splash-cloud" style={{ top: "14%", opacity: 0.75, transform: "scale(1.15)", animationDuration: "36s" }}>
-          <div className="atos-cloud-base" style={{ width: 170, height: 56 }}></div>
-          <div className="atos-cloud-bump" style={{ width: 80, height: 80, left: 16, top: -34 }}></div>
-          <div className="atos-cloud-bump" style={{ width: 100, height: 100, left: 58, top: -46 }}></div>
-          <div className="atos-cloud-bump" style={{ width: 70, height: 70, left: 108, top: -28 }}></div>
-        </div>
-        <div className="atos-splash-cloud" style={{ top: "62%", opacity: 0.6, transform: "scale(0.85)", animationDuration: "44s", animationDelay: "-12s" }}>
-          <div className="atos-cloud-base" style={{ width: 170, height: 56 }}></div>
-          <div className="atos-cloud-bump" style={{ width: 80, height: 80, left: 16, top: -34 }}></div>
-          <div className="atos-cloud-bump" style={{ width: 100, height: 100, left: 58, top: -46 }}></div>
-          <div className="atos-cloud-bump" style={{ width: 70, height: 70, left: 108, top: -28 }}></div>
-        </div>
-        <div className="atos-splash-cloud" style={{ top: "35%", opacity: 0.45, transform: "scale(0.6)", animationDuration: "52s", animationDelay: "-28s" }}>
-          <div className="atos-cloud-base" style={{ width: 170, height: 56 }}></div>
-          <div className="atos-cloud-bump" style={{ width: 80, height: 80, left: 16, top: -34 }}></div>
-          <div className="atos-cloud-bump" style={{ width: 100, height: 100, left: 58, top: -46 }}></div>
-          <div className="atos-cloud-bump" style={{ width: 70, height: 70, left: 108, top: -28 }}></div>
-        </div>
-        <div className="atos-login-card" style={s.card}>
-          <div style={{...s.logo, fontFamily: "AtosBrand"}}>atos<span style={{ color: "#2d6cdf" }}>.</span></div>
-          <div style={s.sub}>Gestão Societária — {ehCadastro ? "Crie Seu Login e Senha" : "Área do cliente"}</div>
-          {erro && <div style={s.erro}>{erro}</div>}
-          {aviso && <div style={s.aviso}>{aviso}</div>}
-          {ehCadastro && codigoGrupo && <div style={s.grupoBox}>Cadastro para o grupo: <strong>{codigoGrupo}</strong></div>}
-          {etapa === 1 && (<>
-          <label style={s.label}>Login</label>
-          <input style={s.input} value={login} onChange={e => setLogin(e.target.value)}
-            onKeyDown={e => e.key === "Enter" && (ehCadastro ? cadastrar() : entrar())} />
-          <label style={s.label}>Senha</label>
-          <input style={s.input} type="password" value={senha} onChange={e => setSenha(e.target.value)}
-            onKeyDown={e => e.key === "Enter" && (ehCadastro ? cadastrar() : entrar())} />
-          <button style={s.btn} onClick={ehCadastro ? cadastrar : entrar} disabled={carregando}>
-            {carregando ? "Aguarde..." : (ehCadastro ? "Cadastrar" : "Entrar")}
-          </button>
-          </>)}
-          {etapa === 2 && (<>
-          <div style={{ fontSize: 13, color: "#6b6c66", marginBottom: 12 }}>Enviamos um codigo para o seu e-mail. Digite-o abaixo para entrar.</div>
-          <label style={s.label}>Codigo de acesso</label>
-          <input style={{ ...s.input, fontSize: 18, letterSpacing: 4, textAlign: "center" }} value={codigo} onChange={e => setCodigo(e.target.value)} onKeyDown={e => e.key === "Enter" && verificarCodigo()} maxLength={6} />
-          <button style={s.btn} onClick={verificarCodigo} disabled={carregando}>{carregando ? "Aguarde..." : "Verificar codigo"}</button>
-          <button style={{ ...s.btn, background: "transparent", color: "#6b6c66" }} onClick={() => { setEtapa(1); setCodigo(""); setErro(""); }}>Voltar</button>
-          </>)}
-        </div>
-      </div>
-    </>
+    <TelaLogin
+      subtitulo="Área do cliente"
+      erro={erro} aviso={aviso} etapa={etapa} carregando={carregando}
+      login={login} senha={senha} codigo={codigo}
+      onChangeLogin={setLogin} onChangeSenha={setSenha} onChangeCodigo={setCodigo}
+      onEntrar={entrar} onVerificarCodigo={verificarCodigo}
+      onVoltarEtapa={() => { setEtapa(1); setCodigo(""); setErro(""); }}
+    />
   );
 }
 
@@ -290,88 +216,86 @@ function DetalheProcessoCliente({ p, sessao, onVoltar }) {
     } catch (e) { alert("Nao foi possivel baixar o anexo."); }
   }
 
-  async function baixarRegistro() {
+  async function baixarDocumento(tipo) {
     try {
-      const res = await axios.get(API + "/download/" + p.id + "/registro", { headers: { "x-token": sessao.token }, responseType: "blob" });
+      const res = await axios.get(API + "/download/" + p.id + "/" + tipo, { headers: { "x-token": sessao.token }, responseType: "blob" });
       const url = window.URL.createObjectURL(new Blob([res.data]));
       const a = document.createElement("a");
-      a.href = url; a.download = (p.empresa || "registro").replace(/[^a-zA-Z0-9]/g, "_") + "_registro.pdf";
+      a.href = url; a.download = (p.empresa || tipo).replace(/[^a-zA-Z0-9]/g, "_") + "_" + tipo + ".pdf";
       document.body.appendChild(a); a.click(); a.remove();
       window.URL.revokeObjectURL(url);
-    } catch (e) { alert("Nao foi possivel baixar o registro."); }
+    } catch (e) { alert("Nao foi possivel baixar o documento."); }
   }
 
-  const sD = {
-    detalhe: { background: "#fff", border: "0.5px solid #e2e8f0", borderRadius: 12, padding: 24 },
-    detalheHeader: { display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 20 },
-    detalheTitle: { fontSize: 18, fontWeight: 500, color: "#23282a" },
-    btnSecondary: { background: "none", border: "0.5px solid #e2e8f0", borderRadius: 8, padding: "9px 18px", fontSize: 13, cursor: "pointer", color: "#475569" },
-    statusRow: { display: "flex", gap: 8, marginBottom: 20, flexWrap: "wrap" },
-    btnStatus: (ativo) => ({ padding: "6px 14px", borderRadius: 20, fontSize: 12, border: ativo ? "2px solid #1e40af" : "0.5px solid #e2e8f0", background: ativo ? "#dbeafe" : "#fff", color: ativo ? "#1e40af" : "#475569", fontWeight: ativo ? 500 : 400 }),
-    detalheGrid: { display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16, marginBottom: 20 },
-    detalheItem: { background: "#f8fafc", borderRadius: 8, padding: 12 },
-    detalheItemLabel: { fontSize: 11, color: "#94a3b8", marginBottom: 4 },
-    detalheItemValue: { fontSize: 13, color: "#23282a", fontWeight: 500 },
-    anexoRow: { display: "flex", justifyContent: "space-between", alignItems: "center", padding: "8px 0", borderBottom: "0.5px solid #f1f5f9" },
-  };
+  const statusAtual = (p.status === "aprovado") ? "deferido" : (p.status === "recebido" ? "aberto" : p.status);
 
   return (
-    <div style={sD.detalhe}>
-      <div style={sD.detalheHeader}>
-        <div>
-          <div style={sD.detalheTitle}>{p.empresa}</div>
-          <div style={{ fontFamily: "monospace", fontSize: 12, color: "#94a3b8", marginTop: 4 }}>
-            CNPJ {p.cnpj} - NIRE {p.nire}
-          </div>
-        </div>
-        <div style={{ display: "flex", gap: 16, alignItems: "center" }}>
-          <BotaoIatos processo={p} onAbrir={() => setIatosAberto(true)} />
-          {p.arquivo_registro && (
-            <button style={{ background: "#2563eb", color: "#fff", border: "none", borderRadius: 8, padding: "9px 18px", fontSize: 13, cursor: "pointer" }} onClick={baixarRegistro}>
-              Baixar registro
-            </button>
-          )}
-          <button style={sD.btnSecondary} onClick={onVoltar}>Voltar</button>
-        </div>
+    <div>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 20 }}>
+        <button onClick={onVoltar} style={{ background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.1)", color: "#d4d4d8", padding: "8px 16px", borderRadius: 8, fontSize: 12.5, display: "flex", alignItems: "center", gap: 6, cursor: "pointer", fontFamily: FONTE_CORPO }}>
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M19 12H5" /><path d="M12 19l-7-7 7-7" /></svg>
+          Voltar
+        </button>
+        <BotaoIatos processo={p} onAbrir={() => setIatosAberto(true)} />
       </div>
       {iatosAberto && <IatosChat processo={p} token={sessao.token} onFechar={() => setIatosAberto(false)} />}
 
-      <div style={{ fontSize: 13, color: "#64748b", marginBottom: 12 }}>Status:</div>
-      <div style={sD.statusRow}>
-        {["aberto", "tramitacao", "exigencia", "deferido", "finalizado"].map((key) => (
-          <div key={key} style={sD.btnStatus(p.status === key)}>
-            {STATUS_CONFIG[key] ? STATUS_CONFIG[key].label : key}
-          </div>
-        ))}
+      <div style={{ background: "radial-gradient(circle at 8% 0%, #1a1470 0%, #0e0e14 55%)", border: "1px solid rgba(140,90,255,0.35)", borderRadius: 20, padding: "24px 28px", marginBottom: 16 }}>
+        <div style={{ fontFamily: FONTE_TITULO, fontSize: 20, fontWeight: 700, color: "#fff", marginBottom: 4 }}>{p.empresa}</div>
+        <div style={{ fontSize: 12, color: "#8a90b8" }}>CNPJ {p.cnpj} · NIRE {p.nire}</div>
+        <div style={{ display: "flex", gap: 8, marginTop: 18, flexWrap: "wrap" }}>
+          {["aberto", "tramitacao", "exigencia", "deferido", "finalizado"].map((key) => {
+            const ativo = statusAtual === key;
+            return (
+              <span key={key} style={{
+                padding: "7px 16px", borderRadius: 20, fontSize: 12,
+                border: ativo ? "1px solid rgba(255,159,10,0.4)" : "1px solid rgba(255,255,255,0.1)",
+                background: ativo ? "rgba(255,159,10,0.15)" : "transparent",
+                color: ativo ? "#ff9f0a" : "#71717a",
+                boxShadow: ativo ? "0 0 14px rgba(255,159,10,0.15)" : "none",
+              }}>
+                {STATUS_CONFIG[key] ? STATUS_CONFIG[key].label : key}
+              </span>
+            );
+          })}
+        </div>
       </div>
 
-      <div style={sD.detalheGrid}>
-        <div style={sD.detalheItem}><div style={sD.detalheItemLabel}>Tipo de ato</div><div style={sD.detalheItemValue}>{p.tipo_ato}</div></div>
-        <div style={sD.detalheItem}><div style={sD.detalheItemLabel}>Identificador</div><div style={sD.detalheItemValue}>{p.identificador_ato}</div></div>
-        <div style={sD.detalheItem}><div style={sD.detalheItemLabel}>Data da ata</div><div style={sD.detalheItemValue}>{p.data_ata} {p.hora_ata ? "- " + p.hora_ata : ""}</div></div>
-        <div style={sD.detalheItem}><div style={sD.detalheItemLabel}>Protocolo</div><div style={sD.detalheItemValue}>{p.numero_protocolo || "-"}</div></div>
-        <div style={sD.detalheItem}><div style={sD.detalheItemLabel}>Recebido em</div><div style={sD.detalheItemValue}>{p.data_recebimento ? new Date(p.data_recebimento).toLocaleDateString("pt-BR") : "-"}</div></div>
-        <div style={sD.detalheItem}><div style={sD.detalheItemLabel}>Processo criado em</div><div style={sD.detalheItemValue}>{p.criado_em ? new Date(p.criado_em).toLocaleString("pt-BR") : "-"}</div></div>
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 24, background: "#0e0e14", border: "1px solid rgba(255,255,255,0.06)", borderRadius: 18, padding: "26px 28px", marginBottom: 16 }}>
+        <div>
+          <div style={{ marginBottom: 20 }}><div style={{ fontSize: 10.5, color: "#71717a", textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 6 }}>Tipo de ato</div><div style={{ fontSize: 14, color: "#e4e4e7", fontWeight: 500 }}>{p.tipo_ato}</div></div>
+          <div style={{ marginBottom: 20 }}><div style={{ fontSize: 10.5, color: "#71717a", textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 6 }}>Data do ato</div><div style={{ fontSize: 14, color: "#e4e4e7", fontWeight: 500 }}>{p.data_ata}{p.hora_ata ? " — " + p.hora_ata : ""}</div></div>
+          <div><div style={{ fontSize: 10.5, color: "#71717a", textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 6 }}>Recebido em</div><div style={{ fontSize: 14, color: "#e4e4e7", fontWeight: 500 }}>{p.data_recebimento ? new Date(p.data_recebimento).toLocaleDateString("pt-BR") : "-"}</div></div>
+        </div>
+        <div>
+          <div style={{ marginBottom: 20 }}><div style={{ fontSize: 10.5, color: "#71717a", textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 6 }}>Identificador</div><div style={{ fontSize: 14, color: "#e4e4e7", fontWeight: 500 }}>{p.identificador_ato}</div></div>
+          <div style={{ marginBottom: 20 }}><div style={{ fontSize: 10.5, color: "#71717a", textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 6 }}>Protocolo</div><div style={{ fontSize: 14, color: p.numero_protocolo ? "#e4e4e7" : "#71717a", fontWeight: 500 }}>{p.numero_protocolo || "—"}</div></div>
+          <div><div style={{ fontSize: 10.5, color: "#71717a", textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 6 }}>Processo criado em</div><div style={{ fontSize: 14, color: "#e4e4e7", fontWeight: 500 }}>{p.criado_em ? new Date(p.criado_em).toLocaleString("pt-BR") : "-"}</div></div>
+        </div>
       </div>
 
-      <div style={{ fontSize: 13, fontWeight: 500, color: "#23282a", marginBottom: 12 }}>Anexos</div>
-      {anexos.length === 0 ? (
-        <div style={{ fontSize: 13, color: "#94a3b8", marginBottom: 12 }}>Nenhum anexo enviado ainda.</div>
-      ) : (
-        anexos.map(a => (
-          <div key={a.id} style={sD.anexoRow}>
-            <span style={{ fontSize: 13 }}>{a.nome_original}</span>
-            <button onClick={() => baixarAnexo(a.id, a.nome_original)}
-              style={{ background: "transparent", border: "0.5px solid #2563eb", color: "#2563eb", borderRadius: 6, padding: "4px 10px", fontSize: 12, cursor: "pointer" }}>
-              Baixar
-            </button>
+      <PainelDownloadStatus processo={p} onBaixar={baixarDocumento} />
+
+      <div style={{ background: "#0e0e14", border: "1px solid rgba(255,255,255,0.06)", borderRadius: 18, padding: "24px 28px" }}>
+        <div style={{ fontSize: 13, color: "#a8b0d8", marginBottom: 14, fontWeight: 500 }}>Anexos</div>
+        {anexos.length === 0 ? (
+          <div style={{ fontSize: 12.5, color: "#62666d", marginBottom: 16 }}>Nenhum anexo enviado ainda.</div>
+        ) : (
+          <div style={{ marginBottom: 16 }}>
+            {anexos.map(a => (
+              <div key={a.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "8px 0", borderBottom: "1px solid rgba(255,255,255,0.05)" }}>
+                <span style={{ fontSize: 13, color: "#d4d4d8" }}>{a.nome_original}</span>
+                <button onClick={() => baixarAnexo(a.id, a.nome_original)}
+                  style={{ background: "transparent", border: "1px solid rgba(77,148,255,0.4)", color: "#8ec2ff", borderRadius: 6, padding: "4px 10px", fontSize: 12, cursor: "pointer", fontFamily: FONTE_CORPO }}>
+                  Baixar
+                </button>
+              </div>
+            ))}
           </div>
-        ))
-      )}
-      <div style={{ marginTop: 16 }}>
+        )}
         <label style={{ cursor: enviando ? "default" : "pointer" }}>
-          <span style={{ display: "inline-block", padding: "9px 16px", background: enviando ? "#e2e8f0" : "#2563eb", color: enviando ? "#94a3b8" : "#fff", borderRadius: 8, fontSize: 13, fontFamily: "Inter, sans-serif" }}>
-            {enviando ? "Enviando..." : "+ Anexar arquivo"}
+          <span style={{ display: "inline-flex", alignItems: "center", gap: 8, padding: "10px 18px", background: "linear-gradient(135deg, #4d94ff, #8c5aff)", color: "#fff", borderRadius: 9, fontSize: 13, fontWeight: 500, fontFamily: FONTE_CORPO, boxShadow: "0 4px 16px rgba(77,148,255,0.3)", opacity: enviando ? 0.6 : 1 }}>
+            {enviando ? "Enviando..." : "Anexar arquivo"}
           </span>
           <input type="file" style={{ display: "none" }} disabled={enviando} onChange={e => enviarAnexo(e.target.files[0])} />
         </label>
@@ -671,11 +595,11 @@ export function Painel({ sessao, onSair }) {
                   gap: 8,
                   cursor: "pointer",
                   padding: "10px 16px",
-                  background: "#f8fafc",
-                  borderBottom: "0.5px solid #e2e8f0",
+                  background: "rgba(255,255,255,0.02)",
+                  borderBottom: "1px solid rgba(255,255,255,0.06)",
                   fontSize: 13,
                   fontWeight: 600,
-                  color: "#23282a",
+                  color: "#c4c8e4",
                 }}
               >
                 <span style={{ fontSize: 11, color: "#94a3b8" }}>{aberto ? "▾" : "▸"}</span>
@@ -693,15 +617,15 @@ export function Painel({ sessao, onSair }) {
                   <div style={{ ...s.cell, fontFamily: "monospace", fontSize: 11 }}>{p.numero_protocolo ? p.numero_protocolo.replace(/\D/g, "") : "—"}</div>
                   <div>
                     <span onClick={() => clicarStatus(p)}
-                      style={{ ...s.badge, background: (STATUS_CONFIG[p.status]?.bg||"#f1f5f9"), color: (STATUS_CONFIG[p.status]?.color||"#475569"),
-                        cursor: "pointer" }}>
+                      style={{ ...s.badge, background: (STATUS_CONFIG[p.status]?.bg||"rgba(255,255,255,0.06)"), color: (STATUS_CONFIG[p.status]?.color||"#d4d4d8"),
+                        border: `1px solid ${STATUS_CONFIG[p.status]?.borda || "rgba(255,255,255,0.15)"}`, cursor: "pointer" }}>
                       {STATUS_CONFIG[p.status]?.label || p.status}
                       {p.status === "exigencia" ? " ›" : " ↓"}
                     </span>
                   </div>
-                  <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
                     <button onClick={() => setProcessoSelecionado(p)}
-                      style={{ background: "#fff", border: "0.5px solid #c9c9c4", color: "#1a1a1a", borderRadius: 8, padding: "10px 16px", fontSize: 13.5, cursor: "pointer", fontFamily: "'Inter', sans-serif" }}>
+                      style={{ background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.09)", color: "#d4d4d8", borderRadius: 8, padding: "9px 16px", fontSize: 12, cursor: "pointer", fontFamily: FONTE_CORPO }}>
                       Ver processo
                     </button>
                     <BotaoIatos processo={p} onAbrir={setIatosAberto} />
@@ -718,87 +642,43 @@ export function Painel({ sessao, onSair }) {
   return (
     <>
       <div style={s.appCliente}>
-        <aside style={s.sidebar}>
-          <div style={{ ...s.brandBox, cursor: "pointer" }} onClick={() => { setTela("processos"); setProcessoSelecionado(null); }}>
-            <div style={{...s.logoSide, fontFamily: "AtosBrand"}}>atos<span style={{ color: "#2d6cdf" }}>.</span></div>
-            <div style={s.tagSide}>Gestão Societária</div>
-          </div>
-          <nav style={s.navBox}>
-            <button style={s.navItem(tela === "processos")} onClick={() => { setTela("processos"); setProcessoSelecionado(null); }}>Processos</button>
-            <button style={s.navItem(tela === "relatorios")} onClick={() => setTela("relatorios")}>Relatorios</button>
-          </nav>
-          <div style={s.sideFoot}>
-            <div style={s.sideGrupo}>{sessao.grupo}</div>
-            <button style={{ ...s.btnSair, marginTop: 10, alignSelf: "flex-start" }} onClick={onSair}>Sair</button>
-          </div>
-        </aside>
+        <SidebarAtos
+          onLogoClick={() => { setTela("processos"); setProcessoSelecionado(null); }}
+          rodape={<div style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 11, color: "#8ec2ff", background: "rgba(77,148,255,0.08)", border: "1px solid rgba(77,148,255,0.25)", borderRadius: 6, padding: "4px 10px", marginTop: 8 }}><span style={{ width: 5, height: 5, borderRadius: "50%", background: "#4d94ff", boxShadow: "0 0 6px #4d94ff" }} />{sessao.grupo}</div>}
+          itens={[
+            { label: "Processos", ativo: tela === "processos" && !processoSelecionado, icone: <IconeProcessos />, onClick: () => { setTela("processos"); setProcessoSelecionado(null); } },
+            { label: "Relatórios", ativo: tela === "relatorios", icone: <IconeRelatorios />, onClick: () => { setTela("relatorios"); setProcessoSelecionado(null); } },
+          ]}
+        />
         <main style={s.mainCliente}>
+          <div style={s.topBar}>
+            <button style={s.btnSair} onClick={onSair}>Sair</button>
+          </div>
           {processoSelecionado ? (
             <div style={s.conteudo}>
               <DetalheProcessoCliente p={processoSelecionado} sessao={sessao} onVoltar={() => setProcessoSelecionado(null)} />
             </div>
           ) : tela === "processos" ? (
             <div style={s.conteudo}>
-              <div style={s.h1}>Meus Processos</div>
-              <FluxoDoDiaCard fluxo={fluxoAtivo} />
-              <div className="grid-metricas">
-                <StatCard
-                  valor={metricas.total || 0}
-                  label="Total"
-                  icone="⊞"
-                  corFundo="#EEEDFE"
-                  corTexto="#3C3489"
-                  onClick={() => setFStatus("")}
-                />
-                <StatCard
-                  valor={metricas.tramitacao || 0}
-                  label="Em tramitação"
-                  icone="◷"
-                  corFundo="#E1F5EE"
-                  corTexto="#085041"
-                  onClick={() => setFStatus("tramitacao")}
-                />
-                <StatCard
-                  valor={metricas.exigencia || 0}
-                  label="Em exigência"
-                  icone="⚠"
-                  corFundo="#FAEEDA"
-                  corTexto="#633806"
-                  onClick={() => setFStatus("exigencia")}
-                />
-                <StatCard
-                  valor={metricas.deferido || 0}
-                  label="Deferidos"
-                  icone="◈"
-                  corFundo="#d5e3df"
-                  corTexto="#2563eb"
-                  onClick={() => setFStatus("deferido")}
-                />
-                <StatCard
-                  valor={metricas.finalizado || 0}
-                  label="Finalizados"
-                  icone="✓"
-                  corFundo="#EAF3DE"
-                  corTexto="#27500A"
-                  onClick={() => setFStatus("finalizado")}
-                />
-              </div>
-              <div className="grid-duas-colunas">
-                <StatusDonut metricas={metricas} />
-                <AtividadeRecente eventos={eventosRecentes} />
-              </div>
+              <DonutStatusCard titulo="Meus Processos" metricas={metricas} onClickStatus={setFStatus} idPrefix="dc" />
+              {(fluxoAtivo || eventosRecentes.length > 0) && (
+                <div style={{ display: "grid", gridTemplateColumns: fluxoAtivo ? "1fr 1fr" : "1fr", gap: 16, marginBottom: 16 }}>
+                  {fluxoAtivo && <FluxoDoDiaCardEscuro fluxo={fluxoAtivo} />}
+                  <AtividadeRecenteEscura eventos={eventosRecentes} />
+                </div>
+              )}
               <div style={{ display: "flex", gap: 10, marginBottom: 16, flexWrap: "wrap", alignItems: "center" }}>
                 <input value={fBusca} onChange={e => setFBusca(e.target.value)} placeholder="Buscar empresa..."
-                  style={{ flex: "1 1 200px", minWidth: 160, padding: "9px 12px", border: "0.5px solid #e6e0d2", borderRadius: 8, fontSize: 13, outline: "none", fontFamily: "'Inter', sans-serif" }} />
-                <select value={fUf} onChange={e => setFUf(e.target.value)} style={{ padding: "9px 10px", border: "0.5px solid #e6e0d2", borderRadius: 8, fontSize: 13, background: "#fff", cursor: "pointer", color: "#475569" }}>
+                  style={{ flex: "1 1 200px", minWidth: 160, padding: "9px 12px", background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 8, fontSize: 13, outline: "none", color: "#fff", fontFamily: FONTE_CORPO }} />
+                <select value={fUf} onChange={e => setFUf(e.target.value)} style={s.filtro}>
                   <option value="">UF: todas</option>
                   {ufsDisponiveis.map(u => <option key={u} value={u}>{u}</option>)}
                 </select>
-                <select value={fAto} onChange={e => setFAto(e.target.value)} style={{ padding: "9px 10px", border: "0.5px solid #e6e0d2", borderRadius: 8, fontSize: 13, background: "#fff", cursor: "pointer", color: "#475569" }}>
+                <select value={fAto} onChange={e => setFAto(e.target.value)} style={s.filtro}>
                   <option value="">Ato: todos</option>
                   {atosDisponiveis.map(a => <option key={a} value={a}>{a}</option>)}
                 </select>
-                <select value={fStatus} onChange={e => setFStatus(e.target.value)} style={{ padding: "9px 10px", border: "0.5px solid #e6e0d2", borderRadius: 8, fontSize: 13, background: "#fff", cursor: "pointer", color: "#475569" }}>
+                <select value={fStatus} onChange={e => setFStatus(e.target.value)} style={s.filtro}>
                   <option value="">Status: todos</option>
                   <option value="aberto">Aberto</option>
                   <option value="tramitacao">Tramitacao</option>
@@ -808,7 +688,7 @@ export function Painel({ sessao, onSair }) {
                 </select>
                 {(fBusca || fUf || fAto || fStatus) && (
                   <button onClick={() => { setFBusca(""); setFUf(""); setFAto(""); setFStatus(""); }}
-                    style={{ padding: "9px 14px", border: "none", borderRadius: 8, fontSize: 13, background: "#eceae2", color: "#6b6c66", cursor: "pointer", fontFamily: "'Inter', sans-serif" }}>Limpar</button>
+                    style={{ padding: "9px 14px", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 8, fontSize: 13, background: "rgba(255,255,255,0.05)", color: "#d4d4d8", cursor: "pointer", fontFamily: FONTE_CORPO }}>Limpar</button>
                 )}
               </div>
               <div
@@ -848,24 +728,24 @@ export function Painel({ sessao, onSair }) {
                     processarArquivos(e.dataTransfer.files);
                   }
                 }}
-                style={{ border: "1.5px dashed #2563eb", borderRadius: 12, padding: "20px", marginBottom: 18, background: "#fbfaf6", textAlign: "center" }}>
-                <div style={{ fontSize: 13, color: "#6b6c66", marginBottom: 12 }}>
+                style={{ border: "1.5px dashed rgba(77,148,255,0.35)", borderRadius: 18, padding: "28px", marginBottom: 18, background: "rgba(255,255,255,0.03)", textAlign: "center" }}>
+                <div style={{ fontSize: 13, color: "#8a90b8", marginBottom: 12 }}>
                   {subindo
                     ? `Enviando... ${progresso.feitos} de ${progresso.total}${progresso.erros ? ` (${progresso.erros} com erro)` : ""}`
-                    : ""}
+                    : "Arraste um processo aqui ou selecione arquivos e pastas do seu computador"}
                 </div>
                 <div style={{ display: "inline-flex", gap: 10 }}>
                   <label style={{ display: "inline-block", cursor: subindo ? "not-allowed" : "pointer" }}>
-                    <span style={{ background: "#2563eb", color: "#fff", borderRadius: 8, padding: "9px 18px", fontSize: 13, fontFamily: "'Inter', sans-serif", opacity: subindo ? 0.6 : 1 }}>
-                      {subindo ? "Enviando..." : "Selecionar Arquivos"}
+                    <span style={{ background: "linear-gradient(135deg, #4d94ff, #8c5aff)", color: "#fff", borderRadius: 9, padding: "9px 18px", fontSize: 12.5, fontFamily: FONTE_CORPO, opacity: subindo ? 0.6 : 1, boxShadow: "0 4px 16px rgba(77,148,255,0.3)" }}>
+                      {subindo ? "Enviando..." : "Arquivos"}
                     </span>
                     <input type="file" accept="application/pdf" multiple style={{ display: "none" }}
                       disabled={subindo}
                       onChange={e => processarArquivos(e.target.files)} />
                   </label>
                   <label style={{ display: "inline-block", cursor: subindo ? "not-allowed" : "pointer" }}>
-                    <span style={{ background: "transparent", color: "#2563eb", border: "0.5px solid #2563eb", borderRadius: 8, padding: "9px 18px", fontSize: 13, fontFamily: "'Inter', sans-serif", opacity: subindo ? 0.6 : 1 }}>
-                      Selecionar Pastas
+                    <span style={{ background: "linear-gradient(135deg, #4d94ff, #8c5aff)", color: "#fff", borderRadius: 9, padding: "9px 18px", fontSize: 12.5, fontFamily: FONTE_CORPO, opacity: subindo ? 0.6 : 1, boxShadow: "0 4px 16px rgba(77,148,255,0.3)" }}>
+                      Pastas
                     </span>
                     <input type="file" webkitdirectory="" directory="" multiple style={{ display: "none" }}
                       disabled={subindo}
@@ -887,8 +767,8 @@ export function Painel({ sessao, onSair }) {
             </div>
           ) : (
             <div style={s.conteudo}>
-              <div style={s.h1}>Relatorios</div>
-              <div style={{ fontSize: 13, color: "#6b6c66", marginBottom: 20 }}>Gere uma planilha dos seus processos por situacao. Baixe agora; o envio por email estara disponivel em breve.</div>
+              <div style={s.h1}>Relatórios</div>
+              <div style={{ fontSize: 13, color: "#8a90b8", marginBottom: 20 }}>Gere uma planilha dos seus processos por situacao. Baixe agora; o envio por email estara disponivel em breve.</div>
               <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(240px, 1fr))", gap: 14 }}>
                 {[
                   { st: "todos", lb: "Todos os Processos" },
@@ -897,11 +777,11 @@ export function Painel({ sessao, onSair }) {
                   { st: "tramitacao", lb: "Atos em Tramitação" },
                   { st: "recebido", lb: "Atos Abertos" },
                 ].map(r => (
-                  <div key={r.st} style={{ background: "#fff", border: "0.5px solid #e6e0d2", borderRadius: 12, padding: 18 }}>
-                    <div style={{ fontSize: 14, fontWeight: 500, color: "#23282a", marginBottom: 14 }}>{r.lb}</div>
+                  <div key={r.st} style={{ background: "#0e0e14", border: "1px solid rgba(255,255,255,0.06)", borderRadius: 12, padding: 18 }}>
+                    <div style={{ fontSize: 14, fontWeight: 500, color: "#fff", marginBottom: 14 }}>{r.lb}</div>
                     <div style={{ display: "flex", gap: 8 }}>
-                      <button onClick={() => baixarRelatorio(r.st)} style={{ flex: 1, background: "#2563eb", color: "#fff", border: "none", borderRadius: 8, padding: "9px 12px", fontSize: 13, cursor: "pointer", fontFamily: "'Inter', sans-serif" }}>Baixar planilha</button>
-                      <button disabled title="Disponivel em breve" style={{ background: "#eceae2", color: "#a8a395", border: "none", borderRadius: 8, padding: "9px 12px", fontSize: 13, cursor: "not-allowed", fontFamily: "'Inter', sans-serif" }}>Enviar email</button>
+                      <button onClick={() => baixarRelatorio(r.st)} style={{ flex: 1, background: "linear-gradient(135deg, #4d94ff, #8c5aff)", color: "#fff", border: "none", borderRadius: 8, padding: "9px 12px", fontSize: 13, cursor: "pointer", fontFamily: FONTE_CORPO }}>Baixar planilha</button>
+                      <button disabled title="Disponivel em breve" style={{ background: "rgba(255,255,255,0.05)", color: "#62666d", border: "none", borderRadius: 8, padding: "9px 12px", fontSize: 13, cursor: "not-allowed", fontFamily: FONTE_CORPO }}>Enviar email</button>
                     </div>
                   </div>
                 ))}
@@ -968,49 +848,30 @@ export function Painel({ sessao, onSair }) {
 
 function estilos() {
   return {
-    appCliente: { display: "grid", gridTemplateColumns: "240px 1fr", minHeight: "100vh", fontFamily: "'Inter', sans-serif", background: "#f4f2ec" },
-    sidebar: { background: "linear-gradient(165deg,#0e2a6e,#2563eb)", display: "flex", flexDirection: "column" },
-    brandBox: { margin: "20px 18px 10px", padding: "16px 18px", background: "#f4f2ec", borderRadius: 12 },
-    logoSide: { fontFamily: "'Inter', sans-serif", fontSize: 30, fontWeight: 800, color: "#16151a", letterSpacing: -1.5, lineHeight: 1 },
-    tagSide: { fontSize: 11, color: "#6b6c66", marginTop: 4 },
-    navBox: { padding: "18px 16px", flex: 1, display: "flex", flexDirection: "column", gap: 4 },
-    navItem: (ativo) => ({ display: "block", width: "100%", textAlign: "left", padding: "11px 14px", borderRadius: 10, border: "none", cursor: "pointer", fontSize: 14, fontWeight: 500, fontFamily: "'Inter', sans-serif", color: ativo ? "#fff" : "#aecaca", background: ativo ? "rgba(255,255,255,0.13)" : "transparent" }),
-    sideFoot: { padding: "18px 24px", borderTop: "1px solid rgba(255,255,255,0.10)", display: "flex", flexDirection: "column", alignItems: "flex-start" },
-    sideGrupo: { fontSize: 13, color: "#fff", fontWeight: 500 },
-    sideLogin: { fontSize: 12, color: "#cfe8f0", marginBottom: 10 },
-    mainCliente: { overflowY: "auto" },
-    wrap: { minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", background: "linear-gradient(180deg,#dff3f0 0%,#7fd0d8 38%,#3b82f6 72%,#1e3a8a 100%)", fontFamily: "'Inter', sans-serif", position: "relative", overflow: "hidden", padding: "16px" },
-    card: { background: "#fff", borderRadius: 16, padding: 32, width: "100%", maxWidth: 360, boxShadow: "0 10px 50px rgba(20,10,50,0.45)", boxSizing: "border-box" },
-    logo: { fontSize: 34, fontWeight: 800, color: "#111111", letterSpacing: -1.5, textAlign: "center", lineHeight: 1 },
-    sub: { textAlign: "center", fontSize: 13, color: "#7a7790", marginBottom: 24 },
-    label: { fontSize: 12, color: "#7a7790", marginBottom: 4, display: "block" },
-    input: { width: "100%", padding: "11px 13px", border: "0.5px solid #d9d5ea", borderRadius: 8, fontSize: 14, outline: "none", marginBottom: 14, boxSizing: "border-box", background: "#fbfaff" },
-    btn: { width: "100%", background: "linear-gradient(135deg,#2563eb,#2dd4bf)", color: "#fff", border: "none", padding: "12px", borderRadius: 8, fontSize: 14, fontWeight: 600, cursor: "pointer", marginTop: 4 },
-    erro: { background: "#fee2e2", color: "#991b1b", borderRadius: 8, padding: "8px 12px", fontSize: 13, marginBottom: 14 },
-    aviso: { background: "#dcfce7", color: "#166534", borderRadius: 8, padding: "8px 12px", fontSize: 13, marginBottom: 14 },
-    grupoBox: { background: "#e8efee", color: "#2563eb", borderRadius: 8, padding: "8px 12px", fontSize: 12, marginBottom: 14, textAlign: "center" },
-    btnSair: { background: "none", border: "0.5px solid #334155", color: "#94a3b8", borderRadius: 6, padding: "5px 12px", fontSize: 12, cursor: "pointer" },
-    conteudo: { padding: 28 },
-    h1: { fontSize: 18, fontWeight: 500, color: "#23282a", marginBottom: 18 },
-    metrics: { display: "grid", gridTemplateColumns: "repeat(5,1fr)", gap: 12, marginBottom: 24 },
-    metricCard: { background: "#fff", border: "0.5px solid #e2e8f0", borderRadius: 10, padding: 16, cursor: "pointer" },
-    metricLabel: { fontSize: 12, color: "#64748b", marginBottom: 6 },
-    metricValue: { fontFamily: "'DM Serif Display', serif", fontSize: 40, fontWeight: 400, color: "#23282a", lineHeight: 1 },
-    vazio: { background: "#fff", border: "0.5px solid #e2e8f0", borderRadius: 12, padding: "40px 16px", textAlign: "center", color: "#94a3b8", fontSize: 14 },
-    tabela: { background: "#fff", border: "0.5px solid #e2e8f0", borderRadius: 12, overflow: "hidden" },
-    thead: { display: "grid", gridTemplateColumns: "2.5fr 0.5fr 1.3fr 1.2fr 1fr", padding: "10px 16px", background: "#f1f5f9", borderBottom: "0.5px solid #e2e8f0" },
-    th: { fontSize: 11, fontWeight: 500, color: "#64748b" },
-    row: { display: "grid", gridTemplateColumns: "2.2fr 0.5fr 1.2fr 1fr 0.9fr 0.9fr", padding: "13px 16px", borderBottom: "0.5px solid #f1f5f9", alignItems: "center" },
-    empresa: { fontSize: 15, fontWeight: 500, color: "#1a1a1a", margin: "0 0 3px" },
-    metaEmp: { fontSize: 13, color: "#6b6b68", margin: 0 },
-    cell: { fontSize: 12, color: "#475569" },
-    badge: { display: "inline-block", padding: "4px 12px", borderRadius: 20, fontSize: 12, fontWeight: 500 },
-    overlay: { position: "fixed", inset: 0, background: "rgba(0,0,0,0.5)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 1000 },
-    modal: { background: "#fff", borderRadius: 12, padding: 28, width: 480, maxHeight: "80vh", overflowY: "auto" },
-    modalTitle: { fontSize: 16, fontWeight: 500, color: "#23282a", marginBottom: 16 },
-    exigTexto: { background: "#fef2f2", border: "0.5px solid #fecaca", borderRadius: 8, padding: 14, fontSize: 14, color: "#7f1d1d", lineHeight: 1.5, marginBottom: 18, whiteSpace: "pre-wrap" },
+    appCliente: { display: "flex", minHeight: "100vh", fontFamily: FONTE_CORPO, background: "#060608", color: "#e4e4e7", WebkitFontSmoothing: "antialiased" },
+    mainCliente: { flex: 1, padding: "32px 40px", overflowY: "auto" },
+    topBar: { display: "flex", justifyContent: "flex-end", alignItems: "center", marginBottom: 20 },
+    btnSair: { background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.08)", color: "#d4d4d8", borderRadius: 24, padding: "6px 16px", fontSize: 12.5, cursor: "pointer", fontFamily: FONTE_CORPO },
+    conteudo: {},
+    h1: { fontFamily: FONTE_TITULO, fontSize: 24, fontWeight: 700, color: "#fff", marginBottom: 18 },
+    filtro: { padding: "9px 10px", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 8, fontSize: 11.5, background: "rgba(255,255,255,0.05)", cursor: "pointer", color: "#d4d4d8", fontFamily: FONTE_CORPO },
+    erro: { background: "rgba(255,77,77,0.12)", color: "#ff9494", borderRadius: 8, padding: "8px 12px", fontSize: 13, marginBottom: 14 },
+    aviso: { background: "rgba(0,255,170,0.1)", color: "#7dffce", borderRadius: 8, padding: "8px 12px", fontSize: 13, marginBottom: 14 },
+    vazio: { background: "#0e0e14", border: "1px solid rgba(255,255,255,0.06)", borderRadius: 12, padding: "40px 16px", textAlign: "center", color: "#62666d", fontSize: 14 },
+    tabela: { background: "#0e0e14", border: "1px solid rgba(255,255,255,0.06)", borderRadius: 18, overflow: "hidden" },
+    thead: { display: "grid", gridTemplateColumns: "2.5fr 0.5fr 1.3fr 1.2fr 1fr", padding: "10px 20px", background: "rgba(255,255,255,0.02)", borderBottom: "1px solid rgba(255,255,255,0.06)" },
+    th: { fontSize: 10.5, fontWeight: 500, color: "#62666d", textTransform: "uppercase", letterSpacing: 0.4 },
+    row: { display: "grid", gridTemplateColumns: "2.2fr 0.5fr 1.2fr 1fr 0.9fr 0.9fr", padding: "14px 20px", borderBottom: "1px solid rgba(255,255,255,0.04)", alignItems: "center" },
+    empresa: { fontSize: 13.5, fontWeight: 600, color: "#fff", margin: "0 0 3px" },
+    metaEmp: { fontSize: 11, color: "#71717a", margin: 0 },
+    cell: { fontSize: 13, color: "#d4d4d8" },
+    badge: { display: "inline-block", padding: "4px 11px", borderRadius: 20, fontSize: 11 },
+    overlay: { position: "fixed", inset: 0, background: "rgba(0,0,0,0.6)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 1000 },
+    modal: { background: "#0e0e14", border: "1px solid rgba(255,255,255,0.08)", borderRadius: 16, padding: 28, width: 480, maxHeight: "80vh", overflowY: "auto", color: "#e4e4e7" },
+    modalTitle: { fontFamily: FONTE_TITULO, fontSize: 16, fontWeight: 700, color: "#fff", marginBottom: 16 },
+    exigTexto: { background: "rgba(255,77,77,0.08)", border: "1px solid rgba(255,77,77,0.25)", borderRadius: 8, padding: 14, fontSize: 14, color: "#ffb4b4", lineHeight: 1.5, marginBottom: 18, whiteSpace: "pre-wrap" },
     modalBtns: { display: "flex", gap: 10, justifyContent: "flex-end" },
-    btnDl: { background: "#e8efee", color: "#2563eb", border: "0.5px solid #c5d8d5", borderRadius: 8, padding: "8px 16px", fontSize: 13, cursor: "pointer" },
-    btnFechar: { background: "#2563eb", color: "#fff", border: "none", borderRadius: 8, padding: "8px 18px", fontSize: 13, cursor: "pointer" },
+    btnDl: { background: "rgba(77,148,255,0.1)", color: "#8ec2ff", border: "1px solid rgba(77,148,255,0.3)", borderRadius: 8, padding: "8px 16px", fontSize: 13, cursor: "pointer", fontFamily: FONTE_CORPO },
+    btnFechar: { background: "linear-gradient(135deg, #4d94ff, #8c5aff)", color: "#fff", border: "none", borderRadius: 8, padding: "8px 18px", fontSize: 13, cursor: "pointer", fontFamily: FONTE_CORPO },
   };
 }

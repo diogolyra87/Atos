@@ -1,7 +1,7 @@
 ﻿import { useState, useEffect } from "react";
 import axios from "axios";
 import { Painel as PainelCliente } from "./Cliente";
-import { STATUS_CONFIG, formatarDataExtenso, StatCard, FluxoDoDiaCard, AtividadeRecente, StatusDonut, BotaoIatos, IatosChat, subtituloProcesso } from "./components/Compartilhados";
+import { STATUS_CONFIG, formatarDataExtenso, BotaoIatos, IatosChat, subtituloProcesso, SidebarAtos, IconeProcessos, IconeGrupos, IconeAprendizado, DonutStatusCard, TelaLogin, FONTE_CORPO, FONTE_TITULO, FluxoDoDiaCardEscuro, AtividadeRecenteEscura } from "./components/Compartilhados";
 
 const API = "";
 
@@ -451,53 +451,48 @@ function AppPainel({ onSair, sessao }) {
     alert(`Concluido: ${feitos} processo(s) criado(s)${erros ? `, ${erros} com erro` : ""}.`);
   }
   const s = {
-    layout: { display: "flex", minHeight: "100vh", fontFamily: "'Inter', sans-serif" },
-    sidebar: { width: 220, background: "linear-gradient(165deg,#0e2a6e,#2563eb)", display: "flex", flexDirection: "column", padding: "24px 16px", gap: 8 },
-    logo: { fontFamily: "'Inter', sans-serif", fontSize: 30, fontWeight: 800, color: "#16151a", letterSpacing: -1.5, lineHeight: 1 },
-    nav: (ativo) => ({ display: "flex", alignItems: "center", gap: 10, padding: "9px 10px", borderRadius: 8, color: ativo ? "#fff" : "#cfe8f0", background: ativo ? "rgba(255,255,255,0.13)" : "transparent", cursor: "pointer", fontSize: 13, border: "none", width: "100%", textAlign: "left" }),
-    main: { flex: 1, background: "#f8fafc", padding: 28 },
-    topbar: { display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 24 },
-    h1: { fontSize: 18, fontWeight: 500, color: "#23282a", margin: 0 },
-    btnPrimary: { background: "#1e40af", color: "#fff", border: "none", padding: "9px 18px", borderRadius: 8, fontSize: 13, cursor: "pointer", display: "flex", alignItems: "center", gap: 6 },
-    metrics: { display: "grid", gridTemplateColumns: "repeat(5,1fr)", gap: 12, marginBottom: 24 },
-    metricCard: { background: "#fff", border: "0.5px solid #e2e8f0", borderRadius: 10, padding: 16 },
-    metricLabel: { fontSize: 12, color: "#64748b", marginBottom: 6 },
-    metricValue: { fontFamily: "'DM Serif Display', serif", fontSize: 40, fontWeight: 400, color: "#23282a", lineHeight: 1 },
-    metricSub: { fontSize: 11, color: "#94a3b8", marginTop: 2 },
-    tableWrap: { background: "#fff", border: "0.5px solid #e2e8f0", borderRadius: 12, overflow: "hidden" },
-    tableHead: { display: "grid", gridTemplateColumns: "2.5fr 0.5fr 1.3fr 1.2fr 1fr 70px", padding: "10px 16px", background: "#f1f5f9", borderBottom: "0.5px solid #e2e8f0" },
-    th: { fontSize: 11, fontWeight: 500, color: "#64748b" },
-    row: { display: "grid", gridTemplateColumns: "2.5fr 0.5fr 1.3fr 1.2fr 1fr 70px", padding: "13px 16px", borderBottom: "0.5px solid #f1f5f9", alignItems: "center", cursor: "pointer" },
-    company: { fontSize: 15, fontWeight: 500, color: "#1a1a1a", margin: "0 0 3px" },
-    cnpj: { fontSize: 13, color: "#6b6b68", margin: 0 },
-    cell: { fontSize: 12, color: "#475569" },
-    badge: (status) => ({ display: "inline-block", padding: "3px 10px", borderRadius: 20, fontSize: 11, fontWeight: 500, background: STATUS_CONFIG[status]?.bg || "#f1f5f9", color: STATUS_CONFIG[status]?.color || "#475569" }),
-    btnVer: { background: "#fff", border: "0.5px solid #c9c9c4", borderRadius: 8, padding: "10px 16px", fontSize: 13.5, color: "#1a1a1a", cursor: "pointer" },
-    overlay: { position: "fixed", inset: 0, background: "rgba(0,0,0,0.5)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 1000 },
-    modal: { background: "#fff", borderRadius: 12, padding: 28, width: 560, maxHeight: "80vh", overflowY: "auto" },
-    modalTitle: { fontSize: 16, fontWeight: 500, color: "#23282a", marginBottom: 20 },
+    layout: { display: "flex", minHeight: "100vh", fontFamily: FONTE_CORPO, background: "#060608", color: "#e4e4e7", WebkitFontSmoothing: "antialiased" },
+    main: { flex: 1, padding: "32px 40px", overflowY: "auto" },
+    topBar: { display: "flex", justifyContent: "flex-end", alignItems: "center", marginBottom: 20 },
+    btnSair: { background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.08)", color: "#d4d4d8", borderRadius: 24, padding: "6px 16px", fontSize: 12.5, cursor: "pointer", fontFamily: FONTE_CORPO },
+    topbar: { display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 20 },
+    h1: { fontFamily: FONTE_TITULO, fontSize: 24, fontWeight: 700, color: "#fff", margin: 0 },
+    btnPrimary: { background: "linear-gradient(135deg, #4d94ff, #8c5aff)", color: "#fff", border: "none", padding: "9px 18px", borderRadius: 9, fontSize: 13, cursor: "pointer", display: "flex", alignItems: "center", gap: 6, boxShadow: "0 4px 16px rgba(77,148,255,0.3)", fontFamily: FONTE_CORPO },
+    filtro: { padding: "9px 10px", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 8, fontSize: 11.5, background: "rgba(255,255,255,0.05)", cursor: "pointer", color: "#d4d4d8", fontFamily: FONTE_CORPO },
+    tableWrap: { background: "#0e0e14", border: "1px solid rgba(255,255,255,0.06)", borderRadius: 18, overflow: "hidden" },
+    tableHead: { display: "grid", gridTemplateColumns: "2.5fr 0.5fr 1.3fr 1.2fr 1fr 70px", padding: "10px 20px", background: "rgba(255,255,255,0.02)", borderBottom: "1px solid rgba(255,255,255,0.06)" },
+    th: { fontSize: 10.5, fontWeight: 500, color: "#62666d", textTransform: "uppercase", letterSpacing: 0.4 },
+    row: { display: "grid", gridTemplateColumns: "2.5fr 0.5fr 1.3fr 1.2fr 1fr 70px", padding: "14px 20px", borderBottom: "1px solid rgba(255,255,255,0.04)", alignItems: "center", cursor: "pointer" },
+    company: { fontSize: 13.5, fontWeight: 600, color: "#fff", margin: "0 0 3px" },
+    cnpj: { fontSize: 11, color: "#71717a", margin: 0 },
+    cell: { fontSize: 13, color: "#d4d4d8" },
+    badge: (status) => ({ display: "inline-block", padding: "4px 11px", borderRadius: 20, fontSize: 11, background: STATUS_CONFIG[status]?.bg || "rgba(255,255,255,0.06)", color: STATUS_CONFIG[status]?.color || "#d4d4d8", border: `1px solid ${STATUS_CONFIG[status]?.borda || "rgba(255,255,255,0.15)"}` }),
+    btnVer: { background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.09)", borderRadius: 8, padding: "9px 16px", fontSize: 12, color: "#d4d4d8", cursor: "pointer", fontFamily: FONTE_CORPO },
+    overlay: { position: "fixed", inset: 0, background: "rgba(0,0,0,0.6)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 1000 },
+    modal: { background: "#0e0e14", border: "1px solid rgba(255,255,255,0.08)", borderRadius: 16, padding: 28, width: 560, maxHeight: "80vh", overflowY: "auto", color: "#e4e4e7" },
+    modalTitle: { fontFamily: FONTE_TITULO, fontSize: 16, fontWeight: 700, color: "#fff", marginBottom: 20 },
     campo: { marginBottom: 14 },
-    label: { fontSize: 12, color: "#64748b", marginBottom: 4, display: "block" },
-    input: { width: "100%", padding: "8px 12px", border: "0.5px solid #e2e8f0", borderRadius: 8, fontSize: 13, outline: "none" },
+    label: { fontSize: 12, color: "#a8b0d8", marginBottom: 4, display: "block" },
+    input: { width: "100%", padding: "8px 12px", border: "1px solid rgba(255,255,255,0.12)", borderRadius: 8, fontSize: 13, outline: "none", background: "rgba(255,255,255,0.05)", color: "#fff", boxSizing: "border-box" },
     btnRow: { display: "flex", gap: 10, marginTop: 20, justifyContent: "flex-end" },
-    btnSecondary: { background: "none", border: "0.5px solid #e2e8f0", borderRadius: 8, padding: "9px 18px", fontSize: 13, cursor: "pointer", color: "#475569" },
-    detalhe: { background: "#fff", border: "0.5px solid #e2e8f0", borderRadius: 12, padding: 24 },
+    btnSecondary: { background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 8, padding: "9px 18px", fontSize: 13, cursor: "pointer", color: "#d4d4d8", fontFamily: FONTE_CORPO },
+    detalhe: { background: "#0e0e14", border: "1px solid rgba(255,255,255,0.06)", borderRadius: 12, padding: 24 },
     detalheHeader: { display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 20 },
-    detalheTitle: { fontSize: 18, fontWeight: 500, color: "#23282a" },
+    detalheTitle: { fontFamily: FONTE_TITULO, fontSize: 18, fontWeight: 700, color: "#fff" },
     detalheGrid: { display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16, marginBottom: 20 },
-    detalheItem: { background: "#f8fafc", borderRadius: 8, padding: 12 },
-    detalheItemLabel: { fontSize: 11, color: "#94a3b8", marginBottom: 4 },
-    detalheItemValue: { fontSize: 13, color: "#23282a", fontWeight: 500 },
-    alerta: { background: "#fef3c7", border: "0.5px solid #fbbf24", borderRadius: 8, padding: 12, marginBottom: 16, fontSize: 13, color: "#92400e" },
-    statusRow: { display: "flex", gap: 8, marginBottom: 20 },
-    btnStatus: (ativo) => ({ padding: "6px 14px", borderRadius: 20, fontSize: 12, cursor: "pointer", border: ativo ? "2px solid #1e40af" : "0.5px solid #e2e8f0", background: ativo ? "#dbeafe" : "#fff", color: ativo ? "#1e40af" : "#475569", fontWeight: ativo ? 500 : 400 }),
+    detalheItem: { background: "rgba(255,255,255,0.04)", borderRadius: 8, padding: 12 },
+    detalheItemLabel: { fontSize: 10.5, color: "#71717a", textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 4 },
+    detalheItemValue: { fontSize: 13, color: "#e4e4e7", fontWeight: 500 },
+    alerta: { background: "rgba(255,159,10,0.1)", border: "1px solid rgba(255,159,10,0.3)", borderRadius: 8, padding: 12, marginBottom: 16, fontSize: 13, color: "#ffc266" },
+    statusRow: { display: "flex", gap: 8, marginBottom: 20, flexWrap: "wrap" },
+    btnStatus: (ativo) => ({ padding: "7px 16px", borderRadius: 20, fontSize: 12, cursor: "pointer", border: ativo ? "1px solid rgba(255,159,10,0.4)" : "1px solid rgba(255,255,255,0.1)", background: ativo ? "rgba(255,159,10,0.15)" : "transparent", color: ativo ? "#ff9f0a" : "#71717a", boxShadow: ativo ? "0 0 14px rgba(255,159,10,0.15)" : "none" }),
     uploadRow: { display: "flex", flexDirection: "column", gap: 10, marginBottom: 20 },
-    uploadItem: { display: "flex", alignItems: "center", justifyContent: "space-between", background: "#f8fafc", borderRadius: 8, padding: "10px 14px" },
-    uploadLabel: { fontSize: 13, color: "#475569" },
-    uploadOk: { fontSize: 12, color: "#166534", background: "#dcfce7", padding: "3px 10px", borderRadius: 20 },
-    uploadPend: { fontSize: 12, color: "#475569", background: "#f1f5f9", padding: "3px 10px", borderRadius: 20 },
-    checklist: { background: "#f8fafc", borderRadius: 8, padding: 14, marginBottom: 16 },
-    checkItem: { fontSize: 13, color: "#475569", padding: "4px 0", borderBottom: "0.5px solid #e2e8f0", display: "flex", alignItems: "center", gap: 8 },
+    uploadItem: { display: "flex", alignItems: "center", justifyContent: "space-between", background: "rgba(255,255,255,0.04)", borderRadius: 8, padding: "10px 14px" },
+    uploadLabel: { fontSize: 13, color: "#a8b0d8" },
+    uploadOk: { fontSize: 12, color: "#00e691", background: "rgba(0,255,170,0.12)", padding: "3px 10px", borderRadius: 20 },
+    uploadPend: { fontSize: 12, color: "#8a90b8", background: "rgba(255,255,255,0.06)", padding: "3px 10px", borderRadius: 20 },
+    checklist: { background: "rgba(255,255,255,0.04)", borderRadius: 8, padding: 14, marginBottom: 16 },
+    checkItem: { fontSize: 13, color: "#c4c8e4", padding: "4px 0", borderBottom: "1px solid rgba(255,255,255,0.06)", display: "flex", alignItems: "center", gap: 8 },
   };
 
   function ListaProcessosAgrupada() {
@@ -530,16 +525,16 @@ function AppPainel({ onSair, sessao }) {
                   gap: 8,
                   cursor: "pointer",
                   padding: "10px 16px",
-                  background: "#f8fafc",
-                  borderBottom: "0.5px solid #e2e8f0",
+                  background: "rgba(255,255,255,0.02)",
+                  borderBottom: "1px solid rgba(255,255,255,0.06)",
                   fontSize: 13,
                   fontWeight: 600,
-                  color: "#23282a",
+                  color: "#c4c8e4",
                 }}
               >
-                <span style={{ fontSize: 11, color: "#94a3b8" }}>{aberto ? "▾" : "▸"}</span>
+                <span style={{ fontSize: 11, color: "#62666d" }}>{aberto ? "▾" : "▸"}</span>
                 {label}
-                <span style={{ fontSize: 11, color: "#94a3b8", fontWeight: 400 }}>({itens.length})</span>
+                <span style={{ fontSize: 11, color: "#62666d", fontWeight: 400 }}>({itens.length})</span>
               </div>
               {aberto && itens.map(p => (
                 <div key={p.id} style={s.row} onClick={() => setProcessoSelecionado(p)}>
@@ -547,7 +542,7 @@ function AppPainel({ onSair, sessao }) {
                     <div style={s.company}>{p.empresa}</div>
                     <div style={s.cnpj}>{subtituloProcesso(p)}</div>
                   </div>
-                  <div style={{ ...s.cell, fontWeight: 500, color: "#475569" }}>{p.uf || "—"}</div>
+                  <div style={{ ...s.cell, fontWeight: 500 }}>{p.uf || "—"}</div>
                   <div style={s.cell}>{abreviarAto(p.identificador_ato, p.data_ata, p.hora_ata)}</div>
                   <div style={{ ...s.cell, fontFamily: "monospace", fontSize: 11 }}>{p.numero_protocolo || "—"}</div>
                   <div><span style={s.badge(p.status)}>{STATUS_CONFIG[p.status]?.label || p.status}</span></div>
@@ -857,12 +852,12 @@ async function excluirProcesso() {
         <div style={s.detalheHeader}>
           <div>
             <div style={s.detalheTitle}>{p.empresa}</div>
-            <div style={{ fontFamily: "monospace", fontSize: 12, color: "#94a3b8", marginTop: 4 }}>
+            <div style={{ fontFamily: "monospace", fontSize: 12, color: "#71717a", marginTop: 4 }}>
               CNPJ {p.cnpj} · NIRE {p.nire} · {p.id}
             </div>
           </div>
           <button style={s.btnSecondary} onClick={() => setProcessoSelecionado(null)}>← Voltar</button> {!ehOperador && (
-            <button style={{ background: "#b91c1c", color: "#fff", border: "none", borderRadius: 8, padding: "8px 16px", fontSize: 13, cursor: "pointer", marginLeft: 8 }} onClick={excluirProcesso}>Excluir Processo</button>
+            <button style={{ background: "rgba(255,77,77,0.15)", color: "#ff9494", border: "1px solid rgba(255,77,77,0.3)", borderRadius: 8, padding: "8px 16px", fontSize: 13, cursor: "pointer", marginLeft: 8, fontFamily: FONTE_CORPO }} onClick={excluirProcesso}>Excluir Processo</button>
           )}
         </div>
 
@@ -872,7 +867,7 @@ async function excluirProcesso() {
           </div>
         )}
 
-        <div style={{ fontSize: 13, color: "#64748b", marginBottom: 12 }}>Alterar status:</div>
+        <div style={{ fontSize: 13, color: "#8a90b8", marginBottom: 12 }}>Alterar status:</div>
         <div style={s.statusRow}>
           {["aberto","tramitacao","exigencia","deferido","finalizado"].map((key) => (
             <button key={key} style={s.btnStatus(p.status === key)} onClick={() => atualizarStatus(p.id, key)}>
@@ -893,7 +888,7 @@ async function excluirProcesso() {
 
         {eventos.length > 0 && (
           <div style={{ marginBottom: 16 }}>
-            <div style={{ fontSize: 13, fontWeight: 500, color: "#23282a", marginBottom: 8 }}>Eventos identificados</div>
+            <div style={{ fontSize: 13, fontWeight: 500, color: "#fff", marginBottom: 8 }}>Eventos identificados</div>
             <div style={s.checklist}>
               {eventos.map((e, i) => <div key={i} style={s.checkItem}>• {e}</div>)}
             </div>
@@ -902,22 +897,22 @@ async function excluirProcesso() {
 
         {checklist.length > 0 && (
           <div style={{ marginBottom: 16 }}>
-            <div style={{ fontSize: 13, fontWeight: 500, color: "#23282a", marginBottom: 8 }}>Checklist de documentos</div>
+            <div style={{ fontSize: 13, fontWeight: 500, color: "#fff", marginBottom: 8 }}>Checklist de documentos</div>
             <div style={s.checklist}>
               {checklist.map((c, i) => <div key={i} style={s.checkItem}>☐ {c}</div>)}
             </div>
           </div>
         )}
 
-        <div style={{ fontSize: 13, fontWeight: 500, color: "#23282a", marginBottom: 8 }}>Exigência</div>
-        <div style={{ background: "#f8fafc", borderRadius: 8, padding: 14, marginBottom: 16 }}>
+        <div style={{ fontSize: 13, fontWeight: 500, color: "#fff", marginBottom: 8 }}>Exigência</div>
+        <div style={{ background: "rgba(255,255,255,0.04)", borderRadius: 8, padding: 14, marginBottom: 16 }}>
           {p.exigencia_ativa && (
-            <div style={{ background: "#fee2e2", color: "#991b1b", borderRadius: 6, padding: "6px 10px", fontSize: 12, marginBottom: 10 }}>
+            <div style={{ background: "rgba(255,77,77,0.15)", color: "#ff9494", borderRadius: 6, padding: "6px 10px", fontSize: 12, marginBottom: 10 }}>
               ⚠ Exigência ativa — o processo está em Exigência.
             </div>
           )}
           <label style={s.label}>Texto da exigência</label>
-          <textarea style={{ ...s.input, minHeight: 70, resize: "vertical", fontFamily: "'Inter', sans-serif" }}
+          <textarea style={{ ...s.input, minHeight: 70, resize: "vertical", fontFamily: FONTE_CORPO }}
             value={textoExig} onChange={e => setTextoExig(e.target.value)}
             placeholder="Descreva a exigência..." />
           <div style={{ display: "flex", alignItems: "center", gap: 10, marginTop: 8, flexWrap: "wrap" }}>
@@ -929,17 +924,17 @@ async function excluirProcesso() {
               {salvandoExig ? "Salvando..." : "Registrar exigência"}
             </button>
             {p.exigencia_ativa && (<>
-              <button style={{ ...s.btnSecondary, borderColor: "#86efac", color: "#166534" }} onClick={exigenciaCumprida}>
+              <button style={{ ...s.btnSecondary, borderColor: "rgba(0,255,170,0.35)", color: "#7dffce" }} onClick={exigenciaCumprida}>
                 ✓ Exigência cumprida
               </button>
-              <button style={{ ...s.btnSecondary, borderColor: "#fbbf24", color: "#92400e" }} onClick={exigenciaAguardandoCliente}>
+              <button style={{ ...s.btnSecondary, borderColor: "rgba(255,159,10,0.35)", color: "#ffc266" }} onClick={exigenciaAguardandoCliente}>
                 Exigência Aguardando Cliente
               </button>
             </>)}
           </div>
         </div>
 
-        <div style={{ fontSize: 13, fontWeight: 500, color: "#23282a", marginBottom: 8 }}>Arquivos</div>
+        <div style={{ fontSize: 13, fontWeight: 500, color: "#fff", marginBottom: 8 }}>Arquivos</div>
         <div style={{ display: "flex", alignItems: "flex-end", gap: 8, marginBottom: 12 }}>
           <div style={{ flex: 1 }}>
             <label style={s.label}>Número do protocolo</label>
@@ -949,7 +944,7 @@ async function excluirProcesso() {
           <button style={{ ...s.btnPrimary, height: 38 }} onClick={salvarProtocolo} disabled={salvandoProt}>
             {salvandoProt ? "Salvando..." : "Salvar"}
           </button>
-          <button style={{ ...s.btnSecondary, height: 38, borderColor: "#fca5a5", color: "#b91c1c" }} onClick={excluirProtocolo} disabled={salvandoProt}>
+          <button style={{ ...s.btnSecondary, height: 38, borderColor: "rgba(255,77,77,0.4)", color: "#ff9494" }} onClick={excluirProtocolo} disabled={salvandoProt}>
             Excluir protocolo
           </button>
         </div>
@@ -967,7 +962,7 @@ async function excluirProcesso() {
                 ? <span style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
                     <span style={s.uploadOk}>✓ Anexado</span>
                     <button onClick={() => baixarArquivo(p.id, tipo, (p.empresa||"documento").replace(/[^a-zA-Z0-9]/g,"_"))}
-                      style={{ background: "transparent", border: "0.5px solid #2563eb", color: "#2563eb", borderRadius: 6, padding: "3px 10px", fontSize: 11, cursor: "pointer", fontFamily: "'Inter', sans-serif" }}>↓ Baixar</button>
+                      style={{ background: "transparent", border: "1px solid rgba(77,148,255,0.4)", color: "#8ec2ff", borderRadius: 6, padding: "3px 10px", fontSize: 11, cursor: "pointer", fontFamily: FONTE_CORPO }}>↓ Baixar</button>
                     { tipo === "protocolo" && (
                       <label style={{ cursor: "pointer" }}>
                         <span style={{ ...s.uploadPend, fontSize: 11 }}>Trocar</span>
@@ -984,39 +979,39 @@ async function excluirProcesso() {
           ))}
         </div>
 
-        <div style={{ fontSize: 13, fontWeight: 500, color: "#23282a", marginTop: 24, marginBottom: 8 }}>
-          Anexos <span style={{ fontSize: 12, color: "#94a3b8", fontWeight: 400 }}>({anexos.length})</span>
+        <div style={{ fontSize: 13, fontWeight: 500, color: "#fff", marginTop: 24, marginBottom: 8 }}>
+          Anexos <span style={{ fontSize: 12, color: "#62666d", fontWeight: 400 }}>({anexos.length})</span>
         </div>
-        <div style={{ background: "#f8fafc", borderRadius: 8, padding: 14, marginBottom: 16 }}>
+        <div style={{ background: "rgba(255,255,255,0.04)", borderRadius: 8, padding: 14, marginBottom: 16 }}>
           {anexos.length === 0 ? (
-            <div style={{ fontSize: 13, color: "#94a3b8", marginBottom: 12 }}>Nenhum anexo enviado ainda.</div>
+            <div style={{ fontSize: 13, color: "#62666d", marginBottom: 12 }}>Nenhum anexo enviado ainda.</div>
           ) : (
             <div style={{ display: "flex", flexDirection: "column", gap: 8, marginBottom: 12 }}>
               {anexos.map(ax => (
                 <div key={ax.id} style={{ ...s.uploadItem, alignItems: "flex-start" }}>
                   <div style={{ flex: 1, minWidth: 0 }}>
-                    <div style={{ fontSize: 13, color: "#23282a", fontWeight: 500, wordBreak: "break-word" }}>
+                    <div style={{ fontSize: 13, color: "#e4e4e7", fontWeight: 500, wordBreak: "break-word" }}>
                       {ax.nome_original || "anexo"}
                     </div>
                     {ax.descricao && (
-                      <div style={{ fontSize: 12, color: "#64748b", marginTop: 2 }}>{ax.descricao}</div>
+                      <div style={{ fontSize: 12, color: "#8a90b8", marginTop: 2 }}>{ax.descricao}</div>
                     )}
-                    <div style={{ fontSize: 11, color: "#94a3b8", marginTop: 2 }}>
+                    <div style={{ fontSize: 11, color: "#62666d", marginTop: 2 }}>
                       Enviado por {ax.enviado_por || "\u2014"}
                       {ax.criado_em && ` \u00b7 ${new Date(ax.criado_em).toLocaleDateString("pt-BR")}`}
                     </div>
                   </div>
                   <div style={{ display: "flex", gap: 6, flexShrink: 0, marginLeft: 10 }}>
                     <button onClick={() => baixarAnexo(ax.id, ax.nome_original)}
-                      style={{ background: "transparent", border: "0.5px solid #2563eb", color: "#2563eb", borderRadius: 6, padding: "3px 10px", fontSize: 11, cursor: "pointer", fontFamily: "'Inter', sans-serif" }}>\u2193 Baixar</button>
+                      style={{ background: "transparent", border: "1px solid rgba(77,148,255,0.4)", color: "#8ec2ff", borderRadius: 6, padding: "3px 10px", fontSize: 11, cursor: "pointer", fontFamily: FONTE_CORPO }}>\u2193 Baixar</button>
                     <button onClick={() => excluirAnexo(ax.id)}
-                      style={{ background: "transparent", border: "0.5px solid #e2e8f0", color: "#b91c1c", borderRadius: 6, padding: "3px 10px", fontSize: 11, cursor: "pointer", fontFamily: "'Inter', sans-serif" }}>Excluir</button>
+                      style={{ background: "transparent", border: "1px solid rgba(255,255,255,0.1)", color: "#ff9494", borderRadius: 6, padding: "3px 10px", fontSize: 11, cursor: "pointer", fontFamily: FONTE_CORPO }}>Excluir</button>
                   </div>
                 </div>
               ))}
             </div>
           )}
-          <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", borderTop: "0.5px solid #e2e8f0", paddingTop: 12 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", borderTop: "1px solid rgba(255,255,255,0.06)", paddingTop: 12 }}>
             <input style={{ ...s.input, flex: "1 1 200px", minWidth: 160 }} value={descAnexo}
               onChange={e => setDescAnexo(e.target.value)} placeholder="Descrição (opcional): ex. procuração, RG..." />
             <label style={{ cursor: enviandoAnexo ? "not-allowed" : "pointer" }}>
@@ -1035,7 +1030,7 @@ async function excluirProcesso() {
         </div>
         <ChatProcesso processoId={p.id} />
         {p.observacoes && (
-          <div style={{ background: "#f8fafc", borderRadius: 8, padding: 12, fontSize: 13, color: "#475569" }}>
+          <div style={{ background: "rgba(255,255,255,0.04)", borderRadius: 8, padding: 12, fontSize: 13, color: "#c4c8e4" }}>
             <strong>Observações:</strong> {p.observacoes}
           </div>
         )}
@@ -1049,30 +1044,22 @@ async function excluirProcesso() {
       <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="" />
 
       <div style={s.layout}>
-        <div style={s.sidebar}>
-          <div style={{ margin: "20px 16px 14px", padding: "16px 18px", background: "#f4f2ec", borderRadius: 12 }}>
-            <div style={{ ...s.logo, cursor: "pointer" , fontFamily: "AtosBrand" , fontSize: 42}} onClick={() => { setTela("processos"); setProcessoSelecionado(null); }}>atos<span style={{ color: "#2d6cdf" }}>.</span></div>
-            <div style={{ fontSize: 11, color: "#6b6c66", marginTop: 4 }}>Gestão Societária</div>
-          </div>
-          {[
-            { key: "processos", icon: "⊞", label: "Processos" },
-            { key: "atas", icon: "⊡", label: "Atas recebidas" },
-            { key: "cobrancas", icon: "◈", label: "Cobranças" },
-            { key: "relatorios", icon: "▦", label: "Relatórios" },
-            { key: "grupos", icon: "◉", label: "Grupos" },
-            // Aprendizado = configuracao global de classificacao da IA, restrita ao admin completo
-            ...(ehOperador ? [] : [{ key: "aprendizado", icon: "◈", label: "Aprendizado" }]),
-          ].map(({ key, icon, label }) => (
-            <button key={key} style={s.nav(tela === key)} onClick={() => { setTela(key); setProcessoSelecionado(null); }}>
-              {icon} {label}
-            </button>
-          ))}
-          <div style={{ marginTop: "auto", padding: "12px 16px" }}>
-            <button onClick={onSair} style={{ width: "100%", background: "transparent", border: "0.5px solid rgba(255,255,255,0.25)", color: "#cecbf6", borderRadius: 8, padding: "9px 10px", fontSize: 13, cursor: "pointer" }}>Sair</button>
-          </div>
-        </div>
+        <SidebarAtos
+          onLogoClick={() => { setTela("processos"); setProcessoSelecionado(null); }}
+          rodape={<div style={{ display: "inline-block", fontSize: 9.5, fontWeight: 700, color: "#6db2ff", background: "rgba(77,148,255,0.12)", border: "1px solid rgba(77,148,255,0.35)", borderRadius: 4, padding: "2px 7px", marginTop: 8, letterSpacing: 0.5 }}>ADMINISTRADOR</div>}
+          itens={[
+            { label: "Processos", ativo: tela === "processos" && !processoSelecionado, icone: <IconeProcessos />, onClick: () => { setTela("processos"); setProcessoSelecionado(null); } },
+            { label: "Grupos", ativo: tela === "grupos", icone: <IconeGrupos />, onClick: () => { setTela("grupos"); setProcessoSelecionado(null); } },
+            ...(ehOperador ? [] : [{ label: "Aprendizado", ativo: tela === "aprendizado", icone: <IconeAprendizado />, onClick: () => { setTela("aprendizado"); setProcessoSelecionado(null); } }]),
+            { label: "Atas recebidas", disabled: true },
+            { label: "Cobranças", disabled: true },
+          ]}
+        />
 
         <div style={s.main}>
+          <div style={s.topBar}>
+            <button style={s.btnSair} onClick={onSair}>Sair</button>
+          </div>
           {tela === "aprendizado" ? (
             <TelaAprendizado />
           ) : tela === "grupos" ? (
@@ -1087,54 +1074,17 @@ async function excluirProcesso() {
               </div>
 
               <BannerPendencias />
-              {fluxosAtivos.map(f => <FluxoDoDiaCard key={f.grupo_id} fluxo={f} />)}
-              <div className="grid-metricas">
-                <StatCard
-                  valor={metricas.total || 0}
-                  label="Total"
-                  icone="⊞"
-                  corFundo="#EEEDFE"
-                  corTexto="#3C3489"
-                  onClick={() => setFStatus("")}
-                />
-                <StatCard
-                  valor={metricas.tramitacao || 0}
-                  label="Em tramitação"
-                  icone="◷"
-                  corFundo="#E1F5EE"
-                  corTexto="#085041"
-                  onClick={() => setFStatus("tramitacao")}
-                />
-                <StatCard
-                  valor={metricas.exigencia || 0}
-                  label="Em exigência"
-                  icone="⚠"
-                  corFundo="#FAEEDA"
-                  corTexto="#633806"
-                  onClick={() => setFStatus("exigencia")}
-                />
-                <StatCard
-                  valor={metricas.deferido || 0}
-                  label="Deferidos"
-                  icone="◈"
-                  corFundo="#d5e3df"
-                  corTexto="#2563eb"
-                  onClick={() => setFStatus("deferido")}
-                />
-                <StatCard
-                  valor={metricas.finalizado || 0}
-                  label="Finalizados"
-                  icone="✓"
-                  corFundo="#EAF3DE"
-                  corTexto="#27500A"
-                  onClick={() => setFStatus("finalizado")}
-                />
-              </div>
-
-              <div className="grid-duas-colunas">
-                <StatusDonut metricas={metricas} />
-                <AtividadeRecente eventos={eventosRecentes} />
-              </div>
+              <DonutStatusCard titulo="Todos os Processos" metricas={metricas} onClickStatus={setFStatus} idPrefix="da" />
+              {(fluxosAtivos.length > 0 || eventosRecentes.length > 0) && (
+                <div style={{ display: "grid", gridTemplateColumns: fluxosAtivos.length > 0 ? "1fr 1fr" : "1fr", gap: 16, marginBottom: 16 }}>
+                  {fluxosAtivos.length > 0 && (
+                    <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+                      {fluxosAtivos.map(f => <FluxoDoDiaCardEscuro key={f.grupo_id} fluxo={f} />)}
+                    </div>
+                  )}
+                  <AtividadeRecenteEscura eventos={eventosRecentes} />
+                </div>
+              )}
 
               <div
                 onDragOver={e => { e.preventDefault(); }}
@@ -1172,43 +1122,42 @@ async function excluirProcesso() {
                     }
                   } else { processarArquivosAdmin(e.dataTransfer.files); }
                 }}
-                style={{ border: "1.5px dashed #2d6a70", borderRadius: 12, padding: "18px", marginBottom: 18, background: "#fbfaf6" }}>
+                style={{ border: "1.5px dashed rgba(77,148,255,0.35)", borderRadius: 18, padding: "28px", marginBottom: 18, background: "rgba(255,255,255,0.03)" }}>
                 <div style={{ display: "flex", gap: 10, alignItems: "center", justifyContent: "center", flexWrap: "wrap" }}>
-                  <select value={upGrupo} onChange={e => setUpGrupo(e.target.value)} disabled={upSubindo}
-                    style={{ padding: "9px 10px", border: "0.5px solid #2563eb", borderRadius: 8, fontSize: 13, background: "#fff", cursor: "pointer", color: "#2563eb", fontWeight: 500 }}>
+                  <select value={upGrupo} onChange={e => setUpGrupo(e.target.value)} disabled={upSubindo} style={s.filtro}>
                     <option value="">Grupo Empresarial</option>
                     {grupos.map(g => <option key={g.id} value={g.codigo}>{g.nome}</option>)}
                   </select>
                   <label style={{ display: "inline-block", cursor: (upSubindo||!upGrupo) ? "not-allowed" : "pointer" }}>
-                    <span style={{ background: "#2563eb", color: "#fff", borderRadius: 8, padding: "9px 16px", fontSize: 13, fontFamily: "'Inter', sans-serif", opacity: (upSubindo||!upGrupo) ? 0.5 : 1 }}>
-                      Selecionar Arquivos
+                    <span style={{ background: "linear-gradient(135deg, #4d94ff, #8c5aff)", color: "#fff", borderRadius: 9, padding: "9px 16px", fontSize: 12.5, fontFamily: FONTE_CORPO, opacity: (upSubindo||!upGrupo) ? 0.5 : 1, boxShadow: "0 4px 16px rgba(77,148,255,0.3)" }}>
+                      Arquivos
                     </span>
                     <input type="file" accept="application/pdf" multiple style={{ display: "none" }}
                       disabled={upSubindo||!upGrupo} onChange={e => processarArquivosAdmin(e.target.files)} />
                   </label>
                   <label style={{ display: "inline-block", cursor: (upSubindo||!upGrupo) ? "not-allowed" : "pointer" }}>
-                    <span style={{ background: "transparent", color: "#2563eb", border: "0.5px solid #2563eb", borderRadius: 8, padding: "9px 16px", fontSize: 13, fontFamily: "'Inter', sans-serif", opacity: (upSubindo||!upGrupo) ? 0.5 : 1 }}>
-                      Selecionar Pasta
+                    <span style={{ background: "linear-gradient(135deg, #4d94ff, #8c5aff)", color: "#fff", borderRadius: 9, padding: "9px 16px", fontSize: 12.5, fontFamily: FONTE_CORPO, opacity: (upSubindo||!upGrupo) ? 0.5 : 1, boxShadow: "0 4px 16px rgba(77,148,255,0.3)" }}>
+                      Pastas
                     </span>
                     <input type="file" webkitdirectory="" directory="" multiple style={{ display: "none" }}
                       disabled={upSubindo||!upGrupo} onChange={e => processarPastaAdmin(e.target.files)} />
                   </label>
-                  {upSubindo && <span style={{ fontSize: 13, color: "#2563eb" }}>Enviando {upProg.feitos} de {upProg.total}{upProg.erros ? ` (${upProg.erros} erro)` : ""}...</span>}
+                  {upSubindo && <span style={{ fontSize: 13, color: "#8ec2ff" }}>Enviando {upProg.feitos} de {upProg.total}{upProg.erros ? ` (${upProg.erros} erro)` : ""}...</span>}
                 </div>
               </div>
-              <div style={{ fontSize: 14, fontWeight: 500, color: "#23282a", marginBottom: 12 }}>Processos recentes</div>
+              <div style={{ fontSize: 13, color: "#a8b0d8", marginBottom: 12, fontWeight: 500 }}>Processos recentes</div>
               <div style={{ display: "flex", gap: 10, marginBottom: 14, flexWrap: "wrap", alignItems: "center" }}>
                 <input value={fBusca} onChange={e => setFBusca(e.target.value)} placeholder="Buscar empresa..."
-                  style={{ flex: "1 1 200px", minWidth: 160, padding: "9px 12px", border: "0.5px solid #e6e0d2", borderRadius: 8, fontSize: 13, outline: "none", fontFamily: "'Inter', sans-serif" }} />
-                <select value={fUf} onChange={e => setFUf(e.target.value)} style={{ padding: "9px 10px", border: "0.5px solid #e6e0d2", borderRadius: 8, fontSize: 13, background: "#fff", cursor: "pointer", color: "#475569" }}>
+                  style={{ flex: "1 1 200px", minWidth: 160, padding: "9px 12px", background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 8, fontSize: 13, outline: "none", color: "#fff", fontFamily: FONTE_CORPO }} />
+                <select value={fUf} onChange={e => setFUf(e.target.value)} style={s.filtro}>
                   <option value="">UF: todas</option>
                   {ufsDisponiveis.map(u => <option key={u} value={u}>{u}</option>)}
                 </select>
-                <select value={fAto} onChange={e => setFAto(e.target.value)} style={{ padding: "9px 10px", border: "0.5px solid #e6e0d2", borderRadius: 8, fontSize: 13, background: "#fff", cursor: "pointer", color: "#475569" }}>
+                <select value={fAto} onChange={e => setFAto(e.target.value)} style={s.filtro}>
                   <option value="">Ato: todos</option>
                   {atosDisponiveis.map(a => <option key={a} value={a}>{a}</option>)}
                 </select>
-                <select value={fStatus} onChange={e => setFStatus(e.target.value)} style={{ padding: "9px 10px", border: "0.5px solid #e6e0d2", borderRadius: 8, fontSize: 13, background: "#fff", cursor: "pointer", color: "#475569" }}>
+                <select value={fStatus} onChange={e => setFStatus(e.target.value)} style={s.filtro}>
                   <option value="">Status: todos</option>
                   <option value="aberto">Aberto</option>
                   <option value="tramitacao">Tramitação</option>
@@ -1216,13 +1165,13 @@ async function excluirProcesso() {
                   <option value="deferido">Deferido</option>
                   <option value="finalizado">Finalizado</option>
                 </select>
-                <select value={fGrupo} onChange={e => setFGrupo(e.target.value)} style={{ padding: "9px 10px", border: "0.5px solid #2563eb", borderRadius: 8, fontSize: 13, background: "#f4f2ec", cursor: "pointer", color: "#2563eb", fontWeight: 500 }}>
+                <select value={fGrupo} onChange={e => setFGrupo(e.target.value)} style={s.filtro}>
                   <option value="">Cliente: todos</option>
                   {grupos.map(g => <option key={g.id} value={g.id}>{g.nome}</option>)}
                 </select>
                 {(fBusca || fUf || fAto || fStatus || fGrupo) && (
                   <button onClick={() => { setFBusca(""); setFUf(""); setFAto(""); setFStatus(""); setFGrupo(""); }}
-                    style={{ padding: "9px 14px", border: "none", borderRadius: 8, fontSize: 13, background: "#eceae2", color: "#6b6c66", cursor: "pointer", fontFamily: "'Inter', sans-serif" }}>Limpar</button>
+                    style={{ padding: "9px 14px", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 8, fontSize: 13, background: "rgba(255,255,255,0.05)", color: "#d4d4d8", cursor: "pointer", fontFamily: FONTE_CORPO }}>Limpar</button>
                 )}
               </div>
 
@@ -1233,7 +1182,7 @@ async function excluirProcesso() {
                   ))}
                 </div>
                 {processos.length === 0 ? (
-                  <div style={{ padding: "32px 16px", textAlign: "center", color: "#94a3b8", fontSize: 13 }}>
+                  <div style={{ padding: "32px 16px", textAlign: "center", color: "#62666d", fontSize: 13 }}>
                     Nenhum processo ainda. Clique em "Novo processo" para começar.
                   </div>
                 ) : <ListaProcessosAgrupada />}
@@ -1250,13 +1199,13 @@ async function excluirProcesso() {
 
             {!dadosAnalise ? (
               <div>
-                <div style={{ background: "#f8fafc", border: "2px dashed #e2e8f0", borderRadius: 10, padding: 32, textAlign: "center", marginBottom: 16 }}>
-                  <div style={{ fontSize: 13, color: "#64748b", marginBottom: 12 }}>
+                <div style={{ background: "rgba(255,255,255,0.03)", border: "2px dashed rgba(77,148,255,0.35)", borderRadius: 10, padding: 32, textAlign: "center", marginBottom: 16 }}>
+                  <div style={{ fontSize: 13, color: "#8a90b8", marginBottom: 12 }}>
                     {analisando ? "Analisando documento..." : "Arraste ou selecione a ata para análise automática"}
                   </div>
                   {!analisando && (
                     <label style={{ cursor: "pointer" }}>
-                      <span style={{ background: "#1e40af", color: "#fff", padding: "8px 20px", borderRadius: 8, fontSize: 13 }}>
+                      <span style={{ background: "linear-gradient(135deg, #4d94ff, #8c5aff)", color: "#fff", padding: "8px 20px", borderRadius: 8, fontSize: 13 }}>
                         Selecionar arquivo
                       </span>
                       <input type="file" accept=".pdf,.docx,.doc" style={{ display: "none" }}
@@ -1267,7 +1216,7 @@ async function excluirProcesso() {
               </div>
             ) : (
               <div>
-                <div style={{ background: "#dcfce7", border: "0.5px solid #86efac", borderRadius: 8, padding: 10, marginBottom: 16, fontSize: 13, color: "#166534" }}>
+                <div style={{ background: "rgba(0,255,170,0.1)", border: "1px solid rgba(0,255,170,0.3)", borderRadius: 8, padding: 10, marginBottom: 16, fontSize: 13, color: "#7dffce" }}>
                   ✓ Documento analisado pelo Atos
                 </div>
 
@@ -1377,77 +1326,14 @@ export default function App() {
   }
 
   return (
-    <>
-      <style>{`
-        @keyframes atosWaveMove { 0% { transform: translate(0,0) rotate(0deg); } 50% { transform: translate(-3%,2%) rotate(5deg); } 100% { transform: translate(0,0) rotate(0deg); } }
-        @keyframes atosSplashOut { 0%,62% { opacity:1; visibility:visible; } 80%,100% { opacity:0; visibility:hidden; } }
-        @keyframes atosLogoIn { 0%,6% { opacity:0; transform: translateY(16px); } 26%,60% { opacity:1; transform: translateY(0); } 76%,100% { opacity:0; transform: translateY(-8px); } }
-        @keyframes atosSubIn { 0%,28% { opacity:0; transform: translateY(10px); } 44%,60% { opacity:1; transform: translateY(0); } 76%,100% { opacity:0; transform: translateY(-6px); } }
-        @keyframes atosFormIn { 0%,66% { opacity:0; transform: translateY(12px); } 86%,100% { opacity:1; transform: translateY(0); } }
-        .atos-splash { position:fixed; inset:0; z-index:50; background:linear-gradient(180deg,#dff3f0 0%,#7fd0d8 38%,#3b82f6 72%,#1e3a8a 100%); display:flex; flex-direction:column; align-items:center; justify-content:center; animation: atosSplashOut 5s ease-in-out forwards; pointer-events:none; }
-        .atos-splash-wave { position:absolute; top:-35%; left:-30%; width:80%; height:130%; filter:blur(24px); border-radius:45%; background: radial-gradient(circle at 30% 30%, #2dd4bf, transparent 60%), radial-gradient(circle at 60% 60%, #3b82f6, transparent 55%); animation: atosWaveMove 9s ease-in-out infinite; }
-        @keyframes atosFrameIn { 0% { opacity:0; transform:scale(0.85); } 16% { opacity:1; transform:scale(1); } 80% { opacity:1; transform:scale(1); } 100% { opacity:0; transform:scale(1.03); } }
-        .atos-splash-frame { position:relative; z-index:4; -webkit-backdrop-filter:blur(14px); backdrop-filter:blur(14px); border:1px solid rgba(255,255,255,0.5); border-radius:24px; padding:36px 60px; display:flex; flex-direction:column; align-items:center; background:rgba(255,255,255,0.28); opacity:0; transform:scale(0.85); animation: atosFrameIn 5s ease-in-out forwards; }
-        .atos-splash-glow { position:absolute; z-index:3; width:260px; height:260px; border-radius:50%; background:radial-gradient(circle, rgba(255,255,255,0.55), transparent 70%); animation: atosGlowPulse 4s ease-in-out infinite; }
-        @keyframes atosGlowPulse { 0%,100% { transform:scale(1); opacity:0.6; } 50% { transform:scale(1.15); opacity:0.9; } }
-        .atos-splash-cloud { position:absolute; left:-220px; z-index:2; animation-name:atosCloudDrift; animation-timing-function:linear; animation-iteration-count:infinite; }
-        .atos-cloud-base, .atos-cloud-bump { position:absolute; background:#ffffff; border-radius:50%; filter:blur(1px); }
-        .atos-cloud-base { border-radius:100px; }
-        @keyframes atosCloudDrift { 0% { left:-220px; } 100% { left:110%; } }
-        .atos-splash-logo { position:relative; z-index:2; margin:0; font-size:68px; font-weight:800; color:#111; line-height:1; letter-spacing:-2px; animation: atosLogoIn 5s ease-in-out forwards; }
-        .atos-splash-sub { position:relative; z-index:2; margin:12px 0 0; font-size:22px; color:#163a6b; letter-spacing:0.5px; animation: atosSubIn 5s ease-in-out forwards; }
-        .atos-login-card { animation: atosFormIn 3s ease-in-out forwards; }
-        .atos-bgwave { position:absolute; top:-50%; left:-20%; width:70%; height:120%; filter:blur(40px); border-radius:45%; background: radial-gradient(circle at 40% 40%, rgba(45,212,191,0.45), transparent 62%), radial-gradient(circle at 60% 60%, rgba(59,130,246,0.4), transparent 55%); pointer-events:none; }
-      `}</style>
-      <div className="atos-splash">
-        
-        <div className="atos-splash-cloud" style={{ top: "14%", opacity: 0.75, transform: "scale(1.15)", animationDuration: "36s" }}>
-          <div className="atos-cloud-base" style={{ width: 170, height: 56 }}></div>
-          <div className="atos-cloud-bump" style={{ width: 80, height: 80, left: 16, top: -34 }}></div>
-          <div className="atos-cloud-bump" style={{ width: 100, height: 100, left: 58, top: -46 }}></div>
-          <div className="atos-cloud-bump" style={{ width: 70, height: 70, left: 108, top: -28 }}></div>
-        </div>
-        <div className="atos-splash-cloud" style={{ top: "62%", opacity: 0.6, transform: "scale(0.85)", animationDuration: "44s", animationDelay: "-12s" }}>
-          <div className="atos-cloud-base" style={{ width: 170, height: 56 }}></div>
-          <div className="atos-cloud-bump" style={{ width: 80, height: 80, left: 16, top: -34 }}></div>
-          <div className="atos-cloud-bump" style={{ width: 100, height: 100, left: 58, top: -46 }}></div>
-          <div className="atos-cloud-bump" style={{ width: 70, height: 70, left: 108, top: -28 }}></div>
-        </div>
-        <div className="atos-splash-cloud" style={{ top: "35%", opacity: 0.45, transform: "scale(0.6)", animationDuration: "52s", animationDelay: "-28s" }}>
-          <div className="atos-cloud-base" style={{ width: 170, height: 56 }}></div>
-          <div className="atos-cloud-bump" style={{ width: 80, height: 80, left: 16, top: -34 }}></div>
-          <div className="atos-cloud-bump" style={{ width: 100, height: 100, left: 58, top: -46 }}></div>
-          <div className="atos-cloud-bump" style={{ width: 70, height: 70, left: 108, top: -28 }}></div>
-        </div>
-        <div className="atos-splash-glow"></div>
-        <div className="atos-splash-frame">
-          <div className="atos-splash-logo" style={{ fontFamily: "AtosBrand" }}>atos<span style={{ color: "#2d6cdf" }}>.</span></div>
-        <div className="atos-splash-sub">Gestão Societária</div>
-        </div>
-      </div>
-      <div style={{ minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", background: "linear-gradient(180deg,#dff3f0 0%,#7fd0d8 38%,#3b82f6 72%,#1e3a8a 100%)", fontFamily: "Inter, sans-serif", position: "relative", overflow: "hidden", padding: "16px" }}>
-        <div className="atos-bgwave"></div>
-        <div className="atos-login-card" style={{ background: "#fff", borderRadius: 16, padding: 32, width: "100%", maxWidth: 360, boxShadow: "0 10px 50px rgba(20,10,50,0.45)", position: "relative", zIndex: 2, boxSizing: "border-box" }}>
-          <div style={{ fontSize: 34, fontWeight: 800, color: "#111111", fontFamily: "AtosBrand", letterSpacing: -1.5, textAlign: "center" }}>atos<span style={{ color: "#2d6cdf" }}>.</span></div>
-          <div style={{ textAlign: "center", fontSize: 13, color: "#7a7790", marginBottom: 4 }}>Gestão Societária</div>
-          <div style={{ textAlign: "center", fontSize: 12, color: "#a09dba", marginBottom: 24 }}>Painel do Administrador</div>
-          {erro && <div style={{ background: "#fee2e2", color: "#991b1b", borderRadius: 8, padding: "8px 12px", fontSize: 13, marginBottom: 14 }}>{erro}</div>}
-          {etapa === 1 && (<>
-          <label style={{ fontSize: 12, color: "#7a7790", marginBottom: 4, display: "block" }}>Login</label>
-          <input style={{ width: "100%", padding: "11px 13px", border: "0.5px solid #d9d5ea", borderRadius: 8, fontSize: 14, outline: "none", marginBottom: 14, boxSizing: "border-box", background: "#fbfaff" }} value={login} onChange={e => setLogin(e.target.value)} onKeyDown={e => e.key === "Enter" && entrar()} />
-          <label style={{ fontSize: 12, color: "#7a7790", marginBottom: 4, display: "block" }}>Senha</label>
-          <input style={{ width: "100%", padding: "11px 13px", border: "0.5px solid #d9d5ea", borderRadius: 8, fontSize: 14, outline: "none", marginBottom: 14, boxSizing: "border-box", background: "#fbfaff" }} type="password" value={senha} onChange={e => setSenha(e.target.value)} onKeyDown={e => e.key === "Enter" && entrar()} />
-          <button style={{ width: "100%", background: "linear-gradient(135deg,#2563eb,#2dd4bf)", color: "#fff", border: "none", padding: "12px", borderRadius: 8, fontSize: 14, fontWeight: 600, cursor: "pointer", marginTop: 4 }} onClick={entrar} disabled={carregando}>{carregando ? "Aguarde..." : "Entrar"}</button></>)}
-          {etapa === 2 && (<>
-          <div style={{ fontSize: 13, color: "#7a7790", marginBottom: 12 }}>Enviamos um codigo para o seu e-mail. Digite-o abaixo para entrar.</div>
-          <label style={{ fontSize: 12, color: "#7a7790", marginBottom: 4, display: "block" }}>Codigo de acesso</label>
-          <input style={{ width: "100%", padding: "11px 13px", border: "0.5px solid #d9d5ea", borderRadius: 8, fontSize: 18, letterSpacing: 4, textAlign: "center", outline: "none", marginBottom: 14, boxSizing: "border-box", background: "#fbfaff" }} value={codigo} onChange={e => setCodigo(e.target.value)} onKeyDown={e => e.key === "Enter" && verificarCodigo()} maxLength={6} />
-          <button style={{ width: "100%", background: "linear-gradient(135deg,#2563eb,#2dd4bf)", color: "#fff", border: "none", padding: "12px", borderRadius: 8, fontSize: 14, fontWeight: 600, cursor: "pointer", marginTop: 4 }} onClick={verificarCodigo} disabled={carregando}>{carregando ? "Aguarde..." : "Verificar codigo"}</button>
-          <button style={{ width: "100%", background: "transparent", color: "#7a7790", border: "none", padding: "10px", fontSize: 13, cursor: "pointer", marginTop: 8 }} onClick={() => { setEtapa(1); setCodigo(""); setErro(""); }}>Voltar</button>
-          </>)}
-        </div>
-      </div>
-    </>
+    <TelaLogin
+      subtitulo="Painel do Administrador"
+      erro={erro} etapa={etapa} carregando={carregando}
+      login={login} senha={senha} codigo={codigo}
+      onChangeLogin={setLogin} onChangeSenha={setSenha} onChangeCodigo={setCodigo}
+      onEntrar={entrar} onVerificarCodigo={verificarCodigo}
+      onVoltarEtapa={() => { setEtapa(1); setCodigo(""); setErro(""); }}
+    />
   );
 }
 

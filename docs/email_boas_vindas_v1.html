@@ -1,0 +1,45 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<title>ATOS — Email de Boas-vindas (novo layout)</title>
+<style>
+  body { background: #f2f2f2; font-family: -apple-system, 'Segoe UI', sans-serif; padding: 40px 20px; margin: 0; }
+  .email-wrap { max-width: 480px; margin: 0 auto; background: #060608; border-radius: 20px; overflow: hidden; }
+  .email-header { background: linear-gradient(160deg, #0a0e2e 0%, #060810 100%); padding: 36px 32px 28px; text-align: center; position: relative; }
+  .logo { font-family: Georgia, serif; font-size: 26px; font-weight: 700; color: #fff; }
+  .logo .dot { color: #6db2ff; }
+  .logo-sub { font-size: 11px; color: #9aa8d8; margin-top: 4px; letter-spacing: 0.5px; }
+  .email-body { padding: 32px; color: #d4d4d8; font-size: 14px; line-height: 1.6; }
+  .email-title { font-family: 'Space Grotesk', -apple-system, sans-serif; font-size: 19px; font-weight: 700; color: #fff; margin-bottom: 14px; }
+  .group-chip { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; color: #8ec2ff; background: rgba(77,148,255,0.1); border: 1px solid rgba(77,148,255,0.3); border-radius: 20px; padding: 5px 14px; margin: 14px 0 24px; }
+  .group-chip .dot { width: 6px; height: 6px; border-radius: 50%; background: #4d94ff; }
+  .btn-criar-acesso { display: inline-block; background: linear-gradient(135deg, #4d94ff, #8c5aff); color: #fff !important; text-decoration: none; padding: 14px 32px; border-radius: 10px; font-size: 14px; font-weight: 600; box-shadow: 0 4px 20px rgba(77,148,255,0.35); }
+  .email-footer { padding: 24px 32px; border-top: 1px solid rgba(255,255,255,0.06); text-align: center; }
+  .footer-text { font-size: 11px; color: #62666d; }
+  .footer-link { color: #6db2ff; text-decoration: none; }
+</style>
+</head>
+<body>
+  <div class="email-wrap">
+    <div class="email-header">
+      <div class="logo">atos<span class="dot">.</span></div>
+      <div class="logo-sub">GESTÃO SOCIETÁRIA</div>
+    </div>
+    <div class="email-body">
+      <div class="email-title">Você foi cadastrado no Atos</div>
+      <p>Você foi cadastrado para acessar o sistema Atos — Gestão Societária, no grupo:</p>
+      <div class="group-chip"><span class="dot"></span>BRAVA</div>
+      <p>Clique no botão abaixo para criar seu login e senha de acesso.</p>
+      <div style="text-align:center; margin-top:28px;">
+        <a href="#" class="btn-criar-acesso">Criar meu acesso</a>
+      </div>
+    </div>
+    <div class="email-footer">
+      <div class="footer-text">
+        <a href="#" class="footer-link">contato@atos.net.br</a> · atos.net.br
+      </div>
+    </div>
+  </div>
+</body>
+</html>

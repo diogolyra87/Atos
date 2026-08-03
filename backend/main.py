@@ -74,7 +74,7 @@ def enviar_email(destinatario, assunto, corpo, corpo_html=None):
         print(f"Erro ao enviar email para {destinatario}: {e}")
         return False
 
-def enviar_email_anexo(destinatario, assunto, corpo, caminho_anexo=None, nome_anexo=None):
+def enviar_email_anexo(destinatario, assunto, corpo, caminho_anexo=None, nome_anexo=None, corpo_html=None):
     try:
         from email.mime.application import MIMEApplication
         msg = MIMEMultipart("mixed")
@@ -84,7 +84,7 @@ def enviar_email_anexo(destinatario, assunto, corpo, caminho_anexo=None, nome_an
         alt = MIMEMultipart("alternative")
         alt.attach(MIMEText(corpo, "plain"))
         try:
-            alt.attach(MIMEText(envolver_html(corpo), "html"))
+            alt.attach(MIMEText(corpo_html or envolver_html(corpo), "html"))
         except Exception as _e:
             print("aviso html anexo:", _e)
         msg.attach(alt)
@@ -363,6 +363,99 @@ def corpo_status_cliente(p, status_label, frase_final):
 
 
 
+def _empresa_linha(p):
+    ato = p.identificador_ato or p.tipo_ato or ""
+    return (p.empresa or "") + (" · " + ato if ato else "")
+
+
+def _pill_status(status_key):
+    cores = {
+        "aberto": ("rgba(255,159,10,0.15)", "#ff9f0a"),
+        "tramitacao": ("rgba(0,212,255,0.15)", "#00d4ff"),
+        "exigencia": ("rgba(255,77,77,0.15)", "#ff4d4d"),
+        "deferido": ("rgba(77,148,255,0.15)", "#4d94ff"),
+        "finalizado": ("rgba(0,255,170,0.15)", "#00ffaa"),
+    }
+    return cores.get(status_key, ("rgba(77,148,255,0.15)", "#4d94ff"))
+
+
+def _email_status_html(status_key, status_label, titulo, empresa_linha, protocolo=None, nota_tipo=None, nota_texto=None, botao=None):
+    """Template escuro compartilhado por todos os avisos de status ao cliente -
+    replica a identidade visual aprovada em emails_notificacao_status_v2.html,
+    com cores solidas e sem blur/backdrop-filter (nao renderizam em Gmail/Outlook).
+    nota_tipo: None | "recebido" | "anexo" | "aguardando"."""
+    bg, cor = _pill_status(status_key)
+    info_html = ""
+    if protocolo:
+        info_html += '<div style="font-size:10.5px;color:#71717a;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:4px;">Protocolo</div>'
+        info_html += '<div style="font-size:14px;color:#fff;font-weight:600;">' + protocolo + '</div>'
+    elif nota_tipo == "recebido":
+        info_html += '<div style="font-size:10.5px;color:#71717a;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:4px;">Recebido em</div>'
+        info_html += '<div style="font-size:14px;color:#fff;font-weight:600;">' + (nota_texto or "") + '</div>'
+    if nota_tipo == "anexo":
+        info_html += '<div style="font-size:12px;color:#8ec2ff;margin-top:10px;">📎 ' + (nota_texto or "Documento em Anexo") + '</div>'
+    elif nota_tipo == "aguardando":
+        info_html += '<div style="font-size:12.5px;color:#8a90b8;margin-top:14px;line-height:1.5;">' + (nota_texto or "") + '</div>'
+    botao_html = ""
+    if botao:
+        botao_html = ('<p style="text-align:center;margin-top:20px;"><a href="' + botao["href"] +
+                       '" style="display:inline-block;background:' + cor + ';color:#08070d;text-decoration:none;'
+                       'padding:13px 28px;border-radius:10px;font-size:13.5px;font-weight:600;">' + botao["label"] + '</a></p>')
+    return (
+        '<div style="font-family:Arial,Helvetica,sans-serif;max-width:480px;margin:0 auto;background:#060608;border-radius:20px;overflow:hidden;">'
+        '<div style="background:linear-gradient(160deg,#0a0e2e 0%,#060810 100%);padding:28px 32px 22px;text-align:center;">'
+        '<div style="font-family:Georgia,serif;font-size:22px;font-weight:bold;color:#fff;">atos<span style="color:#6db2ff;">.</span></div>'
+        '</div>'
+        '<div style="padding:28px 32px;color:#d4d4d8;font-size:14px;line-height:1.6;">'
+        '<span style="display:inline-block;font-size:11.5px;font-weight:bold;border-radius:20px;padding:6px 14px;margin-bottom:16px;'
+        'text-transform:uppercase;letter-spacing:0.4px;background:' + bg + ';color:' + cor + ';">' + status_label + '</span>'
+        '<div style="font-size:18px;font-weight:bold;color:#fff;margin-bottom:10px;">' + titulo + '</div>'
+        '<div style="font-size:13px;color:#8a90b8;margin-bottom:18px;">' + empresa_linha + '</div>'
+        '<div style="background:rgba(255,255,255,0.04);border-radius:10px;padding:14px 16px;">' + info_html + '</div>'
+        + botao_html +
+        '</div>'
+        '<div style="padding:20px 32px;border-top:1px solid rgba(255,255,255,0.06);text-align:center;">'
+        '<div style="font-size:11px;color:#62666d;">contato@atos.net.br &middot; atos.net.br</div>'
+        '</div>'
+        '</div>'
+    )
+
+
+def _email_finalizado(p):
+    corpo = corpo_status_cliente(p, "Finalizado", "Seu Processo foi Finalizado, em Anexo o Registro.")
+    corpo_html = _email_status_html("finalizado", "Finalizado", "Processo Finalizado, em anexo o registro", _empresa_linha(p), protocolo=p.numero_protocolo or None)
+    return corpo, corpo_html
+
+
+def notificar_exigencia_cliente(db, p, origem="manual"):
+    """Avisa o cliente por email quando o processo entra em exigencia.
+    origem="autonoma": deteccao pela consulta autonoma (scraper, ver
+    atualizar_status.py/aplicar_classificacao). origem="manual": registro
+    manual pelo admin via POST /processos/{id}/exigencia.
+    Sem PDF da exigencia + origem manual: nao dispara e-mail (comportamento ja
+    existente preservado - nao e uma das variantes especificadas para o cliente,
+    so o admin e alertado nesse caso pelo alerta administrativo separado)."""
+    if not p.arquivo_exigencia and origem != "autonoma":
+        return
+    try:
+        if p.arquivo_exigencia:
+            corpo = corpo_status_cliente(p, "Exigencia", "Segue em anexo o documento da exigencia.")
+            corpo_html = _email_status_html("exigencia", "Exigência", "Processo em Exigência", _empresa_linha(p),
+                                             protocolo=p.numero_protocolo or None, nota_tipo="anexo", nota_texto="Exigência em Anexo")
+            cam = os.path.join(UPLOADS_DIR, p.arquivo_exigencia)
+            for em in emails_do_grupo(db, p.grupo_id):
+                enviar_email_anexo(em, "Exigencia no seu processo - " + (p.empresa or ""), corpo, cam, p.arquivo_exigencia, corpo_html=corpo_html)
+        else:
+            corpo = corpo_status_cliente(p, "Exigencia", "Aguardando a Junta Comercial disponibilizar a exigencia.")
+            corpo_html = _email_status_html("exigencia", "Exigência", "Processo em Exigência", _empresa_linha(p),
+                                             protocolo=p.numero_protocolo or None, nota_tipo="aguardando",
+                                             nota_texto="Aguardando a Junta Comercial disponibilizar a exigência.")
+            for em in emails_do_grupo(db, p.grupo_id):
+                enviar_email(em, "Exigencia no seu processo - " + (p.empresa or ""), corpo, corpo_html)
+    except Exception as e:
+        print("Erro ao notificar exigencia ao cliente:", e)
+
+
 def notificar_tramitacao_cliente(db, p, status_antes):
     """Avisa o cliente por email quando o processo entra em tramitacao.
     Se so tiver o numero do protocolo, notifica so com o numero no corpo (sem anexo).
@@ -379,13 +472,17 @@ def notificar_tramitacao_cliente(db, p, status_antes):
     try:
         if tem_pdf:
             corpo = corpo_status_cliente(p, "Tramitacao", "Aguardando analise da Junta Comercial. Protocolo em anexo.")
+            corpo_html = _email_status_html("tramitacao", "Tramitação", "Documento Protocolado", _empresa_linha(p),
+                                             protocolo=p.numero_protocolo or None, nota_tipo="anexo", nota_texto="Protocolo em Anexo")
             cam = os.path.join(UPLOADS_DIR, p.arquivo_protocolo)
             for em in emails_do_grupo(db, p.grupo_id):
-                enviar_email_anexo(em, "Atualizacao do seu processo - " + (p.empresa or ""), corpo, cam, p.arquivo_protocolo)
+                enviar_email_anexo(em, "Atualizacao do seu processo - " + (p.empresa or ""), corpo, cam, p.arquivo_protocolo, corpo_html=corpo_html)
         else:
             corpo = corpo_status_cliente(p, "Tramitacao", "Aguardando analise da Junta Comercial.")
+            corpo_html = _email_status_html("tramitacao", "Tramitação", "Documento Protocolado", _empresa_linha(p),
+                                             protocolo=p.numero_protocolo or None)
             for em in emails_do_grupo(db, p.grupo_id):
-                enviar_email(em, "Atualizacao do seu processo - " + (p.empresa or ""), corpo)
+                enviar_email(em, "Atualizacao do seu processo - " + (p.empresa or ""), corpo, corpo_html)
     except Exception as e:
         print("Erro ao notificar tramitacao:", e)
 
@@ -488,16 +585,22 @@ def _disparar_convites(nome, link, emails):
         "Atenciosamente,\nEquipe Atos"
     )
     corpo_html = (
-        '<div style="font-family:Arial,Helvetica,sans-serif;max-width:480px;margin:0 auto;color:#241b4a;">'
-        '<h2 style="color:#111111;margin:0 0 4px;">atos<span style="color:#2d6cdf;">.</span></h2>'
-        '<p style="font-size:12px;color:#7a7790;margin:0 0 18px;">Gestão Societária</p>'
-        '<p>Olá!</p>'
-        '<p>Você foi cadastrado para acessar o sistema <strong>Atos - Gestão Societária</strong>, no grupo <strong>' + nome + '</strong>.</p>'
-        '<p>Para criar seu usuário e senha de acesso, clique no botão abaixo:</p>'
-        '<p style="text-align:center;margin:24px 0;"><a href="' + link + '" style="background:#2563eb;color:#ffffff;text-decoration:none;padding:13px 28px;border-radius:8px;font-weight:bold;display:inline-block;">Criar meu acesso</a></p>'
-        '<p style="font-size:13px;color:#7a7790;">Ou copie e cole este endereço no navegador:<br><a href="' + link + '">' + link + '</a></p>'
-        '<p style="margin-top:24px;">Atenciosamente,<br>Equipe Atos</p>'
-        + rodape_atos() +
+        '<div style="font-family:Arial,Helvetica,sans-serif;max-width:480px;margin:0 auto;background:#060608;border-radius:20px;overflow:hidden;">'
+        '<div style="background:linear-gradient(160deg,#0a0e2e 0%,#060810 100%);padding:36px 32px 28px;text-align:center;">'
+        '<div style="font-family:Georgia,serif;font-size:26px;font-weight:bold;color:#fff;">atos<span style="color:#6db2ff;">.</span></div>'
+        '<div style="font-size:11px;color:#9aa8d8;margin-top:4px;letter-spacing:0.5px;">GESTÃO SOCIETÁRIA</div>'
+        '</div>'
+        '<div style="padding:32px;color:#d4d4d8;font-size:14px;line-height:1.6;">'
+        '<div style="font-family:Arial,Helvetica,sans-serif;font-size:19px;font-weight:bold;color:#fff;margin-bottom:14px;">Você foi cadastrado no Atos</div>'
+        '<p style="margin:0 0 4px;">Você foi cadastrado para acessar o sistema Atos &mdash; Gestão Societária, no grupo:</p>'
+        '<div style="display:inline-block;font-size:12px;color:#8ec2ff;background:rgba(77,148,255,0.1);border:1px solid rgba(77,148,255,0.3);border-radius:20px;padding:5px 14px;margin:14px 0 24px;">' + nome + '</div>'
+        '<p>Clique no botão abaixo para criar seu login e senha de acesso.</p>'
+        '<p style="text-align:center;margin-top:28px;"><a href="' + link + '" style="display:inline-block;background:linear-gradient(135deg,#4d94ff,#8c5aff);color:#ffffff;text-decoration:none;padding:14px 32px;border-radius:10px;font-size:14px;font-weight:600;">Criar meu acesso</a></p>'
+        '<p style="font-size:12px;color:#62666d;margin-top:20px;">Ou copie e cole este endereço no navegador:<br><a href="' + link + '" style="color:#6db2ff;">' + link + '</a></p>'
+        '</div>'
+        '<div style="padding:24px 32px;border-top:1px solid rgba(255,255,255,0.06);text-align:center;">'
+        '<div style="font-size:11px;color:#62666d;">contato@atos.net.br &middot; atos.net.br</div>'
+        '</div>'
         '</div>'
     )
     for email in emails:
@@ -2250,8 +2353,15 @@ async def criar_processo(
     db.commit()
     try:
         corpo = "Processo Inserido no Atos:\n\n" + corpo_status_cliente(p, "Aberto", "")
+        try:
+            _recebido_txt = p.data_recebimento.strftime("%d/%m/%Y, %H:%M")
+        except Exception:
+            _recebido_txt = datetime.now().strftime("%d/%m/%Y, %H:%M")
+        corpo_html = _email_status_html("aberto", "Aberto", "Seu processo foi recebido", _empresa_linha(p),
+                                         nota_tipo="recebido", nota_texto=_recebido_txt,
+                                         botao={"label": "Acessar o sistema", "href": BASE_URL_SISTEMA})
         for em in emails_do_grupo(db, grupo_id):
-            enviar_email(em, "Processo inserido no Atos - " + (p.empresa or ""), corpo)
+            enviar_email(em, "Processo inserido no Atos - " + (p.empresa or ""), corpo, corpo_html)
     except Exception as e:
         print("Erro ao notificar abertura:", e)
     if faltando:
@@ -2457,9 +2567,9 @@ async def upload_arquivo(
                 # normalmente (arquivo salvo, status atualizado) - so o aviso
                 # ao cliente que fica em pausa pra SP.
                 if (p.uf or "").upper() != "SP":
-                    corpo = corpo_status_cliente(p, "Finalizado", "Seu Processo foi Finalizado, em Anexo o Registro.")
+                    corpo, corpo_html = _email_finalizado(p)
                     for em in emails_do_grupo(db, p.grupo_id):
-                        enviar_email_anexo(em, "Processo Finalizado - " + (p.empresa or ""), corpo, caminho, nome_arquivo)
+                        enviar_email_anexo(em, "Processo Finalizado - " + (p.empresa or ""), corpo, caminho, nome_arquivo, corpo_html=corpo_html)
                 try:
                     _criar_processo_transferencia(db, p)
                 except Exception as e:
@@ -2502,14 +2612,7 @@ async def registrar_exigencia(
     p.atualizado_em = datetime.now()
     registrar_evento(db, p, "exigencia_registrada", "Exigência registrada" + (f": {texto}" if texto else ""), usuario)
     db.commit()
-    if arquivo is not None and p.arquivo_exigencia:
-        try:
-            cam = os.path.join(UPLOADS_DIR, p.arquivo_exigencia)
-            for em in emails_do_grupo(db, p.grupo_id):
-                corpo_exig = corpo_status_cliente(p, "Exigencia", "Segue em anexo o documento da exigencia.")
-                enviar_email_anexo(em, "Exigencia no seu processo - " + (p.empresa or ""), corpo_exig, cam, p.arquivo_exigencia)
-        except Exception as e:
-            print("Erro ao notificar exigencia ao cliente:", e)
+    notificar_exigencia_cliente(db, p, origem="manual")
     return {"mensagem": "Exigencia registrada", "status": p.status}
 
 

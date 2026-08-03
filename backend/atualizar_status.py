@@ -10,7 +10,7 @@ sys.path.insert(0, "/root/atos/backend")
 sys.path.insert(0, "/root/atos/automacao")
 from database import SessionLocal, Processo, Grupo, EmailGrupo
 sys.path.insert(0, "/root/atos/backend")
-from main import corpo_status_cliente, enviar_email_anexo, emails_do_grupo, UPLOADS_DIR, recalcular_status, emails_admin
+from main import corpo_status_cliente, enviar_email_anexo, emails_do_grupo, UPLOADS_DIR, recalcular_status, emails_admin, notificar_exigencia_cliente, _email_status_html, _empresa_linha, _email_finalizado
 from consultar_jucesp import consultar
 from jucesp_infosimples import baixar_documento as baixar_documento_infosimples_sp
 from consultar_jucerja import consultar_jucerja, classificar_status_rj, baixar_documento_jucerja
@@ -64,7 +64,7 @@ def enviar_email_admin_todos(db, assunto, corpo):
         enviar_email(destinatario, assunto, corpo)
 
 
-def enviar_email(destinatario, assunto, corpo):
+def enviar_email(destinatario, assunto, corpo, corpo_html=None):
     try:
         msg = MIMEMultipart("alternative")
         msg["From"] = "Atos - Gestao Societaria <%s>" % EMAIL_FROM
@@ -72,8 +72,10 @@ def enviar_email(destinatario, assunto, corpo):
         msg["Subject"] = assunto
         msg.attach(MIMEText(corpo, "plain"))
         try:
-            from main import envolver_html
-            msg.attach(MIMEText(envolver_html(corpo), "html"))
+            if not corpo_html:
+                from main import envolver_html
+                corpo_html = envolver_html(corpo)
+            msg.attach(MIMEText(corpo_html, "html"))
         except Exception as _e:
             print("   [aviso html]:", _e)
         server = smtplib.SMTP(EMAIL_HOST, EMAIL_PORT_SMTP)
@@ -117,7 +119,8 @@ def aplicar_classificacao(db, p, classificacao, agora):
             p.ultimo_alerta_em = agora
             db.commit()
             enviar_email_admin_todos(db, "[Atos] Exigencia - " + str(p.empresa), corpo_admin(p, "Exigencia"))
-            print("   -> mudou para EXIGENCIA + alertou admin")
+            notificar_exigencia_cliente(db, p, origem="autonoma")
+            print("   -> mudou para EXIGENCIA + alertou admin" + " e cliente")
         else:
             if precisa_alertar(p, agora):
                 p.ultimo_alerta_em = agora
@@ -141,8 +144,12 @@ def aplicar_classificacao(db, p, classificacao, agora):
             # documento (ver aplicar_nomenclatura_junta / processar_sp).
             # Admin continua sendo avisado normalmente acima.
             if not p.avisado_deferido and (p.uf or "").upper() != "SP":
+                _frase_deferido = "Seu processo foi aprovado, aguardando a Junta Comercial disponibilizar o Registro."
+                _corpo_deferido = corpo_status_cliente(p, "Deferido", _frase_deferido)
+                _corpo_html_deferido = _email_status_html("deferido", "Deferido", "Seu Processo foi Deferido", _empresa_linha(p),
+                                                            protocolo=p.numero_protocolo or None, nota_tipo="aguardando", nota_texto=_frase_deferido)
                 for em in emails_do_grupo(db, p.grupo_id):
-                    enviar_email(em, "Atualizacao do seu processo - " + str(p.empresa), corpo_status_cliente(p, "Deferido", "Aguardando liberacao do Registro."))
+                    enviar_email(em, "Atualizacao do seu processo - " + str(p.empresa), _corpo_deferido, _corpo_html_deferido)
                 p.avisado_deferido = True
                 db.commit()
             print("   -> mudou para DEFERIDO + alertou admin" + (" (cliente suspenso - SP)" if (p.uf or "").upper() == "SP" else " e cliente"))
@@ -237,10 +244,10 @@ def processar_sp(db, agora):
                         print("   [SP] documento baixado via Infosimples e processo atualizado para:", p.status)
                         if p.status == "finalizado":
                             try:
-                                corpo = corpo_status_cliente(p, "Finalizado", "Seu Processo foi Finalizado, em Anexo o Registro.")
+                                corpo, corpo_html = _email_finalizado(p)
                                 destinatarios = set(emails_do_grupo(db, p.grupo_id)) | set(emails_admin(db))
                                 for em in destinatarios:
-                                    enviar_email_anexo(em, "Processo Finalizado - " + (p.empresa or ""), corpo, caminho, nome_arquivo)
+                                    enviar_email_anexo(em, "Processo Finalizado - " + (p.empresa or ""), corpo, caminho, nome_arquivo, corpo_html=corpo_html)
                                 print("   [SP] e-mail de finalizacao enviado (cliente + administradores).")
                             except Exception as e:
                                 print("   [SP] erro ao enviar e-mail de finalizacao:", e)
@@ -294,10 +301,10 @@ def processar_sp_registro_sem_protocolo(db, agora):
                 print("   documento baixado via Infosimples e processo atualizado para:", p.status)
                 if p.status == "finalizado":
                     try:
-                        corpo = corpo_status_cliente(p, "Finalizado", "Seu Processo foi Finalizado, em Anexo o Registro.")
+                        corpo, corpo_html = _email_finalizado(p)
                         destinatarios = set(emails_do_grupo(db, p.grupo_id)) | set(emails_admin(db))
                         for em in destinatarios:
-                            enviar_email_anexo(em, "Processo Finalizado - " + (p.empresa or ""), corpo, caminho, nome_arquivo)
+                            enviar_email_anexo(em, "Processo Finalizado - " + (p.empresa or ""), corpo, caminho, nome_arquivo, corpo_html=corpo_html)
                         print("   e-mail de finalizacao enviado (cliente + administradores).")
                     except Exception as e:
                         print("   erro ao enviar e-mail de finalizacao:", e)
@@ -347,9 +354,9 @@ def processar_rj(db, agora):
                     print("   [RJ] documento baixado e processo atualizado para:", p.status)
                     if p.status == "finalizado":
                         try:
-                            corpo = corpo_status_cliente(p, "Finalizado", "Seu Processo foi Finalizado, em Anexo o Registro.")
+                            corpo, corpo_html = _email_finalizado(p)
                             for em in emails_do_grupo(db, p.grupo_id):
-                                enviar_email_anexo(em, "Processo Finalizado - " + (p.empresa or ""), corpo, caminho, nome_arquivo)
+                                enviar_email_anexo(em, "Processo Finalizado - " + (p.empresa or ""), corpo, caminho, nome_arquivo, corpo_html=corpo_html)
                             print("   [RJ] e-mail de finalizacao enviado.")
                         except Exception as e:
                             print("   [RJ] erro ao enviar e-mail de finalizacao:", e)
@@ -398,9 +405,9 @@ def processar_ba(db, agora):
                     print("   [BA] documento baixado e processo atualizado para:", p.status)
                     if p.status == "finalizado":
                         try:
-                            corpo = corpo_status_cliente(p, "Finalizado", "Seu Processo foi Finalizado, em Anexo o Registro.")
+                            corpo, corpo_html = _email_finalizado(p)
                             for em in emails_do_grupo(db, p.grupo_id):
-                                enviar_email_anexo(em, "Processo Finalizado - " + (p.empresa or ""), corpo, caminho, nome_arquivo)
+                                enviar_email_anexo(em, "Processo Finalizado - " + (p.empresa or ""), corpo, caminho, nome_arquivo, corpo_html=corpo_html)
                             print("   [BA] e-mail de finalizacao enviado.")
                         except Exception as e:
                             print("   [BA] erro ao enviar e-mail de finalizacao:", e)
@@ -451,9 +458,9 @@ def processar_pe(db, agora):
                     print("   [PE] documento baixado e processo atualizado para:", p.status)
                     if p.status == "finalizado":
                         try:
-                            corpo = corpo_status_cliente(p, "Finalizado", "Seu Processo foi Finalizado, em Anexo o Registro.")
+                            corpo, corpo_html = _email_finalizado(p)
                             for em in emails_do_grupo(db, p.grupo_id):
-                                enviar_email_anexo(em, "Processo Finalizado - " + (p.empresa or ""), corpo, caminho, nome_arquivo)
+                                enviar_email_anexo(em, "Processo Finalizado - " + (p.empresa or ""), corpo, caminho, nome_arquivo, corpo_html=corpo_html)
                             print("   [PE] e-mail de finalizacao enviado.")
                         except Exception as e:
                             print("   [PE] erro ao enviar e-mail de finalizacao:", e)

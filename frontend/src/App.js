@@ -1103,17 +1103,13 @@ async function excluirProcesso() {
               </div>
 
               <BannerPendencias />
-              <DonutStatusCard titulo="Todos os Processos" metricas={metricas} onClickStatus={setFStatus} idPrefix="da" />
-              {(fluxosAtivos.length > 0 || eventosRecentes.length > 0) && (
-                <div style={{ display: "grid", gridTemplateColumns: fluxosAtivos.length > 0 ? "1fr 1fr" : "1fr", gap: 16, marginBottom: 16 }}>
-                  {fluxosAtivos.length > 0 && (
-                    <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-                      {fluxosAtivos.map(f => <FluxoDoDiaCardEscuro key={f.grupo_id} fluxo={f} />)}
-                    </div>
-                  )}
-                  <AtividadeRecenteEscura eventos={eventosRecentes} />
-                </div>
-              )}
+              <DonutStatusCard titulo="Todos os Processos" metricas={metricas} onClickStatus={setFStatus} idPrefix="da"
+                extra={(
+                  <div style={{ display: "flex", flexDirection: "column", gap: 12, height: "100%" }}>
+                    {fluxosAtivos.length > 0 && fluxosAtivos.map(f => <FluxoDoDiaCardEscuro key={f.grupo_id} fluxo={f} />)}
+                    <AtividadeRecenteEscura eventos={eventosRecentes} />
+                  </div>
+                )} />
 
               <div
                 onDragOver={e => { e.preventDefault(); }}

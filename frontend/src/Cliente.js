@@ -691,13 +691,13 @@ export function Painel({ sessao, onSair }) {
             </div>
           ) : tela === "processos" ? (
             <div style={s.conteudo}>
-              <DonutStatusCard titulo="Meus Processos" metricas={metricas} onClickStatus={setFStatus} idPrefix="dc" />
-              {(fluxoAtivo || eventosRecentes.length > 0) && (
-                <div style={{ display: "grid", gridTemplateColumns: fluxoAtivo ? "1fr 1fr" : "1fr", gap: 16, marginBottom: 16 }}>
-                  {fluxoAtivo && <FluxoDoDiaCardEscuro fluxo={fluxoAtivo} />}
-                  <AtividadeRecenteEscura eventos={eventosRecentes} />
-                </div>
-              )}
+              <DonutStatusCard titulo="Meus Processos" metricas={metricas} onClickStatus={setFStatus} idPrefix="dc"
+                extra={(
+                  <div style={{ display: "flex", flexDirection: "column", gap: 12, height: "100%" }}>
+                    {fluxoAtivo && <FluxoDoDiaCardEscuro fluxo={fluxoAtivo} />}
+                    <AtividadeRecenteEscura eventos={eventosRecentes} />
+                  </div>
+                )} />
               <div style={{ display: "flex", gap: 10, marginBottom: 16, flexWrap: "wrap", alignItems: "center" }}>
                 <input value={fBusca} onChange={e => setFBusca(e.target.value)} placeholder="Buscar empresa..."
                   style={{ flex: "1 1 200px", minWidth: 160, padding: "9px 12px", background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 8, fontSize: 13, outline: "none", color: "#fff", fontFamily: FONTE_CORPO }} />

@@ -494,7 +494,7 @@ export function IconeAprendizado() {
 // Card principal do dashboard (Meus Processos / Todos os Processos): donut
 // com gradientes+glow (SVG) + legenda + grid de status-cards. idPrefix evita
 // colisao de ids de <defs> caso mais de um donut exista na mesma pagina.
-export function DonutStatusCard({ titulo, metricas, onClickStatus, idPrefix = "d" }) {
+export function DonutStatusCard({ titulo, metricas, onClickStatus, idPrefix = "d", extra }) {
   const bp = useBreakpoint();
   const mobile = bp === "mobile";
   const total = metricas.total || 0;
@@ -586,6 +586,7 @@ export function DonutStatusCard({ titulo, metricas, onClickStatus, idPrefix = "d
           ].map((c, i) => (
             <div key={i} onClick={() => onClickStatus && onClickStatus(c.chave)}
               style={{
+                boxSizing: "border-box",
                 background: c.bg || "rgba(255,255,255,0.04)", border: `1px solid ${c.borda}`, borderRadius: 14,
                 padding: mobile ? "12px 14px" : 14, display: "flex", flexDirection: "column", justifyContent: "center",
                 ...(mobile ? { minHeight: 74 } : { width: CARD, height: CARD }),
@@ -596,6 +597,11 @@ export function DonutStatusCard({ titulo, metricas, onClickStatus, idPrefix = "d
             </div>
           ))}
         </div>
+        {extra && (
+          <div style={{ flex: mobile ? "none" : 1, minWidth: mobile ? 0 : 260, width: mobile ? "100%" : "auto", alignSelf: "stretch" }}>
+            {extra}
+          </div>
+        )}
       </div>
     </div>
   );

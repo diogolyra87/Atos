@@ -494,16 +494,24 @@ export function IconeAprendizado() {
 // Card principal do dashboard (Meus Processos / Todos os Processos): donut
 // com gradientes+glow (SVG) + legenda + grid de status-cards. idPrefix evita
 // colisao de ids de <defs> caso mais de um donut exista na mesma pagina.
-export function DonutStatusCard({ titulo, metricas, onClickStatus, idPrefix = "d", extra }) {
+export function DonutStatusCard({ titulo, metricas, onClickStatus, idPrefix = "d", extra, grande = false }) {
   const bp = useBreakpoint();
   const mobile = bp === "mobile";
+  // "grande" (usado em "Meus Processos") aumenta donut/legenda/cards pra
+  // ocupar melhor a altura do card principal - so' entra em tablet/desktop
+  // (mobile mantem o layout empilhado de sempre) e e' opt-in: sem a prop,
+  // o componente renderiza IDENTICO ao que sempre foi (usado por "Todos os
+  // Processos" no admin, que nao deve mudar em nada).
+  const big = grande && !mobile;
   const total = metricas.total || 0;
   const tram = metricas.tramitacao || 0;
   const exig = metricas.exigencia || 0;
   const defer = metricas.deferido || 0;
   const final = metricas.finalizado || 0;
   const aberto = Math.max(0, total - tram - exig - defer - final);
-  const raio = 70, circ = 2 * Math.PI * raio;
+  const donutSize = big ? 200 : 180;
+  const donutStroke = big ? 22 : 20;
+  const raio = big ? 79 : 70, circ = 2 * Math.PI * raio;
   const segmentos = [
     { valor: aberto, stroke: "#5a5a68", filtro: false },
     { valor: tram, stroke: `url(#${idPrefix}Tram)`, filtro: true },
@@ -514,24 +522,34 @@ export function DonutStatusCard({ titulo, metricas, onClickStatus, idPrefix = "d
   let acumulado = 0;
   const clicavel = (chave) => onClickStatus ? { cursor: "pointer" } : {};
   // Os 6 cards de status precisam ser QUADRADOS e, juntos, ocupar a mesma
-  // altura total do donut (180px, svg fixo) - por isso o grid usa tracks em
-  // pixel fixo (nao 1fr, que estica a celula pra preencher a coluna "1fr" do
-  // layout externo e vira retangulo gigante) em telas tablet/desktop. No
-  // mobile os cards abandonam o formato quadrado (auto-height, mais legivel)
-  // e o grid vira 2 colunas.
-  const CARD = 84; // (180 - gap) / 2 linhas
+  // altura total do donut (180px, svg fixo, ou 200px no modo "grande") - por
+  // isso o grid usa tracks em pixel fixo (nao 1fr, que estica a celula pra
+  // preencher a coluna "1fr" do layout externo e vira retangulo gigante) em
+  // telas tablet/desktop. No mobile os cards abandonam o formato quadrado
+  // (auto-height, mais legivel) e o grid vira 2 colunas.
+  const CARD = big ? 94 : 84; // (donutSize - gap) / 2 linhas
   const gridCardsStyle = mobile
     ? { display: "grid", gridTemplateColumns: "repeat(2,1fr)", gap: 10, width: "100%" }
     : { display: "grid", gridTemplateColumns: `repeat(3, ${CARD}px)`, gridTemplateRows: `repeat(2, ${CARD}px)`, gap: 12 };
+  // No modo "grande" o donut+legenda+cards crescem e podem nao sobrar largura
+  // pra "extra" (Atividade Recente/Fluxo do dia) manter a largura de sempre -
+  // nesse caso quem cede espaco e' o "extra" (flex-shrink, minWidth baixo),
+  // nunca o donut/cards, e a linha nunca quebra (nowrap) pra nao empurrar
+  // "extra" pra baixo de novo.
+  const extraStyle = mobile
+    ? { flex: "none", minWidth: 0, width: "100%", alignSelf: "stretch" }
+    : big
+      ? { flex: "1 1 200px", minWidth: 0, width: "auto", alignSelf: "stretch" }
+      : { flex: 1, minWidth: 260, width: "auto", alignSelf: "stretch" };
   return (
-    <div style={{ background: "radial-gradient(circle at 10% 0%, #1a1470 0%, #0e0e14 55%)", border: "1px solid rgba(140,90,255,0.35)", borderRadius: 22, padding: mobile ? "22px 18px" : "28px 32px", marginBottom: 16, position: "relative", overflow: "hidden", fontFamily: FONTE_CORPO }}>
+    <div style={{ background: "radial-gradient(circle at 10% 0%, #1a1470 0%, #0e0e14 55%)", border: "1px solid rgba(140,90,255,0.35)", borderRadius: 22, padding: mobile ? "22px 18px" : (big ? "32px 38px" : "28px 32px"), marginBottom: 16, position: "relative", overflow: "hidden", fontFamily: FONTE_CORPO }}>
       <div style={{ position: "absolute", top: "-30%", right: "-10%", width: 320, height: 320, background: "radial-gradient(circle, #7d3fff28, transparent 65%)", filter: "blur(24px)", pointerEvents: "none" }} />
       <div style={{ position: "relative", zIndex: 1, marginBottom: 24 }}>
         <div style={{ fontFamily: FONTE_TITULO, fontSize: mobile ? 20 : 24, fontWeight: 700, color: "#fff" }}>{titulo}</div>
       </div>
-      <div style={{ position: "relative", zIndex: 1, display: "flex", flexDirection: mobile ? "column" : "row", flexWrap: "wrap", gap: mobile ? 20 : 36, alignItems: mobile ? "stretch" : "flex-start" }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 24, flexWrap: "wrap" }}>
-          <svg width="180" height="180" viewBox="0 0 180 180">
+      <div style={{ position: "relative", zIndex: 1, display: "flex", flexDirection: mobile ? "column" : "row", flexWrap: big ? "nowrap" : "wrap", gap: mobile ? 20 : 36, alignItems: mobile ? "stretch" : "flex-start" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: big ? 28 : 24, flexWrap: mobile ? "wrap" : "nowrap" }}>
+          <svg width={donutSize} height={donutSize} viewBox={`0 0 ${donutSize} ${donutSize}`}>
             <defs>
               <filter id={`${idPrefix}Glow`} x="-80%" y="-80%" width="260%" height="260%"><feGaussianBlur stdDeviation="6.3" result="blur" /><feMerge><feMergeNode in="blur" /><feMergeNode in="blur" /><feMergeNode in="SourceGraphic" /></feMerge></filter>
               <linearGradient id={`${idPrefix}Tram`} x1="0%" y1="0%" x2="100%" y2="100%"><stop offset="0%" stopColor="#ffd699" /><stop offset="100%" stopColor="#ff9f0a" /></linearGradient>
@@ -539,39 +557,39 @@ export function DonutStatusCard({ titulo, metricas, onClickStatus, idPrefix = "d
               <linearGradient id={`${idPrefix}Defer`} x1="0%" y1="0%" x2="100%" y2="100%"><stop offset="0%" stopColor="#9ecaff" /><stop offset="100%" stopColor="#2f7cff" /></linearGradient>
               <linearGradient id={`${idPrefix}Final`} x1="0%" y1="0%" x2="100%" y2="100%"><stop offset="0%" stopColor="#7fffd4" /><stop offset="100%" stopColor="#00e691" /></linearGradient>
             </defs>
-            <circle cx="90" cy="90" r={raio} fill="none" stroke="rgba(255,255,255,0.05)" strokeWidth="20" />
+            <circle cx={donutSize / 2} cy={donutSize / 2} r={raio} fill="none" stroke="rgba(255,255,255,0.05)" strokeWidth={donutStroke} />
             {total === 0 ? null : segmentos.map((seg, i) => {
               if (seg.valor <= 0) return null;
               const comprimento = (seg.valor / total) * circ;
               const offset = -acumulado;
               acumulado += comprimento;
               return (
-                <circle key={i} cx="90" cy="90" r={raio} fill="none" stroke={seg.stroke} strokeWidth="20" strokeLinecap="round"
+                <circle key={i} cx={donutSize / 2} cy={donutSize / 2} r={raio} fill="none" stroke={seg.stroke} strokeWidth={donutStroke} strokeLinecap="round"
                   strokeDasharray={`${comprimento} ${circ - comprimento}`} strokeDashoffset={offset}
-                  transform="rotate(-90 90 90)" filter={seg.filtro ? `url(#${idPrefix}Glow)` : undefined} />
+                  transform={`rotate(-90 ${donutSize / 2} ${donutSize / 2})`} filter={seg.filtro ? `url(#${idPrefix}Glow)` : undefined} />
               );
             })}
-            <text x="90" y="85" textAnchor="middle" fill="#fff" fontSize="38" fontFamily={FONTE_TITULO} fontWeight="800" letterSpacing="-1.5">{total}</text>
-            <text x="90" y="107" textAnchor="middle" fill="#9aa4d0" fontSize="11" letterSpacing="0.8">PROCESSOS</text>
+            <text x={donutSize / 2} y={big ? donutSize / 2 - 6 : donutSize / 2 - 5} textAnchor="middle" fill="#fff" fontSize={big ? 42 : 38} fontFamily={FONTE_TITULO} fontWeight="800" letterSpacing="-1.5">{total}</text>
+            <text x={donutSize / 2} y={big ? donutSize / 2 + 19 : donutSize / 2 + 17} textAnchor="middle" fill="#9aa4d0" fontSize={big ? 12 : 11} letterSpacing="0.8">PROCESSOS</text>
           </svg>
-          <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-            <div style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 12.5, color: "#c4c8e4", ...clicavel("") }} onClick={() => onClickStatus && onClickStatus("")}>
-              <span style={{ width: 8, height: 8, borderRadius: 2, background: "#fff", flexShrink: 0 }} />Total <span style={{ fontWeight: 700, color: "#fff", marginLeft: 2 }}>{total}</span>
+          <div style={{ display: "flex", flexDirection: "column", gap: big ? 9 : 8 }}>
+            <div style={{ display: "flex", alignItems: "center", gap: big ? 9 : 8, fontSize: big ? 14 : 12.5, color: "#c4c8e4", ...clicavel("") }} onClick={() => onClickStatus && onClickStatus("")}>
+              <span style={{ width: big ? 9 : 8, height: big ? 9 : 8, borderRadius: 2, background: "#fff", flexShrink: 0 }} />Total <span style={{ fontWeight: 700, color: "#fff", marginLeft: 2 }}>{total}</span>
             </div>
-            <div style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 12.5, color: "#c4c8e4", ...clicavel("aberto") }} onClick={() => onClickStatus && onClickStatus("aberto")}>
-              <span style={{ width: 8, height: 8, borderRadius: 2, background: "#5a5a68", flexShrink: 0 }} />Aberto <span style={{ fontWeight: 700, color: "#fff", marginLeft: 2 }}>{aberto}</span>
+            <div style={{ display: "flex", alignItems: "center", gap: big ? 9 : 8, fontSize: big ? 14 : 12.5, color: "#c4c8e4", ...clicavel("aberto") }} onClick={() => onClickStatus && onClickStatus("aberto")}>
+              <span style={{ width: big ? 9 : 8, height: big ? 9 : 8, borderRadius: 2, background: "#5a5a68", flexShrink: 0 }} />Aberto <span style={{ fontWeight: 700, color: "#fff", marginLeft: 2 }}>{aberto}</span>
             </div>
-            <div style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 12.5, color: "#c4c8e4", ...clicavel("tramitacao") }} onClick={() => onClickStatus && onClickStatus("tramitacao")}>
-              <span style={{ width: 8, height: 8, borderRadius: 2, background: "#ff9f0a", flexShrink: 0 }} />Tramitação <span style={{ fontWeight: 700, color: "#fff", marginLeft: 2 }}>{tram}</span>
+            <div style={{ display: "flex", alignItems: "center", gap: big ? 9 : 8, fontSize: big ? 14 : 12.5, color: "#c4c8e4", ...clicavel("tramitacao") }} onClick={() => onClickStatus && onClickStatus("tramitacao")}>
+              <span style={{ width: big ? 9 : 8, height: big ? 9 : 8, borderRadius: 2, background: "#ff9f0a", flexShrink: 0 }} />Tramitação <span style={{ fontWeight: 700, color: "#fff", marginLeft: 2 }}>{tram}</span>
             </div>
-            <div style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 12.5, color: "#c4c8e4", ...clicavel("exigencia") }} onClick={() => onClickStatus && onClickStatus("exigencia")}>
-              <span style={{ width: 8, height: 8, borderRadius: 2, background: "#ff4d4d", flexShrink: 0 }} />Exigência <span style={{ fontWeight: 700, color: "#fff", marginLeft: 2 }}>{exig}</span>
+            <div style={{ display: "flex", alignItems: "center", gap: big ? 9 : 8, fontSize: big ? 14 : 12.5, color: "#c4c8e4", ...clicavel("exigencia") }} onClick={() => onClickStatus && onClickStatus("exigencia")}>
+              <span style={{ width: big ? 9 : 8, height: big ? 9 : 8, borderRadius: 2, background: "#ff4d4d", flexShrink: 0 }} />Exigência <span style={{ fontWeight: 700, color: "#fff", marginLeft: 2 }}>{exig}</span>
             </div>
-            <div style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 12.5, color: "#c4c8e4", ...clicavel("deferido") }} onClick={() => onClickStatus && onClickStatus("deferido")}>
-              <span style={{ width: 8, height: 8, borderRadius: 2, background: "#4d94ff", flexShrink: 0 }} />Deferido <span style={{ fontWeight: 700, color: "#fff", marginLeft: 2 }}>{defer}</span>
+            <div style={{ display: "flex", alignItems: "center", gap: big ? 9 : 8, fontSize: big ? 14 : 12.5, color: "#c4c8e4", ...clicavel("deferido") }} onClick={() => onClickStatus && onClickStatus("deferido")}>
+              <span style={{ width: big ? 9 : 8, height: big ? 9 : 8, borderRadius: 2, background: "#4d94ff", flexShrink: 0 }} />Deferido <span style={{ fontWeight: 700, color: "#fff", marginLeft: 2 }}>{defer}</span>
             </div>
-            <div style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 12.5, color: "#c4c8e4", ...clicavel("finalizado") }} onClick={() => onClickStatus && onClickStatus("finalizado")}>
-              <span style={{ width: 8, height: 8, borderRadius: 2, background: "#00ffaa", flexShrink: 0 }} />Finalizado <span style={{ fontWeight: 700, color: "#fff", marginLeft: 2 }}>{final}</span>
+            <div style={{ display: "flex", alignItems: "center", gap: big ? 9 : 8, fontSize: big ? 14 : 12.5, color: "#c4c8e4", ...clicavel("finalizado") }} onClick={() => onClickStatus && onClickStatus("finalizado")}>
+              <span style={{ width: big ? 9 : 8, height: big ? 9 : 8, borderRadius: 2, background: "#00ffaa", flexShrink: 0 }} />Finalizado <span style={{ fontWeight: 700, color: "#fff", marginLeft: 2 }}>{final}</span>
             </div>
           </div>
         </div>
@@ -588,17 +606,17 @@ export function DonutStatusCard({ titulo, metricas, onClickStatus, idPrefix = "d
               style={{
                 boxSizing: "border-box",
                 background: c.bg || "rgba(255,255,255,0.04)", border: `1px solid ${c.borda}`, borderRadius: 14,
-                padding: mobile ? "12px 14px" : 14, display: "flex", flexDirection: "column", justifyContent: "center",
+                padding: mobile ? "12px 14px" : (big ? 16 : 14), display: "flex", flexDirection: "column", justifyContent: "center",
                 ...(mobile ? { minHeight: 74 } : { width: CARD, height: CARD }),
                 ...clicavel(c.chave),
               }}>
-              <div style={{ fontSize: 10, color: "#a8b0d8", marginBottom: 6 }}>{c.lbl}</div>
-              <div style={{ fontFamily: FONTE_TITULO, fontSize: mobile ? 20 : 24, fontWeight: 700, color: c.cor }}>{c.val}</div>
+              <div style={{ fontSize: big ? 11.5 : 10, color: "#a8b0d8", marginBottom: 6 }}>{c.lbl}</div>
+              <div style={{ fontFamily: FONTE_TITULO, fontSize: mobile ? 20 : (big ? 28 : 24), fontWeight: 700, color: c.cor }}>{c.val}</div>
             </div>
           ))}
         </div>
         {extra && (
-          <div style={{ flex: mobile ? "none" : 1, minWidth: mobile ? 0 : 260, width: mobile ? "100%" : "auto", alignSelf: "stretch" }}>
+          <div style={extraStyle}>
             {extra}
           </div>
         )}
@@ -638,80 +656,140 @@ export function TelaLogin({ subtitulo, erro, aviso, etapa, login, senha, codigo,
   const campoLabel = { fontSize: 12, color: "oklch(75% 0.03 250)", marginBottom: 6, display: "block", fontWeight: 600, fontFamily: FONTE_CORPO };
   const campoInput = { width: "100%", background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.12)", borderRadius: 10, padding: "12px 14px", color: "#fff", fontSize: 13.5, marginBottom: 18, fontFamily: FONTE_CORPO, outline: "none", boxSizing: "border-box" };
   const campoBtn = { width: "100%", background: "linear-gradient(120deg, oklch(65% 0.22 255), oklch(68% 0.2 210))", border: "none", borderRadius: 10, padding: 13, color: "#08070d", fontSize: 14, fontWeight: 700, fontFamily: FONTE_CORPO, boxShadow: "0 0 26px oklch(65% 0.22 255 / 0.4)", cursor: "pointer" };
-  return (
-    <div style={{ display: "flex", flexDirection: mobile ? "column" : "row", minHeight: "100vh", color: "#e4e4e7", WebkitFontSmoothing: "antialiased", fontFamily: FONTE_CORPO }}>
-      <style>{KEYFRAMES_LANDING}</style>
-      <div style={{ flex: mobile ? "none" : 1.3, order: mobile ? 2 : 0, position: "relative", overflow: "hidden", background: "linear-gradient(165deg, #0a0e2e 0%, #060810 60%)", padding: mobile ? "28px 20px" : "40px 56px", display: "flex", flexDirection: "column" }}>
-        <div className="atos-glow-1" style={{ position: "absolute", top: -90, left: -70, width: 360, height: 360, borderRadius: "50%", background: "radial-gradient(circle, oklch(65% 0.22 255 / 0.35), transparent 70%)", filter: "blur(10px)" }} />
-        <div className="atos-glow-2" style={{ position: "absolute", bottom: "5%", left: "22%", width: 320, height: 320, borderRadius: "50%", background: "radial-gradient(circle, oklch(75% 0.17 195 / 0.22), transparent 70%)", filter: "blur(10px)" }} />
-        <div className="atos-glow-3" style={{ position: "absolute", top: "25%", right: -70, width: 280, height: 280, borderRadius: "50%", background: "radial-gradient(circle, oklch(62% 0.24 300 / 0.28), transparent 70%)", filter: "blur(10px)" }} />
-        <div className="atos-logo-block" style={{ position: "relative", zIndex: 1, display: "flex", flexDirection: "column", gap: 2, marginBottom: 24 }}>
-          <span style={{ fontFamily: FONTE_TITULO, fontWeight: 700, fontSize: 28, color: "#fff" }}>atos<span style={{ color: "oklch(75% 0.2 250)", textShadow: "0 0 16px oklch(65% 0.24 255 / 0.7)" }}>.</span></span>
-          <span style={{ fontSize: 14, color: "oklch(72% 0.06 250)", letterSpacing: "0.05em" }}>Gestão Societária</span>
+
+  // Pecas reutilizadas nas duas variantes (mobile e desktop) - extraidas pra
+  // variaveis pra poder REORDENAR o fluxo no mobile (logo->headline->login->
+  // cards) sem duplicar JSX nem arriscar o desktop divergir por engano.
+  const glows = (<>
+    <div className="atos-glow-1" style={{ position: "absolute", top: -90, left: -70, width: 360, height: 360, borderRadius: "50%", background: "radial-gradient(circle, oklch(65% 0.22 255 / 0.35), transparent 70%)", filter: "blur(10px)" }} />
+    <div className="atos-glow-2" style={{ position: "absolute", bottom: "5%", left: "22%", width: 320, height: 320, borderRadius: "50%", background: "radial-gradient(circle, oklch(75% 0.17 195 / 0.22), transparent 70%)", filter: "blur(10px)" }} />
+    <div className="atos-glow-3" style={{ position: "absolute", top: "25%", right: -70, width: 280, height: 280, borderRadius: "50%", background: "radial-gradient(circle, oklch(62% 0.24 300 / 0.28), transparent 70%)", filter: "blur(10px)" }} />
+  </>);
+
+  const logoBlock = (
+    <div className="atos-logo-block" style={{ position: "relative", zIndex: 1, display: "flex", flexDirection: "column", gap: 2, marginBottom: 24 }}>
+      <span style={{ fontFamily: FONTE_TITULO, fontWeight: 700, fontSize: 28, color: "#fff" }}>atos<span style={{ color: "oklch(75% 0.2 250)", textShadow: "0 0 16px oklch(65% 0.24 255 / 0.7)" }}>.</span></span>
+      <span style={{ fontSize: 14, color: "oklch(72% 0.06 250)", letterSpacing: "0.05em" }}>Gestão Societária</span>
+    </div>
+  );
+
+  const headline = (<>
+    <h1 className="atos-headline-block" style={{ position: "relative", zIndex: 1, fontFamily: FONTE_TITULO, fontWeight: 700, fontSize: 30, lineHeight: 1.22, color: "#fff", maxWidth: 500, margin: "0 0 10px" }}>
+      Todos os seus <span style={{ color: "oklch(75% 0.2 250)" }}>registros societários</span>, sob controle em tempo real.
+    </h1>
+    <p className="atos-subtext-block" style={{ position: "relative", zIndex: 1, fontSize: 13.5, color: "oklch(78% 0.03 250)", lineHeight: 1.55, maxWidth: 460, margin: "0 0 22px" }}>
+      Do protocolo ao deferimento em qualquer Junta Comercial do Brasil — com IA acompanhando cada etapa por você.
+    </p>
+  </>);
+
+  const tilesGrid = (
+    <div style={{ position: "relative", zIndex: 1, display: "grid", gridTemplateColumns: mobile ? "1fr" : "repeat(3,1fr)", gap: 12, flex: mobile ? "none" : 1, minHeight: mobile ? 0 : 200, minWidth: 0 }}>
+      <div className="atos-tile-a" style={{ minHeight: 0, minWidth: 0, background: "rgba(255,255,255,0.04)", border: "1px solid oklch(80% 0.22 145 / 0.3)", borderRadius: 20, padding: "22px 20px", display: "flex", flexDirection: "column", justifyContent: "center", boxShadow: "0 0 22px oklch(80% 0.22 145 / 0.1)" }}>
+        <div style={{ width: 39, height: 39, borderRadius: 10, background: "oklch(80% 0.22 145 / 0.18)", display: "flex", alignItems: "center", justifyContent: "center", marginBottom: 16, boxShadow: "0 0 18px oklch(80% 0.22 145 / 0.6), 0 0 34px oklch(80% 0.22 145 / 0.3)" }}>
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="oklch(85% 0.22 145)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 3v18h18" /><path d="M18 17V9" /><path d="M13 17V5" /><path d="M8 17v-3" /></svg>
         </div>
-        <h1 className="atos-headline-block" style={{ position: "relative", zIndex: 1, fontFamily: FONTE_TITULO, fontWeight: 700, fontSize: 30, lineHeight: 1.22, color: "#fff", maxWidth: 500, margin: "0 0 10px" }}>
-          Todos os seus <span style={{ color: "oklch(75% 0.2 250)" }}>registros societários</span>, sob controle em tempo real.
-        </h1>
-        <p className="atos-subtext-block" style={{ position: "relative", zIndex: 1, fontSize: 13.5, color: "oklch(78% 0.03 250)", lineHeight: 1.55, maxWidth: 460, margin: "0 0 22px" }}>
-          Do protocolo ao deferimento em qualquer Junta Comercial do Brasil — com IA acompanhando cada etapa por você.
-        </p>
-        <div style={{ position: "relative", zIndex: 1, display: "grid", gridTemplateColumns: mobile ? "1fr" : "repeat(3,1fr)", gap: 12, flex: mobile ? "none" : 1, minHeight: mobile ? 0 : 200, minWidth: 0 }}>
-          <div className="atos-tile-a" style={{ minHeight: 0, minWidth: 0, background: "rgba(255,255,255,0.04)", border: "1px solid oklch(80% 0.22 145 / 0.3)", borderRadius: 20, padding: "22px 20px", display: "flex", flexDirection: "column", justifyContent: "center", boxShadow: "0 0 22px oklch(80% 0.22 145 / 0.1)" }}>
-            <div style={{ width: 39, height: 39, borderRadius: 10, background: "oklch(80% 0.22 145 / 0.18)", display: "flex", alignItems: "center", justifyContent: "center", marginBottom: 16, boxShadow: "0 0 18px oklch(80% 0.22 145 / 0.6), 0 0 34px oklch(80% 0.22 145 / 0.3)" }}>
-              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="oklch(85% 0.22 145)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 3v18h18" /><path d="M18 17V9" /><path d="M13 17V5" /><path d="M8 17v-3" /></svg>
-            </div>
-            <div>
-              <div style={{ fontFamily: FONTE_TITULO, fontWeight: 700, fontSize: 16, color: "#fff", marginBottom: 8 }}>Visão Completa dos Seus Atos em Tempo Real</div>
-              <div style={{ fontSize: 12.5, color: "oklch(70% 0.02 270)", lineHeight: 1.55 }}>Relatórios de processos gerados automaticamente, sua gestão societária organizada.</div>
-            </div>
-          </div>
-          <div className="atos-tile-b" style={{ minHeight: 0, minWidth: 0, background: "linear-gradient(135deg, oklch(30% 0.13 300 / 0.5), rgba(255,255,255,0.04))", border: "1px solid oklch(65% 0.24 300 / 0.35)", borderRadius: 20, padding: "22px 20px", display: "flex", flexDirection: "column", justifyContent: "center", boxShadow: "0 0 22px oklch(65% 0.24 300 / 0.15)" }}>
-            <div style={{ width: 39, height: 39, borderRadius: 10, background: "oklch(75% 0.2 250)", display: "flex", alignItems: "center", justifyContent: "center", marginBottom: 16, boxShadow: "0 0 18px oklch(75% 0.2 250 / 0.9), 0 0 34px oklch(75% 0.2 250 / 0.5)" }}>
-              <span style={{ fontFamily: "Georgia, serif", fontWeight: 700, fontSize: 18, color: "#08070d" }}>a.</span>
-            </div>
-            <div>
-              <div style={{ fontFamily: FONTE_TITULO, fontWeight: 700, fontSize: 16, color: "#fff", marginBottom: 8 }}>iatos<span style={{ color: "oklch(78% 0.22 300)" }}>.</span> ao seu lado</div>
-              <div style={{ fontSize: 12.5, color: "oklch(78% 0.05 300)", lineHeight: 1.55 }}>Assistente de IA para suporte em cada etapa do seu processo.</div>
-            </div>
-          </div>
-          <div className="atos-tile-e" style={{ minHeight: 0, minWidth: 0, background: "rgba(255,255,255,0.045)", border: "1px solid oklch(70% 0.2 250 / 0.25)", borderRadius: 20, padding: "22px 20px", display: "flex", flexDirection: "column", justifyContent: "center", boxShadow: "0 0 30px oklch(70% 0.2 250 / 0.1)" }}>
-            <div style={{ width: 39, height: 39, borderRadius: 10, background: "oklch(70% 0.2 250 / 0.18)", display: "flex", alignItems: "center", justifyContent: "center", marginBottom: 16, boxShadow: "0 0 18px oklch(70% 0.2 250 / 0.6), 0 0 34px oklch(70% 0.2 250 / 0.3)" }}>
-              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="oklch(78% 0.2 250)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="9" /><path d="M12 7v5l3 3" /></svg>
-            </div>
-            <div>
-              <div style={{ fontFamily: FONTE_TITULO, fontWeight: 700, fontSize: 16, color: "#fff", marginBottom: 8 }}>Monitoramento de Prazos</div>
-              <div style={{ fontSize: 12.5, color: "oklch(70% 0.02 270)", lineHeight: 1.55 }}>Tramitação, Exigências e Deferimentos com Alertas em cada etapa.</div>
-            </div>
-          </div>
-        </div>
-        <div className="atos-marquee-wrap" style={{ position: "relative", zIndex: 1, flexShrink: 0, marginTop: 14, overflow: "hidden", borderTop: "1px solid rgba(255,255,255,0.08)", paddingTop: 12 }}>
-          <div style={{ display: "flex", gap: 40, whiteSpace: "nowrap", animation: "atosMarquee 22s linear infinite", fontSize: 12, color: "oklch(60% 0.02 270)", letterSpacing: "0.04em" }}>
-            {["JUCESP", "JUCERJA", "JUCEMG", "JUCEPAR", "JUCERGS", "JUCEB", "JUCESP", "JUCERJA", "JUCEMG", "JUCEPAR", "JUCERGS", "JUCEB"].map((n, i) => <span key={i}>{n}</span>)}
-          </div>
+        <div>
+          <div style={{ fontFamily: FONTE_TITULO, fontWeight: 700, fontSize: 16, color: "#fff", marginBottom: 8 }}>Visão Completa dos Seus Atos em Tempo Real</div>
+          <div style={{ fontSize: 12.5, color: "oklch(70% 0.02 270)", lineHeight: 1.55 }}>Relatórios de processos gerados automaticamente, sua gestão societária organizada.</div>
         </div>
       </div>
-      <div style={{ width: mobile ? "100%" : 440, order: mobile ? 1 : 0, background: "#0b0b0f", borderLeft: mobile ? "none" : "1px solid rgba(255,255,255,0.06)", borderBottom: mobile ? "1px solid rgba(255,255,255,0.06)" : "none", display: "flex", alignItems: "center", justifyContent: "center", padding: mobile ? "32px 20px" : 40, position: "relative", overflow: "hidden", boxSizing: "border-box" }}>
-        <div style={{ position: "absolute", top: "-10%", right: "-20%", width: 300, height: 300, borderRadius: "50%", background: "radial-gradient(circle, oklch(65% 0.22 255 / 0.14), transparent 70%)" }} />
-        <div className="atos-login-card-anim" style={{ position: "relative", width: "100%", maxWidth: 320, borderRadius: 22, background: "rgba(255,255,255,0.035)", border: "1px solid rgba(255,255,255,0.09)", padding: "32px 28px", boxShadow: "0 0 40px oklch(65% 0.22 255 / 0.1), 0 20px 50px rgba(0,0,0,0.4)" }}>
-          <div style={{ fontFamily: FONTE_TITULO, fontSize: 21, fontWeight: 700, color: "#fff", marginBottom: 6 }}>Acessar plataforma</div>
-          <div style={{ fontSize: 13, color: "oklch(70% 0.02 270)", marginBottom: 30 }}>{subtitulo || "Entre com sua conta"}</div>
-          {erro && <div style={{ background: "rgba(255,77,77,0.15)", color: "#ff9494", borderRadius: 8, padding: "8px 12px", fontSize: 13, marginBottom: 14 }}>{erro}</div>}
-          {aviso && <div style={{ background: "rgba(0,255,170,0.12)", color: "#7dffce", borderRadius: 8, padding: "8px 12px", fontSize: 13, marginBottom: 14 }}>{aviso}</div>}
-          {etapa === 1 && (<>
-            <label style={campoLabel}>Login</label>
-            <input style={campoInput} value={login} onChange={e => onChangeLogin(e.target.value)} onKeyDown={e => e.key === "Enter" && onEntrar()} />
-            <label style={campoLabel}>Senha</label>
-            <input style={campoInput} type="password" value={senha} onChange={e => onChangeSenha(e.target.value)} onKeyDown={e => e.key === "Enter" && onEntrar()} />
-            <button style={campoBtn} onClick={onEntrar} disabled={carregando}>{carregando ? "Aguarde..." : "Entrar"}</button>
-          </>)}
-          {etapa === 2 && (<>
-            <div style={{ fontSize: 13, color: "oklch(70% 0.02 270)", marginBottom: 12 }}>Enviamos um código para o seu e-mail. Digite-o abaixo para entrar.</div>
-            <label style={campoLabel}>Código de acesso</label>
-            <input style={{ ...campoInput, fontSize: 18, letterSpacing: 4, textAlign: "center" }} value={codigo} onChange={e => onChangeCodigo(e.target.value)} onKeyDown={e => e.key === "Enter" && onVerificarCodigo()} maxLength={6} />
-            <button style={campoBtn} onClick={onVerificarCodigo} disabled={carregando}>{carregando ? "Aguarde..." : "Verificar código"}</button>
-            <button style={{ ...campoBtn, background: "transparent", color: "oklch(70% 0.02 270)", boxShadow: "none", marginTop: 8 }} onClick={onVoltarEtapa}>Voltar</button>
-          </>)}
+      <div className="atos-tile-b" style={{ minHeight: 0, minWidth: 0, background: "linear-gradient(135deg, oklch(30% 0.13 300 / 0.5), rgba(255,255,255,0.04))", border: "1px solid oklch(65% 0.24 300 / 0.35)", borderRadius: 20, padding: "22px 20px", display: "flex", flexDirection: "column", justifyContent: "center", boxShadow: "0 0 22px oklch(65% 0.24 300 / 0.15)" }}>
+        <div style={{ width: 39, height: 39, borderRadius: 10, background: "oklch(75% 0.2 250)", display: "flex", alignItems: "center", justifyContent: "center", marginBottom: 16, boxShadow: "0 0 18px oklch(75% 0.2 250 / 0.9), 0 0 34px oklch(75% 0.2 250 / 0.5)" }}>
+          <span style={{ fontFamily: "Georgia, serif", fontWeight: 700, fontSize: 18, color: "#08070d" }}>a.</span>
         </div>
+        <div>
+          <div style={{ fontFamily: FONTE_TITULO, fontWeight: 700, fontSize: 16, color: "#fff", marginBottom: 8 }}>iatos<span style={{ color: "oklch(78% 0.22 300)" }}>.</span> ao seu lado</div>
+          <div style={{ fontSize: 12.5, color: "oklch(78% 0.05 300)", lineHeight: 1.55 }}>Assistente de IA para suporte em cada etapa do seu processo.</div>
+        </div>
+      </div>
+      <div className="atos-tile-e" style={{ minHeight: 0, minWidth: 0, background: "rgba(255,255,255,0.045)", border: "1px solid oklch(70% 0.2 250 / 0.25)", borderRadius: 20, padding: "22px 20px", display: "flex", flexDirection: "column", justifyContent: "center", boxShadow: "0 0 30px oklch(70% 0.2 250 / 0.1)" }}>
+        <div style={{ width: 39, height: 39, borderRadius: 10, background: "oklch(70% 0.2 250 / 0.18)", display: "flex", alignItems: "center", justifyContent: "center", marginBottom: 16, boxShadow: "0 0 18px oklch(70% 0.2 250 / 0.6), 0 0 34px oklch(70% 0.2 250 / 0.3)" }}>
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="oklch(78% 0.2 250)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="9" /><path d="M12 7v5l3 3" /></svg>
+        </div>
+        <div>
+          <div style={{ fontFamily: FONTE_TITULO, fontWeight: 700, fontSize: 16, color: "#fff", marginBottom: 8 }}>Monitoramento de Prazos</div>
+          <div style={{ fontSize: 12.5, color: "oklch(70% 0.02 270)", lineHeight: 1.55 }}>Tramitação, Exigências e Deferimentos com Alertas em cada etapa.</div>
+        </div>
+      </div>
+    </div>
+  );
+
+  const marqueeWrap = (
+    <div className="atos-marquee-wrap" style={{ position: "relative", zIndex: 1, flexShrink: 0, marginTop: 14, overflow: "hidden", borderTop: "1px solid rgba(255,255,255,0.08)", paddingTop: 12 }}>
+      <div style={{ display: "flex", gap: 40, whiteSpace: "nowrap", animation: "atosMarquee 22s linear infinite", fontSize: 12, color: "oklch(60% 0.02 270)", letterSpacing: "0.04em" }}>
+        {["JUCESP", "JUCERJA", "JUCEMG", "JUCEPAR", "JUCERGS", "JUCEB", "JUCESP", "JUCERJA", "JUCEMG", "JUCEPAR", "JUCERGS", "JUCEB"].map((n, i) => <span key={i}>{n}</span>)}
+      </div>
+    </div>
+  );
+
+  const loginDecorGlow = (
+    <div style={{ position: "absolute", top: "-10%", right: "-20%", width: 300, height: 300, borderRadius: "50%", background: "radial-gradient(circle, oklch(65% 0.22 255 / 0.14), transparent 70%)" }} />
+  );
+
+  const loginFormCard = (
+    <div className="atos-login-card-anim" style={{ position: "relative", width: "100%", maxWidth: 320, borderRadius: 22, background: "rgba(255,255,255,0.035)", border: "1px solid rgba(255,255,255,0.09)", padding: "32px 28px", boxShadow: "0 0 40px oklch(65% 0.22 255 / 0.1), 0 20px 50px rgba(0,0,0,0.4)" }}>
+      <div style={{ fontFamily: FONTE_TITULO, fontSize: 21, fontWeight: 700, color: "#fff", marginBottom: 6 }}>Acessar plataforma</div>
+      <div style={{ fontSize: 13, color: "oklch(70% 0.02 270)", marginBottom: 30 }}>{subtitulo || "Entre com sua conta"}</div>
+      {erro && <div style={{ background: "rgba(255,77,77,0.15)", color: "#ff9494", borderRadius: 8, padding: "8px 12px", fontSize: 13, marginBottom: 14 }}>{erro}</div>}
+      {aviso && <div style={{ background: "rgba(0,255,170,0.12)", color: "#7dffce", borderRadius: 8, padding: "8px 12px", fontSize: 13, marginBottom: 14 }}>{aviso}</div>}
+      {etapa === 1 && (<>
+        <label style={campoLabel}>Login</label>
+        <input style={campoInput} value={login} onChange={e => onChangeLogin(e.target.value)} onKeyDown={e => e.key === "Enter" && onEntrar()} />
+        <label style={campoLabel}>Senha</label>
+        <input style={campoInput} type="password" value={senha} onChange={e => onChangeSenha(e.target.value)} onKeyDown={e => e.key === "Enter" && onEntrar()} />
+        <button style={campoBtn} onClick={onEntrar} disabled={carregando}>{carregando ? "Aguarde..." : "Entrar"}</button>
+      </>)}
+      {etapa === 2 && (<>
+        <div style={{ fontSize: 13, color: "oklch(70% 0.02 270)", marginBottom: 12 }}>Enviamos um código para o seu e-mail. Digite-o abaixo para entrar.</div>
+        <label style={campoLabel}>Código de acesso</label>
+        <input style={{ ...campoInput, fontSize: 18, letterSpacing: 4, textAlign: "center" }} value={codigo} onChange={e => onChangeCodigo(e.target.value)} onKeyDown={e => e.key === "Enter" && onVerificarCodigo()} maxLength={6} />
+        <button style={campoBtn} onClick={onVerificarCodigo} disabled={carregando}>{carregando ? "Aguarde..." : "Verificar código"}</button>
+        <button style={{ ...campoBtn, background: "transparent", color: "oklch(70% 0.02 270)", boxShadow: "none", marginTop: 8 }} onClick={onVoltarEtapa}>Voltar</button>
+      </>)}
+    </div>
+  );
+
+  if (mobile) {
+    // Ordem exigida no mobile: logo -> headline -> LOGIN (centralizado) ->
+    // cards informativos. E' um fluxo vertical proprio (nao o mesmo par
+    // "coluna marketing / coluna login" do desktop com order trocado) porque
+    // o login precisa entrar ENTRE a headline e os cards, nao so' antes/depois
+    // do bloco inteiro.
+    return (
+      <div style={{ minHeight: "100vh", color: "#e4e4e7", WebkitFontSmoothing: "antialiased", fontFamily: FONTE_CORPO, position: "relative", overflow: "hidden", background: "linear-gradient(165deg, #0a0e2e 0%, #060810 60%)" }}>
+        <style>{KEYFRAMES_LANDING}</style>
+        {glows}
+        <div style={{ position: "relative", zIndex: 1, padding: "28px 20px 0" }}>
+          {logoBlock}
+          {headline}
+        </div>
+        <div style={{ position: "relative", zIndex: 1, overflow: "hidden", background: "#0b0b0f", borderTop: "1px solid rgba(255,255,255,0.06)", borderBottom: "1px solid rgba(255,255,255,0.06)", display: "flex", alignItems: "center", justifyContent: "center", padding: "32px 20px", margin: "24px 0 0" }}>
+          {loginDecorGlow}
+          {loginFormCard}
+        </div>
+        <div style={{ position: "relative", zIndex: 1, padding: "24px 20px 28px" }}>
+          {tilesGrid}
+          {marqueeWrap}
+        </div>
+      </div>
+    );
+  }
+
+  // Desktop - layout original, inalterado: coluna marketing (flex 1.3) a
+  // esquerda, coluna de login (440px) a direita, lado a lado.
+  return (
+    <div style={{ display: "flex", flexDirection: "row", minHeight: "100vh", color: "#e4e4e7", WebkitFontSmoothing: "antialiased", fontFamily: FONTE_CORPO }}>
+      <style>{KEYFRAMES_LANDING}</style>
+      <div style={{ flex: 1.3, position: "relative", overflow: "hidden", background: "linear-gradient(165deg, #0a0e2e 0%, #060810 60%)", padding: "40px 56px", display: "flex", flexDirection: "column" }}>
+        {glows}
+        {logoBlock}
+        {headline}
+        {tilesGrid}
+        {marqueeWrap}
+      </div>
+      <div style={{ width: 440, background: "#0b0b0f", borderLeft: "1px solid rgba(255,255,255,0.06)", display: "flex", alignItems: "center", justifyContent: "center", padding: 40, position: "relative", overflow: "hidden", boxSizing: "border-box" }}>
+        {loginDecorGlow}
+        {loginFormCard}
       </div>
     </div>
   );

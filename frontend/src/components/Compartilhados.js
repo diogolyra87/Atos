@@ -795,6 +795,10 @@ export function TelaLogin({ subtitulo, erro, aviso, etapa, login, senha, codigo,
         <label style={campoLabel}>Senha</label>
         <input style={campoInput} type="password" value={senha} onChange={e => onChangeSenha(e.target.value)} onKeyDown={e => e.key === "Enter" && onEntrar()} />
         <button style={campoBtn} onClick={onEntrar} disabled={carregando}>{carregando ? "Aguarde..." : "Entrar"}</button>
+        <a href="mailto:contato@atos.net.br?subject=Solicita%C3%A7%C3%A3o%20de%20acesso%20%E2%80%94%20ATOS"
+          style={{ display: "block", textAlign: "center", fontSize: 12.5, color: "oklch(70% 0.02 270)", textDecoration: "none", fontFamily: FONTE_CORPO, marginTop: 16 }}>
+          Solicitar acesso
+        </a>
       </>)}
       {etapa === 2 && (<>
         <div style={{ fontSize: 13, color: "oklch(70% 0.02 270)", marginBottom: 12 }}>Enviamos um código para o seu e-mail. Digite-o abaixo para entrar.</div>

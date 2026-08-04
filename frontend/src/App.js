@@ -1103,7 +1103,7 @@ async function excluirProcesso() {
               </div>
 
               <BannerPendencias />
-              <DonutStatusCard titulo="Todos os Processos" metricas={metricas} onClickStatus={setFStatus} idPrefix="da"
+              <DonutStatusCard titulo="Todos os Processos" metricas={metricas} onClickStatus={setFStatus} idPrefix="da" grande
                 extra={(
                   <div style={{ display: "flex", flexDirection: "column", gap: 12, height: "100%" }}>
                     {fluxosAtivos.length > 0 && fluxosAtivos.map(f => <FluxoDoDiaCardEscuro key={f.grupo_id} fluxo={f} />)}

@@ -691,7 +691,7 @@ export function Painel({ sessao, onSair }) {
             </div>
           ) : tela === "processos" ? (
             <div style={s.conteudo}>
-              <DonutStatusCard titulo="Meus Processos" metricas={metricas} onClickStatus={setFStatus} idPrefix="dc" grande
+              <DonutStatusCard titulo="Meus Processos" metricas={metricas} onClickStatus={setFStatus} idPrefix="dc" grande legenda={false}
                 extra={(
                   <div style={{ display: "flex", flexDirection: "column", gap: 12, height: "100%" }}>
                     {fluxoAtivo && <FluxoDoDiaCardEscuro fluxo={fluxoAtivo} />}

@@ -494,7 +494,7 @@ export function IconeAprendizado() {
 // Card principal do dashboard (Meus Processos / Todos os Processos): donut
 // com gradientes+glow (SVG) + legenda + grid de status-cards. idPrefix evita
 // colisao de ids de <defs> caso mais de um donut exista na mesma pagina.
-export function DonutStatusCard({ titulo, metricas, onClickStatus, idPrefix = "d", extra, grande = false }) {
+export function DonutStatusCard({ titulo, metricas, onClickStatus, idPrefix = "d", extra, grande = false, legenda = true }) {
   const bp = useBreakpoint();
   const mobile = bp === "mobile";
   // "grande" (usado em "Meus Processos") aumenta donut/legenda/cards pra
@@ -503,6 +503,13 @@ export function DonutStatusCard({ titulo, metricas, onClickStatus, idPrefix = "d
   // o componente renderiza IDENTICO ao que sempre foi (usado por "Todos os
   // Processos" no admin, que nao deve mudar em nada).
   const big = grande && !mobile;
+  // "legenda=false" (opt-in, so' usado em Meus Processos/Cliente) remove a
+  // lista Total/Aberto/.../Finalizado ao lado do donut - ja' redundante com
+  // os 6 cards - e usa o espaco liberado pra exibir o donut maior (so' o
+  // tamanho de renderizacao do svg cresce; viewBox/raio/strokeWidth, ou
+  // seja a geometria dos arcos, continuam os mesmos de sempre). No mobile a
+  // legenda nunca some (nao foi pedido e mantem a responsividade de sempre).
+  const semLegenda = big && !legenda;
   const total = metricas.total || 0;
   const tram = metricas.tramitacao || 0;
   const exig = metricas.exigencia || 0;
@@ -521,6 +528,14 @@ export function DonutStatusCard({ titulo, metricas, onClickStatus, idPrefix = "d
   ];
   let acumulado = 0;
   const clicavel = (chave) => onClickStatus ? { cursor: "pointer" } : {};
+  const cardsDados = [
+    { lbl: "TOTAL", val: total, cor: "#fff", borda: "rgba(255,255,255,0.15)", bg: "rgba(255,255,255,0.06)", chave: "" },
+    { lbl: "EM TRAMITAÇÃO", val: tram, cor: "#ff9f0a", borda: "rgba(255,159,10,0.3)", chave: "tramitacao" },
+    { lbl: "EM EXIGÊNCIA", val: exig, cor: "#ff4d4d", borda: "rgba(255,77,77,0.3)", chave: "exigencia" },
+    { lbl: "ABERTOS", val: aberto, cor: "#ff9f0a", borda: "rgba(255,159,10,0.3)", chave: "aberto" },
+    { lbl: "DEFERIDOS", val: defer, cor: "#4d94ff", borda: "rgba(77,148,255,0.3)", chave: "deferido" },
+    { lbl: "FINALIZADOS", val: final, cor: "#00ffaa", borda: "rgba(0,255,170,0.3)", chave: "finalizado" },
+  ];
   // Os 6 cards de status precisam ser QUADRADOS e, juntos, ocupar a mesma
   // altura total do donut (180px, svg fixo, ou 200px no modo "grande") - por
   // isso o grid usa tracks em pixel fixo (nao 1fr, que estica a celula pra
@@ -547,80 +562,122 @@ export function DonutStatusCard({ titulo, metricas, onClickStatus, idPrefix = "d
       <div style={{ position: "relative", zIndex: 1, marginBottom: 24 }}>
         <div style={{ fontFamily: FONTE_TITULO, fontSize: mobile ? 20 : 24, fontWeight: 700, color: "#fff" }}>{titulo}</div>
       </div>
-      <div style={{ position: "relative", zIndex: 1, display: "flex", flexDirection: mobile ? "column" : "row", flexWrap: big ? "nowrap" : "wrap", gap: mobile ? 20 : 36, alignItems: mobile ? "stretch" : "flex-start" }}>
-        <div style={{ display: "flex", alignItems: "center", gap: big ? 28 : 24, flexWrap: mobile ? "wrap" : "nowrap" }}>
-          <svg width={donutSize} height={donutSize} viewBox={`0 0 ${donutSize} ${donutSize}`}>
-            <defs>
-              <filter id={`${idPrefix}Glow`} x="-80%" y="-80%" width="260%" height="260%"><feGaussianBlur stdDeviation="6.3" result="blur" /><feMerge><feMergeNode in="blur" /><feMergeNode in="blur" /><feMergeNode in="SourceGraphic" /></feMerge></filter>
-              <linearGradient id={`${idPrefix}Tram`} x1="0%" y1="0%" x2="100%" y2="100%"><stop offset="0%" stopColor="#ffd699" /><stop offset="100%" stopColor="#ff9f0a" /></linearGradient>
-              <linearGradient id={`${idPrefix}Exig`} x1="0%" y1="0%" x2="100%" y2="100%"><stop offset="0%" stopColor="#ffa3a3" /><stop offset="100%" stopColor="#ff2b2b" /></linearGradient>
-              <linearGradient id={`${idPrefix}Defer`} x1="0%" y1="0%" x2="100%" y2="100%"><stop offset="0%" stopColor="#9ecaff" /><stop offset="100%" stopColor="#2f7cff" /></linearGradient>
-              <linearGradient id={`${idPrefix}Final`} x1="0%" y1="0%" x2="100%" y2="100%"><stop offset="0%" stopColor="#7fffd4" /><stop offset="100%" stopColor="#00e691" /></linearGradient>
-            </defs>
-            <circle cx={donutSize / 2} cy={donutSize / 2} r={raio} fill="none" stroke="rgba(255,255,255,0.05)" strokeWidth={donutStroke} />
-            {total === 0 ? null : segmentos.map((seg, i) => {
-              if (seg.valor <= 0) return null;
-              const comprimento = (seg.valor / total) * circ;
-              const offset = -acumulado;
-              acumulado += comprimento;
-              return (
-                <circle key={i} cx={donutSize / 2} cy={donutSize / 2} r={raio} fill="none" stroke={seg.stroke} strokeWidth={donutStroke} strokeLinecap="round"
-                  strokeDasharray={`${comprimento} ${circ - comprimento}`} strokeDashoffset={offset}
-                  transform={`rotate(-90 ${donutSize / 2} ${donutSize / 2})`} filter={seg.filtro ? `url(#${idPrefix}Glow)` : undefined} />
-              );
-            })}
-            <text x={donutSize / 2} y={big ? donutSize / 2 - 6 : donutSize / 2 - 5} textAnchor="middle" fill="#fff" fontSize={big ? 42 : 38} fontFamily={FONTE_TITULO} fontWeight="800" letterSpacing="-1.5">{total}</text>
-            <text x={donutSize / 2} y={big ? donutSize / 2 + 19 : donutSize / 2 + 17} textAnchor="middle" fill="#9aa4d0" fontSize={big ? 12 : 11} letterSpacing="0.8">PROCESSOS</text>
-          </svg>
-          <div style={{ display: "flex", flexDirection: "column", gap: big ? 9 : 8 }}>
-            <div style={{ display: "flex", alignItems: "center", gap: big ? 9 : 8, fontSize: big ? 14 : 12.5, color: "#c4c8e4", ...clicavel("") }} onClick={() => onClickStatus && onClickStatus("")}>
-              <span style={{ width: big ? 9 : 8, height: big ? 9 : 8, borderRadius: 2, background: "#fff", flexShrink: 0 }} />Total <span style={{ fontWeight: 700, color: "#fff", marginLeft: 2 }}>{total}</span>
-            </div>
-            <div style={{ display: "flex", alignItems: "center", gap: big ? 9 : 8, fontSize: big ? 14 : 12.5, color: "#c4c8e4", ...clicavel("aberto") }} onClick={() => onClickStatus && onClickStatus("aberto")}>
-              <span style={{ width: big ? 9 : 8, height: big ? 9 : 8, borderRadius: 2, background: "#5a5a68", flexShrink: 0 }} />Aberto <span style={{ fontWeight: 700, color: "#fff", marginLeft: 2 }}>{aberto}</span>
-            </div>
-            <div style={{ display: "flex", alignItems: "center", gap: big ? 9 : 8, fontSize: big ? 14 : 12.5, color: "#c4c8e4", ...clicavel("tramitacao") }} onClick={() => onClickStatus && onClickStatus("tramitacao")}>
-              <span style={{ width: big ? 9 : 8, height: big ? 9 : 8, borderRadius: 2, background: "#ff9f0a", flexShrink: 0 }} />Tramitação <span style={{ fontWeight: 700, color: "#fff", marginLeft: 2 }}>{tram}</span>
-            </div>
-            <div style={{ display: "flex", alignItems: "center", gap: big ? 9 : 8, fontSize: big ? 14 : 12.5, color: "#c4c8e4", ...clicavel("exigencia") }} onClick={() => onClickStatus && onClickStatus("exigencia")}>
-              <span style={{ width: big ? 9 : 8, height: big ? 9 : 8, borderRadius: 2, background: "#ff4d4d", flexShrink: 0 }} />Exigência <span style={{ fontWeight: 700, color: "#fff", marginLeft: 2 }}>{exig}</span>
-            </div>
-            <div style={{ display: "flex", alignItems: "center", gap: big ? 9 : 8, fontSize: big ? 14 : 12.5, color: "#c4c8e4", ...clicavel("deferido") }} onClick={() => onClickStatus && onClickStatus("deferido")}>
-              <span style={{ width: big ? 9 : 8, height: big ? 9 : 8, borderRadius: 2, background: "#4d94ff", flexShrink: 0 }} />Deferido <span style={{ fontWeight: 700, color: "#fff", marginLeft: 2 }}>{defer}</span>
-            </div>
-            <div style={{ display: "flex", alignItems: "center", gap: big ? 9 : 8, fontSize: big ? 14 : 12.5, color: "#c4c8e4", ...clicavel("finalizado") }} onClick={() => onClickStatus && onClickStatus("finalizado")}>
-              <span style={{ width: big ? 9 : 8, height: big ? 9 : 8, borderRadius: 2, background: "#00ffaa", flexShrink: 0 }} />Finalizado <span style={{ fontWeight: 700, color: "#fff", marginLeft: 2 }}>{final}</span>
+      {semLegenda ? (
+        // Layout literal do mockup aprovado (opcao_C_v3.html) - so' usado em
+        // Meus Processos/Cliente (grande=true, legenda=false). CSS Grid com
+        // tracks fixos pro donut (210px) e atividade (170px), cards ocupam o
+        // 1fr do meio - valores copiados 1:1 do arquivo, sem adaptar.
+        <div style={{ position: "relative", zIndex: 1, display: "grid", gridTemplateColumns: "210px 1fr 170px", gap: 24, alignItems: "stretch" }}>
+          <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center" }}>
+            <svg width={225} height={225} viewBox={`0 0 ${donutSize} ${donutSize}`}>
+              <defs>
+                <filter id={`${idPrefix}Glow`} x="-80%" y="-80%" width="260%" height="260%"><feGaussianBlur stdDeviation="6.3" result="blur" /><feMerge><feMergeNode in="blur" /><feMergeNode in="blur" /><feMergeNode in="SourceGraphic" /></feMerge></filter>
+                <linearGradient id={`${idPrefix}Tram`} x1="0%" y1="0%" x2="100%" y2="100%"><stop offset="0%" stopColor="#ffd699" /><stop offset="100%" stopColor="#ff9f0a" /></linearGradient>
+                <linearGradient id={`${idPrefix}Exig`} x1="0%" y1="0%" x2="100%" y2="100%"><stop offset="0%" stopColor="#ffa3a3" /><stop offset="100%" stopColor="#ff2b2b" /></linearGradient>
+                <linearGradient id={`${idPrefix}Defer`} x1="0%" y1="0%" x2="100%" y2="100%"><stop offset="0%" stopColor="#9ecaff" /><stop offset="100%" stopColor="#2f7cff" /></linearGradient>
+                <linearGradient id={`${idPrefix}Final`} x1="0%" y1="0%" x2="100%" y2="100%"><stop offset="0%" stopColor="#7fffd4" /><stop offset="100%" stopColor="#00e691" /></linearGradient>
+              </defs>
+              <circle cx={donutSize / 2} cy={donutSize / 2} r={raio} fill="none" stroke="rgba(255,255,255,0.05)" strokeWidth={donutStroke} />
+              {total === 0 ? null : segmentos.map((seg, i) => {
+                if (seg.valor <= 0) return null;
+                const comprimento = (seg.valor / total) * circ;
+                const offset = -acumulado;
+                acumulado += comprimento;
+                return (
+                  <circle key={i} cx={donutSize / 2} cy={donutSize / 2} r={raio} fill="none" stroke={seg.stroke} strokeWidth={donutStroke} strokeLinecap="round"
+                    strokeDasharray={`${comprimento} ${circ - comprimento}`} strokeDashoffset={offset}
+                    transform={`rotate(-90 ${donutSize / 2} ${donutSize / 2})`} filter={seg.filtro ? `url(#${idPrefix}Glow)` : undefined} />
+                );
+              })}
+              <text x={donutSize / 2} y={donutSize / 2 - 6} textAnchor="middle" fill="#fff" fontSize={42} fontFamily={FONTE_TITULO} fontWeight="800" letterSpacing="-1.5">{total}</text>
+              <text x={donutSize / 2} y={donutSize / 2 + 19} textAnchor="middle" fill="#9aa4d0" fontSize={12} letterSpacing="0.8">PROCESSOS</text>
+            </svg>
+          </div>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gridTemplateRows: "repeat(2, 1fr)", gap: 16 }}>
+            {cardsDados.map((c, i) => (
+              <div key={i} onClick={() => onClickStatus && onClickStatus(c.chave)}
+                style={{
+                  boxSizing: "border-box",
+                  background: "rgba(255,255,255,0.05)", border: `1px solid ${c.borda}`, borderRadius: 18,
+                  padding: 22, display: "flex", flexDirection: "column", justifyContent: "center",
+                  ...clicavel(c.chave),
+                }}>
+                <div style={{ fontSize: 13, color: "#a8b0d8", marginBottom: 10 }}>{c.lbl}</div>
+                <div style={{ fontFamily: FONTE_TITULO, fontSize: 38, fontWeight: 700, color: c.cor }}>{c.val}</div>
+              </div>
+            ))}
+          </div>
+          {extra && <div style={{ minWidth: 0 }}>{extra}</div>}
+        </div>
+      ) : (
+        <div style={{ position: "relative", zIndex: 1, display: "flex", flexDirection: mobile ? "column" : "row", flexWrap: big ? "nowrap" : "wrap", gap: mobile ? 20 : 36, alignItems: mobile ? "stretch" : "flex-start" }}>
+          <div style={{ display: "flex", alignItems: "center", gap: big ? 28 : 24, flexWrap: mobile ? "wrap" : "nowrap" }}>
+            <svg width={donutSize} height={donutSize} viewBox={`0 0 ${donutSize} ${donutSize}`}>
+              <defs>
+                <filter id={`${idPrefix}Glow`} x="-80%" y="-80%" width="260%" height="260%"><feGaussianBlur stdDeviation="6.3" result="blur" /><feMerge><feMergeNode in="blur" /><feMergeNode in="blur" /><feMergeNode in="SourceGraphic" /></feMerge></filter>
+                <linearGradient id={`${idPrefix}Tram`} x1="0%" y1="0%" x2="100%" y2="100%"><stop offset="0%" stopColor="#ffd699" /><stop offset="100%" stopColor="#ff9f0a" /></linearGradient>
+                <linearGradient id={`${idPrefix}Exig`} x1="0%" y1="0%" x2="100%" y2="100%"><stop offset="0%" stopColor="#ffa3a3" /><stop offset="100%" stopColor="#ff2b2b" /></linearGradient>
+                <linearGradient id={`${idPrefix}Defer`} x1="0%" y1="0%" x2="100%" y2="100%"><stop offset="0%" stopColor="#9ecaff" /><stop offset="100%" stopColor="#2f7cff" /></linearGradient>
+                <linearGradient id={`${idPrefix}Final`} x1="0%" y1="0%" x2="100%" y2="100%"><stop offset="0%" stopColor="#7fffd4" /><stop offset="100%" stopColor="#00e691" /></linearGradient>
+              </defs>
+              <circle cx={donutSize / 2} cy={donutSize / 2} r={raio} fill="none" stroke="rgba(255,255,255,0.05)" strokeWidth={donutStroke} />
+              {total === 0 ? null : segmentos.map((seg, i) => {
+                if (seg.valor <= 0) return null;
+                const comprimento = (seg.valor / total) * circ;
+                const offset = -acumulado;
+                acumulado += comprimento;
+                return (
+                  <circle key={i} cx={donutSize / 2} cy={donutSize / 2} r={raio} fill="none" stroke={seg.stroke} strokeWidth={donutStroke} strokeLinecap="round"
+                    strokeDasharray={`${comprimento} ${circ - comprimento}`} strokeDashoffset={offset}
+                    transform={`rotate(-90 ${donutSize / 2} ${donutSize / 2})`} filter={seg.filtro ? `url(#${idPrefix}Glow)` : undefined} />
+                );
+              })}
+              <text x={donutSize / 2} y={big ? donutSize / 2 - 6 : donutSize / 2 - 5} textAnchor="middle" fill="#fff" fontSize={big ? 42 : 38} fontFamily={FONTE_TITULO} fontWeight="800" letterSpacing="-1.5">{total}</text>
+              <text x={donutSize / 2} y={big ? donutSize / 2 + 19 : donutSize / 2 + 17} textAnchor="middle" fill="#9aa4d0" fontSize={big ? 12 : 11} letterSpacing="0.8">PROCESSOS</text>
+            </svg>
+            <div style={{ display: "flex", flexDirection: "column", gap: big ? 9 : 8 }}>
+              <div style={{ display: "flex", alignItems: "center", gap: big ? 9 : 8, fontSize: big ? 14 : 12.5, color: "#c4c8e4", ...clicavel("") }} onClick={() => onClickStatus && onClickStatus("")}>
+                <span style={{ width: big ? 9 : 8, height: big ? 9 : 8, borderRadius: 2, background: "#fff", flexShrink: 0 }} />Total <span style={{ fontWeight: 700, color: "#fff", marginLeft: 2 }}>{total}</span>
+              </div>
+              <div style={{ display: "flex", alignItems: "center", gap: big ? 9 : 8, fontSize: big ? 14 : 12.5, color: "#c4c8e4", ...clicavel("aberto") }} onClick={() => onClickStatus && onClickStatus("aberto")}>
+                <span style={{ width: big ? 9 : 8, height: big ? 9 : 8, borderRadius: 2, background: "#5a5a68", flexShrink: 0 }} />Aberto <span style={{ fontWeight: 700, color: "#fff", marginLeft: 2 }}>{aberto}</span>
+              </div>
+              <div style={{ display: "flex", alignItems: "center", gap: big ? 9 : 8, fontSize: big ? 14 : 12.5, color: "#c4c8e4", ...clicavel("tramitacao") }} onClick={() => onClickStatus && onClickStatus("tramitacao")}>
+                <span style={{ width: big ? 9 : 8, height: big ? 9 : 8, borderRadius: 2, background: "#ff9f0a", flexShrink: 0 }} />Tramitação <span style={{ fontWeight: 700, color: "#fff", marginLeft: 2 }}>{tram}</span>
+              </div>
+              <div style={{ display: "flex", alignItems: "center", gap: big ? 9 : 8, fontSize: big ? 14 : 12.5, color: "#c4c8e4", ...clicavel("exigencia") }} onClick={() => onClickStatus && onClickStatus("exigencia")}>
+                <span style={{ width: big ? 9 : 8, height: big ? 9 : 8, borderRadius: 2, background: "#ff4d4d", flexShrink: 0 }} />Exigência <span style={{ fontWeight: 700, color: "#fff", marginLeft: 2 }}>{exig}</span>
+              </div>
+              <div style={{ display: "flex", alignItems: "center", gap: big ? 9 : 8, fontSize: big ? 14 : 12.5, color: "#c4c8e4", ...clicavel("deferido") }} onClick={() => onClickStatus && onClickStatus("deferido")}>
+                <span style={{ width: big ? 9 : 8, height: big ? 9 : 8, borderRadius: 2, background: "#4d94ff", flexShrink: 0 }} />Deferido <span style={{ fontWeight: 700, color: "#fff", marginLeft: 2 }}>{defer}</span>
+              </div>
+              <div style={{ display: "flex", alignItems: "center", gap: big ? 9 : 8, fontSize: big ? 14 : 12.5, color: "#c4c8e4", ...clicavel("finalizado") }} onClick={() => onClickStatus && onClickStatus("finalizado")}>
+                <span style={{ width: big ? 9 : 8, height: big ? 9 : 8, borderRadius: 2, background: "#00ffaa", flexShrink: 0 }} />Finalizado <span style={{ fontWeight: 700, color: "#fff", marginLeft: 2 }}>{final}</span>
+              </div>
             </div>
           </div>
-        </div>
-        <div style={gridCardsStyle}>
-          {[
-            { lbl: "TOTAL", val: total, cor: "#fff", borda: "rgba(255,255,255,0.15)", bg: "rgba(255,255,255,0.06)", chave: "" },
-            { lbl: "EM TRAMITAÇÃO", val: tram, cor: "#ff9f0a", borda: "rgba(255,159,10,0.3)", chave: "tramitacao" },
-            { lbl: "EM EXIGÊNCIA", val: exig, cor: "#ff4d4d", borda: "rgba(255,77,77,0.3)", chave: "exigencia" },
-            { lbl: "ABERTOS", val: aberto, cor: "#ff9f0a", borda: "rgba(255,159,10,0.3)", chave: "aberto" },
-            { lbl: "DEFERIDOS", val: defer, cor: "#4d94ff", borda: "rgba(77,148,255,0.3)", chave: "deferido" },
-            { lbl: "FINALIZADOS", val: final, cor: "#00ffaa", borda: "rgba(0,255,170,0.3)", chave: "finalizado" },
-          ].map((c, i) => (
-            <div key={i} onClick={() => onClickStatus && onClickStatus(c.chave)}
-              style={{
-                boxSizing: "border-box",
-                background: c.bg || "rgba(255,255,255,0.04)", border: `1px solid ${c.borda}`, borderRadius: 14,
-                padding: mobile ? "12px 14px" : (big ? 16 : 14), display: "flex", flexDirection: "column", justifyContent: "center",
-                ...(mobile ? { minHeight: 74 } : { width: CARD, height: CARD }),
-                ...clicavel(c.chave),
-              }}>
-              <div style={{ fontSize: big ? 11.5 : 10, color: "#a8b0d8", marginBottom: 6 }}>{c.lbl}</div>
-              <div style={{ fontFamily: FONTE_TITULO, fontSize: mobile ? 20 : (big ? 28 : 24), fontWeight: 700, color: c.cor }}>{c.val}</div>
-            </div>
-          ))}
-        </div>
-        {extra && (
-          <div style={extraStyle}>
-            {extra}
+          <div style={gridCardsStyle}>
+            {cardsDados.map((c, i) => (
+              <div key={i} onClick={() => onClickStatus && onClickStatus(c.chave)}
+                style={{
+                  boxSizing: "border-box",
+                  background: c.bg || "rgba(255,255,255,0.04)", border: `1px solid ${c.borda}`, borderRadius: 14,
+                  padding: mobile ? "12px 14px" : (big ? 16 : 14), display: "flex", flexDirection: "column", justifyContent: "center",
+                  ...(mobile ? { minHeight: 74 } : { width: CARD, height: CARD }),
+                  ...clicavel(c.chave),
+                }}>
+                <div style={{ fontSize: big ? 11.5 : 10, color: "#a8b0d8", marginBottom: 6 }}>{c.lbl}</div>
+                <div style={{ fontFamily: FONTE_TITULO, fontSize: mobile ? 20 : (big ? 28 : 24), fontWeight: 700, color: c.cor }}>{c.val}</div>
+              </div>
+            ))}
           </div>
-        )}
-      </div>
+          {extra && (
+            <div style={extraStyle}>
+              {extra}
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 }

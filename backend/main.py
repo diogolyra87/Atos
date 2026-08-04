@@ -379,45 +379,95 @@ def _pill_status(status_key):
     return cores.get(status_key, ("rgba(77,148,255,0.15)", "#4d94ff"))
 
 
+_CORES_BARRA_STATUS = {
+    "aberto": ("#ff9f0a", "#ffc266"),
+    "tramitacao": ("#00c2ff", "#6db2ff"),
+    "exigencia": ("#ff4d4d", "#ff8080"),
+    "deferido": ("#2451D6", "#6db2ff"),
+    "finalizado": ("#00e691", "#5fffc9"),
+}
+_CORES_PILL_STATUS = {
+    "aberto": ("#fff4e6", "#b56a00"),
+    "tramitacao": ("#e6f7ff", "#0072a3"),
+    "exigencia": ("#ffe6e6", "#c62828"),
+    "deferido": ("#eef3ff", "#2451D6"),
+    "finalizado": ("#e6fff5", "#00875a"),
+}
+
+
 def _email_status_html(status_key, status_label, titulo, empresa_linha, protocolo=None, nota_tipo=None, nota_texto=None, botao=None):
-    """Template escuro compartilhado por todos os avisos de status ao cliente -
-    replica a identidade visual aprovada em emails_notificacao_status_v2.html,
-    com cores solidas e sem blur/backdrop-filter (nao renderizam em Gmail/Outlook).
+    """Template claro compartilhado por todos os avisos de status ao cliente
+    (Aberto/Tramitação/Exigência/Finalizado, com ou sem anexo) - tabela unica
+    (table>tr>td) com bgcolor via atributo E via style em cada nivel, mesma
+    tecnica do padrao aprovado ("Opcao 4 - rodape preto") que resolve a
+    renderizacao quebrada no Outlook (motor Word).
     nota_tipo: None | "recebido" | "anexo" | "aguardando"."""
-    bg, cor = _pill_status(status_key)
+    barra_de, barra_ate = _CORES_BARRA_STATUS.get(status_key, _CORES_BARRA_STATUS["deferido"])
+    pill_bg, pill_cor = _CORES_PILL_STATUS.get(status_key, _CORES_PILL_STATUS["deferido"])
+
     info_html = ""
     if protocolo:
-        info_html += '<div style="font-size:10.5px;color:#71717a;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:4px;">Protocolo</div>'
-        info_html += '<div style="font-size:14px;color:#fff;font-weight:600;">' + protocolo + '</div>'
+        info_html += '<p style="font-size:11px; color:#999999; text-transform:uppercase; letter-spacing:0.4px; margin:0 0 4px;">Protocolo</p>'
+        info_html += '<p style="font-size:15px; color:#111111; font-weight:700; margin:0;">' + protocolo + '</p>'
     elif nota_tipo == "recebido":
-        info_html += '<div style="font-size:10.5px;color:#71717a;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:4px;">Recebido em</div>'
-        info_html += '<div style="font-size:14px;color:#fff;font-weight:600;">' + (nota_texto or "") + '</div>'
+        info_html += '<p style="font-size:11px; color:#999999; text-transform:uppercase; letter-spacing:0.4px; margin:0 0 4px;">Recebido em</p>'
+        info_html += '<p style="font-size:15px; color:#111111; font-weight:700; margin:0;">' + (nota_texto or "") + '</p>'
     if nota_tipo == "anexo":
-        info_html += '<div style="font-size:12px;color:#8ec2ff;margin-top:10px;">📎 ' + (nota_texto or "Documento em Anexo") + '</div>'
+        info_html += '<p style="font-size:12px; color:#2451D6; margin:' + ('8px 0 0' if info_html else '0') + ';">&#128206; ' + (nota_texto or "Documento em Anexo") + '</p>'
     elif nota_tipo == "aguardando":
-        info_html += '<div style="font-size:12.5px;color:#8a90b8;margin-top:14px;line-height:1.5;">' + (nota_texto or "") + '</div>'
+        info_html += '<p style="font-size:12.5px; color:#777777; margin:' + ('10px 0 0' if info_html else '0') + '; line-height:1.5;">' + (nota_texto or "") + '</p>'
+
+    caixa_info_html = ""
+    if info_html:
+        caixa_info_html = (
+            '<table cellpadding="0" cellspacing="0" border="0" width="100%" style="background:#f8f9fb; border-radius:10px; margin:0 0 8px;">'
+            '<tr><td style="padding:14px 16px;">' + info_html + '</td></tr>'
+            '</table>'
+        )
+
     botao_html = ""
     if botao:
-        botao_html = ('<p style="text-align:center;margin-top:20px;"><a href="' + botao["href"] +
-                       '" style="display:inline-block;background:' + cor + ';color:#08070d;text-decoration:none;'
-                       'padding:13px 28px;border-radius:10px;font-size:13.5px;font-weight:600;">' + botao["label"] + '</a></p>')
+        botao_html = (
+            '<table cellpadding="0" cellspacing="0" border="0" style="margin-top:20px;">'
+            '<tr><td bgcolor="#2451D6" style="background:#2451D6; border-radius:10px;">'
+            '<a href="' + botao["href"] + '" style="display:block; padding:14px 32px; font-size:15px; font-weight:700; color:#ffffff; text-decoration:none;">' + botao["label"] + '</a>'
+            '</td></tr>'
+            '</table>'
+        )
+
     return (
-        '<div style="font-family:Arial,Helvetica,sans-serif;max-width:480px;margin:0 auto;background:#060608;border-radius:20px;overflow:hidden;">'
-        '<div style="background:linear-gradient(160deg,#0a0e2e 0%,#060810 100%);padding:28px 32px 22px;text-align:center;">'
-        '<div style="font-family:Georgia,serif;font-size:22px;font-weight:bold;color:#fff;">atos<span style="color:#6db2ff;">.</span></div>'
-        '</div>'
-        '<div style="padding:28px 32px;color:#d4d4d8;font-size:14px;line-height:1.6;">'
-        '<span style="display:inline-block;font-size:11.5px;font-weight:bold;border-radius:20px;padding:6px 14px;margin-bottom:16px;'
-        'text-transform:uppercase;letter-spacing:0.4px;background:' + bg + ';color:' + cor + ';">' + status_label + '</span>'
-        '<div style="font-size:18px;font-weight:bold;color:#fff;margin-bottom:10px;">' + titulo + '</div>'
-        '<div style="font-size:13px;color:#8a90b8;margin-bottom:18px;">' + empresa_linha + '</div>'
-        '<div style="background:rgba(255,255,255,0.04);border-radius:10px;padding:14px 16px;">' + info_html + '</div>'
+        '<!DOCTYPE html>'
+        '<html>'
+        '<body bgcolor="#f4f5f7" style="background:#f4f5f7; margin:0; padding:0; font-family: -apple-system, \'Segoe UI\', Arial, sans-serif;">'
+        '<table width="100%" bgcolor="#f4f5f7" style="background:#f4f5f7;" cellpadding="0" cellspacing="0" border="0">'
+        '<tr><td align="center" style="padding:40px 20px;">'
+        '<table width="480" cellpadding="0" cellspacing="0" border="0" style="max-width:480px; background:#ffffff; border-radius:16px; overflow:hidden;">'
+
+        '<tr><td style="background:linear-gradient(90deg, ' + barra_de + ', ' + barra_ate + '); height:6px; line-height:6px; font-size:0;">&nbsp;</td></tr>'
+
+        '<tr><td style="padding:40px 40px 32px;">'
+        '<table cellpadding="0" cellspacing="0" border="0" style="margin:0 0 20px;">'
+        '<tr><td bgcolor="' + pill_bg + '" style="background:' + pill_bg + '; border-radius:20px; padding:6px 16px;">'
+        '<span style="font-size:12px; color:' + pill_cor + '; font-weight:700; text-transform:uppercase; letter-spacing:0.4px;">' + status_label + '</span>'
+        '</td></tr>'
+        '</table>'
+        '<p style="font-size:22px; font-weight:700; color:#111111; margin:0 0 20px;">' + titulo + '</p>'
+        '<p style="font-size:15px; color:#555555; margin:0 0 24px; line-height:1.6;">' + empresa_linha + '</p>'
+        + caixa_info_html
         + botao_html +
-        '</div>'
-        '<div style="padding:20px 32px;border-top:1px solid rgba(255,255,255,0.06);text-align:center;">'
-        '<div style="font-size:11px;color:#62666d;">contato@atos.net.br &middot; atos.net.br</div>'
-        '</div>'
-        '</div>'
+        '</td></tr>'
+
+        '<tr><td bgcolor="#0a0a0d" style="background:#0a0a0d; padding:28px 40px;">'
+        '<p style="font-size:22px; font-weight:700; color:#ffffff; margin:0 0 6px;">atos<span style="color:#6db2ff;">.</span></p>'
+        '<p style="font-size:13px; color:#8a90b8; margin:0 0 14px;">Gestão Societária</p>'
+        '<p style="font-size:12px; margin:0;"><a href="mailto:contato@atos.net.br" style="color:#6db2ff; text-decoration:underline;">contato@atos.net.br</a> <span style="color:#4a4a4e;">&middot;</span> <a href="https://atos.net.br" style="color:#6db2ff; text-decoration:underline;">atos.net.br</a></p>'
+        '</td></tr>'
+
+        '</table>'
+        '</td></tr>'
+        '</table>'
+        '</body>'
+        '</html>'
     )
 
 
@@ -557,44 +607,82 @@ def _badge_status(status_label):
     return '<span style="display:inline-block;background:' + bg + ';color:' + cor + ';font-size:12px;font-weight:bold;padding:5px 14px;border-radius:20px;">' + status_label + '</span>'
 
 def envolver_html(corpo_texto, titulo="Atualizacao do seu processo"):
+    """Wrapper generico (fallback quando quem chama enviar_email/
+    enviar_email_anexo nao monta seu proprio corpo_html) - mesma tecnica de
+    tabela unica com bgcolor duplo (atributo + style) do padrao aprovado
+    ("Opcao 4"), pra nao herdar o problema de renderizacao quebrada no
+    Outlook. Usado por alertas internos (admin) e pelo convite individual de
+    operador - conteudo (paragrafos a partir de corpo_texto) inalterado."""
     linhas = corpo_texto.split(chr(10))
     corpo_p = ""
     for ln in linhas:
         if ln.strip() == "":
             continue
-        corpo_p = corpo_p + '<div style="font-size:14px;color:#445;line-height:1.65;margin-bottom:4px;">' + ln + '</div>'
+        corpo_p = corpo_p + '<p style="font-size:14px; color:#445; line-height:1.65; margin:0 0 8px;">' + ln + '</p>'
     return (
-        '<div style="font-family:Arial,Helvetica,sans-serif;max-width:520px;margin:0 auto;background:#ffffff;border:1px solid #e6ebf2;border-radius:12px;overflow:hidden;">'
-        '<div style="height:5px;background:linear-gradient(90deg,#2563eb,#2dd4bf);"></div>'
-        '<div style="padding:28px 24px;">'
-        '<div style="font-size:19px;font-weight:bold;color:#1a2330;margin-bottom:14px;">' + titulo + '</div>'
+        '<!DOCTYPE html>'
+        '<html>'
+        '<body bgcolor="#f4f5f7" style="background:#f4f5f7; margin:0; padding:0; font-family: -apple-system, \'Segoe UI\', Arial, sans-serif;">'
+        '<table width="100%" bgcolor="#f4f5f7" style="background:#f4f5f7;" cellpadding="0" cellspacing="0" border="0">'
+        '<tr><td align="center" style="padding:40px 20px;">'
+        '<table width="520" cellpadding="0" cellspacing="0" border="0" style="max-width:520px; background:#ffffff; border-radius:16px; overflow:hidden;">'
+
+        '<tr><td style="background:linear-gradient(90deg, #2563eb, #2dd4bf); height:6px; line-height:6px; font-size:0;">&nbsp;</td></tr>'
+
+        '<tr><td style="padding:32px 32px 28px;">'
+        '<p style="font-size:19px; font-weight:700; color:#1a2330; margin:0 0 16px;">' + titulo + '</p>'
         + corpo_p +
-        '</div>'
-        + rodape_atos() +
-        '</div>'
+        '</td></tr>'
+
+        '<tr><td bgcolor="#0a0a0d" style="background:#0a0a0d; padding:28px 32px;">'
+        '<p style="font-size:22px; font-weight:700; color:#ffffff; margin:0 0 6px;">atos<span style="color:#6db2ff;">.</span></p>'
+        '<p style="font-size:13px; color:#8a90b8; margin:0 0 14px;">Gestão Societária</p>'
+        '<p style="font-size:12px; margin:0;"><a href="mailto:contato@atos.net.br" style="color:#6db2ff; text-decoration:underline;">contato@atos.net.br</a> <span style="color:#4a4a4e;">&middot;</span> <a href="https://atos.net.br" style="color:#6db2ff; text-decoration:underline;">atos.net.br</a></p>'
+        '</td></tr>'
+
+        '</table>'
+        '</td></tr>'
+        '</table>'
+        '</body>'
+        '</html>'
     )
 
 
 def _email_codigo_2fa_html(codigo):
     """Template do email de codigo de verificacao (2FA/login) - replica
-    fielmente docs/email_codigo_v2.html (layout minimalista aprovado): fundo
-    unico escuro, sem blocos separados, sem glow/blur/backdrop-filter (nao
-    renderizam em clientes de email), cores solidas."""
-    codigo_espacado = codigo[:3] + " " + codigo[3:]
+    fielmente docs/opcao4_rodape_preto.html (layout final aprovado, "Opcao 4
+    - rodape preto"): tabela unica (table>tr>td), bgcolor aplicado via
+    atributo E via style em cada nivel - tecnica que resolve a quebra de
+    renderizacao no Outlook (motor Word), que nao herda background-color de
+    forma confiavel entre <div>s aninhados."""
     return (
-        '<div style="font-family:-apple-system,\'Segoe UI\',Arial,sans-serif;max-width:440px;margin:0 auto;background:#0a0a0d;border-radius:16px;overflow:hidden;">'
-        '<div style="padding:36px 32px 8px;text-align:center;">'
-        '<div style="font-family:Georgia,serif;font-size:20px;font-weight:bold;color:#fff;">atos<span style="color:#6db2ff;">.</span></div>'
-        '</div>'
-        '<div style="padding:8px 32px 36px;color:#d4d4d8;font-size:14px;line-height:1.6;text-align:center;">'
-        '<div style="font-size:15px;color:#8a90b8;margin-bottom:28px;font-weight:400;">Seu código de acesso</div>'
-        '<div style="font-family:\'Courier New\',monospace;font-size:36px;font-weight:600;color:#fff;letter-spacing:6px;margin-bottom:20px;">' + codigo_espacado + '</div>'
-        '<div style="font-size:12px;color:#62666d;">Válido por 10 minutos. Se não foi você, ignore este email.</div>'
-        '</div>'
-        '<div style="padding:18px 32px;text-align:center;">'
-        '<div style="font-size:11px;color:#4a4a4e;"><a href="https://atos.net.br" style="color:#62666d;text-decoration:none;">atos.net.br</a></div>'
-        '</div>'
-        '</div>'
+        '<!DOCTYPE html>'
+        '<html>'
+        '<body bgcolor="#f4f5f7" style="background:#f4f5f7; margin:0; padding:0; font-family: -apple-system, \'Segoe UI\', Arial, sans-serif;">'
+        '<table width="100%" bgcolor="#f4f5f7" style="background:#f4f5f7;" cellpadding="0" cellspacing="0" border="0">'
+        '<tr><td align="center" style="padding:40px 20px;">'
+        '<table width="480" cellpadding="0" cellspacing="0" border="0" style="max-width:480px; background:#ffffff; border-radius:16px; overflow:hidden;">'
+
+        '<tr><td style="background:linear-gradient(90deg, #2451D6, #6db2ff); height:6px; line-height:6px; font-size:0;">&nbsp;</td></tr>'
+
+        '<tr><td style="padding:40px 40px 32px;">'
+        '<p style="font-size:22px; font-weight:700; color:#111111; margin:0 0 24px;">Seu código de acesso</p>'
+        '<p style="font-size:15px; color:#555555; margin:0 0 24px; line-height:1.6;">Use o código abaixo para confirmar seu acesso à plataforma.</p>'
+        '<p style="font-size:36px; font-weight:700; color:#111111; letter-spacing:4px; margin:0 0 20px; font-family: \'Courier New\', monospace;">' + codigo + '</p>'
+        '<p style="font-size:13px; color:#999999; margin:0;">Válido por 10 minutos. Se não foi você, ignore este email.</p>'
+        '</td></tr>'
+
+        '<tr><td bgcolor="#0a0a0d" style="background:#0a0a0d; padding:28px 40px;">'
+        '<p style="font-size:22px; font-weight:700; color:#ffffff; margin:0 0 6px;">atos<span style="color:#6db2ff;">.</span></p>'
+        '<p style="font-size:13px; color:#8a90b8; margin:0 0 14px;">Gestão Societária</p>'
+        '<p style="font-size:12px; margin:0;"><a href="mailto:contato@atos.net.br" style="color:#6db2ff; text-decoration:underline;">contato@atos.net.br</a> <span style="color:#4a4a4e;">&middot;</span> <a href="https://atos.net.br" style="color:#6db2ff; text-decoration:underline;">atos.net.br</a></p>'
+        '</td></tr>'
+
+        '</table>'
+        '</td></tr>'
+        '</table>'
+        '</body>'
+        '</html>'
     )
 
 
@@ -608,23 +696,43 @@ def _disparar_convites(nome, link, emails):
         "Atenciosamente,\nEquipe Atos"
     )
     corpo_html = (
-        '<div style="font-family:Arial,Helvetica,sans-serif;max-width:480px;margin:0 auto;background:#060608;border-radius:20px;overflow:hidden;">'
-        '<div style="background:linear-gradient(160deg,#0a0e2e 0%,#060810 100%);padding:36px 32px 28px;text-align:center;">'
-        '<div style="font-family:Georgia,serif;font-size:26px;font-weight:bold;color:#fff;">atos<span style="color:#6db2ff;">.</span></div>'
-        '<div style="font-size:11px;color:#9aa8d8;margin-top:4px;letter-spacing:0.5px;">GESTÃO SOCIETÁRIA</div>'
-        '</div>'
-        '<div style="padding:32px;color:#d4d4d8;font-size:14px;line-height:1.6;">'
-        '<div style="font-family:Arial,Helvetica,sans-serif;font-size:19px;font-weight:bold;color:#fff;margin-bottom:14px;">Você foi cadastrado no Atos</div>'
-        '<p style="margin:0 0 4px;">Você foi cadastrado para acessar o sistema Atos &mdash; Gestão Societária, no grupo:</p>'
-        '<div style="display:inline-block;font-size:12px;color:#8ec2ff;background:rgba(77,148,255,0.1);border:1px solid rgba(77,148,255,0.3);border-radius:20px;padding:5px 14px;margin:14px 0 24px;">' + nome + '</div>'
-        '<p>Clique no botão abaixo para criar seu login e senha de acesso.</p>'
-        '<p style="text-align:center;margin-top:28px;"><a href="' + link + '" style="display:inline-block;background:linear-gradient(135deg,#4d94ff,#8c5aff);color:#ffffff;text-decoration:none;padding:14px 32px;border-radius:10px;font-size:14px;font-weight:600;">Criar meu acesso</a></p>'
-        '<p style="font-size:12px;color:#62666d;margin-top:20px;">Ou copie e cole este endereço no navegador:<br><a href="' + link + '" style="color:#6db2ff;">' + link + '</a></p>'
-        '</div>'
-        '<div style="padding:24px 32px;border-top:1px solid rgba(255,255,255,0.06);text-align:center;">'
-        '<div style="font-size:11px;color:#62666d;">contato@atos.net.br &middot; atos.net.br</div>'
-        '</div>'
-        '</div>'
+        '<!DOCTYPE html>'
+        '<html>'
+        '<body bgcolor="#f4f5f7" style="background:#f4f5f7; margin:0; padding:0; font-family: -apple-system, \'Segoe UI\', Arial, sans-serif;">'
+        '<table width="100%" bgcolor="#f4f5f7" style="background:#f4f5f7;" cellpadding="0" cellspacing="0" border="0">'
+        '<tr><td align="center" style="padding:40px 20px;">'
+        '<table width="480" cellpadding="0" cellspacing="0" border="0" style="max-width:480px; background:#ffffff; border-radius:16px; overflow:hidden;">'
+
+        '<tr><td style="background:linear-gradient(90deg, #2451D6, #6db2ff); height:6px; line-height:6px; font-size:0;">&nbsp;</td></tr>'
+
+        '<tr><td style="padding:40px 40px 32px;">'
+        '<p style="font-size:22px; font-weight:700; color:#111111; margin:0 0 24px;">Você foi cadastrado no Atos</p>'
+        '<p style="font-size:15px; color:#555555; margin:0 0 20px; line-height:1.6;">Você foi cadastrado para acessar o sistema Atos — Gestão Societária, no grupo:</p>'
+        '<table cellpadding="0" cellspacing="0" border="0" style="margin:0 0 28px;">'
+        '<tr><td bgcolor="#eef3ff" style="background:#eef3ff; border-radius:20px; padding:8px 18px;">'
+        '<span style="font-size:13px; color:#2451D6; font-weight:600;">' + nome + '</span>'
+        '</td></tr>'
+        '</table>'
+        '<p style="font-size:15px; color:#555555; margin:0 0 28px; line-height:1.6;">Clique no botão abaixo para criar seu login e senha de acesso.</p>'
+        '<table cellpadding="0" cellspacing="0" border="0">'
+        '<tr><td bgcolor="#2451D6" style="background:#2451D6; border-radius:10px;">'
+        '<a href="' + link + '" style="display:block; padding:14px 32px; font-size:15px; font-weight:700; color:#ffffff; text-decoration:none;">Criar meu acesso</a>'
+        '</td></tr>'
+        '</table>'
+        '<p style="font-size:12px; color:#999999; margin:20px 0 0;">Ou copie e cole este endereço no navegador:<br><a href="' + link + '" style="color:#2451D6;">' + link + '</a></p>'
+        '</td></tr>'
+
+        '<tr><td bgcolor="#0a0a0d" style="background:#0a0a0d; padding:28px 40px;">'
+        '<p style="font-size:22px; font-weight:700; color:#ffffff; margin:0 0 6px;">atos<span style="color:#6db2ff;">.</span></p>'
+        '<p style="font-size:13px; color:#8a90b8; margin:0 0 14px;">Gestão Societária</p>'
+        '<p style="font-size:12px; margin:0;"><a href="mailto:contato@atos.net.br" style="color:#6db2ff; text-decoration:underline;">contato@atos.net.br</a> <span style="color:#4a4a4e;">&middot;</span> <a href="https://atos.net.br" style="color:#6db2ff; text-decoration:underline;">atos.net.br</a></p>'
+        '</td></tr>'
+
+        '</table>'
+        '</td></tr>'
+        '</table>'
+        '</body>'
+        '</html>'
     )
     for email in emails:
         enviar_email(email, "Acesso ao sistema Atos - " + nome, corpo, corpo_html)

@@ -575,6 +575,29 @@ def envolver_html(corpo_texto, titulo="Atualizacao do seu processo"):
     )
 
 
+def _email_codigo_2fa_html(codigo):
+    """Template do email de codigo de verificacao (2FA/login) - replica
+    fielmente docs/email_codigo_v2.html (layout minimalista aprovado): fundo
+    unico escuro, sem blocos separados, sem glow/blur/backdrop-filter (nao
+    renderizam em clientes de email), cores solidas."""
+    codigo_espacado = codigo[:3] + " " + codigo[3:]
+    return (
+        '<div style="font-family:-apple-system,\'Segoe UI\',Arial,sans-serif;max-width:440px;margin:0 auto;background:#0a0a0d;border-radius:16px;overflow:hidden;">'
+        '<div style="padding:36px 32px 8px;text-align:center;">'
+        '<div style="font-family:Georgia,serif;font-size:20px;font-weight:bold;color:#fff;">atos<span style="color:#6db2ff;">.</span></div>'
+        '</div>'
+        '<div style="padding:8px 32px 36px;color:#d4d4d8;font-size:14px;line-height:1.6;text-align:center;">'
+        '<div style="font-size:15px;color:#8a90b8;margin-bottom:28px;font-weight:400;">Seu código de acesso</div>'
+        '<div style="font-family:\'Courier New\',monospace;font-size:36px;font-weight:600;color:#fff;letter-spacing:6px;margin-bottom:20px;">' + codigo_espacado + '</div>'
+        '<div style="font-size:12px;color:#62666d;">Válido por 10 minutos. Se não foi você, ignore este email.</div>'
+        '</div>'
+        '<div style="padding:18px 32px;text-align:center;">'
+        '<div style="font-size:11px;color:#4a4a4e;"><a href="https://atos.net.br" style="color:#62666d;text-decoration:none;">atos.net.br</a></div>'
+        '</div>'
+        '</div>'
+    )
+
+
 def _disparar_convites(nome, link, emails):
     corpo = (
         "Olá!\n\n"
@@ -831,7 +854,7 @@ def login(dados: dict, request: Request, db: Session = Depends(get_db)):
     if email_destino:
         try:
             corpo = "Seu codigo de acesso ao ATOS e: " + codigo + ". Valido por 10 minutos. Se voce nao tentou acessar, ignore este e-mail."
-            enviar_email(email_destino, "Codigo de acesso ATOS", corpo)
+            enviar_email(email_destino, "Codigo de acesso ATOS", corpo, corpo_html=_email_codigo_2fa_html(codigo))
         except Exception as e:
             print("Erro ao enviar codigo 2FA:", e)
     return {"requer_2fa": True, "login": usuario.login, "mensagem": "Enviamos um codigo de acesso para o seu e-mail."}

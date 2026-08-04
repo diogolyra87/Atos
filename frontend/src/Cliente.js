@@ -1,7 +1,7 @@
 ﻿import { useState, useEffect } from "react";
 import { useSearchParams } from "react-router-dom";
 import axios from "axios";
-import { STATUS_CONFIG, formatarDataExtenso, FluxoDoDiaCardEscuro, AtividadeRecenteEscura, BotaoIatos, IatosChat, subtituloProcesso, SidebarAtos, IconeProcessos, IconeRelatorios, DonutStatusCard, TelaLogin, TelaCriarAcesso, PainelDownloadStatus, FONTE_CORPO, FONTE_TITULO } from "./components/Compartilhados";
+import { STATUS_CONFIG, formatarDataExtenso, FluxoDoDiaCardEscuro, AtividadeRecenteEscura, BotaoIatos, IatosChat, subtituloProcesso, SidebarAtos, IconeProcessos, IconeRelatorios, DonutStatusCard, TelaLogin, TelaCriarAcesso, PainelDownloadStatus, FONTE_CORPO, FONTE_TITULO, useBreakpoint } from "./components/Compartilhados";
 
 const API = "";
 
@@ -182,6 +182,8 @@ function ChatProcessoCliente({ processoId, token }) {
 }
 
 function DetalheProcessoCliente({ p, sessao, onVoltar }) {
+  const bp = useBreakpoint();
+  const mobile = bp === "mobile";
   const [anexos, setAnexos] = useState([]);
   const [enviando, setEnviando] = useState(false);
   const [iatosAberto, setIatosAberto] = useState(false);
@@ -231,7 +233,7 @@ function DetalheProcessoCliente({ p, sessao, onVoltar }) {
 
   return (
     <div>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 20 }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 10, marginBottom: 20 }}>
         <button onClick={onVoltar} style={{ background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.1)", color: "#d4d4d8", padding: "8px 16px", borderRadius: 8, fontSize: 12.5, display: "flex", alignItems: "center", gap: 6, cursor: "pointer", fontFamily: FONTE_CORPO }}>
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M19 12H5" /><path d="M12 19l-7-7 7-7" /></svg>
           Voltar
@@ -261,7 +263,7 @@ function DetalheProcessoCliente({ p, sessao, onVoltar }) {
         </div>
       </div>
 
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 24, background: "#0e0e14", border: "1px solid rgba(255,255,255,0.06)", borderRadius: 18, padding: "26px 28px", marginBottom: 16 }}>
+      <div style={{ display: "grid", gridTemplateColumns: mobile ? "1fr" : "1fr 1fr", gap: 24, background: "#0e0e14", border: "1px solid rgba(255,255,255,0.06)", borderRadius: 18, padding: mobile ? "20px" : "26px 28px", marginBottom: 16 }}>
         <div>
           <div style={{ marginBottom: 20 }}><div style={{ fontSize: 10.5, color: "#71717a", textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 6 }}>Tipo de ato</div><div style={{ fontSize: 14, color: "#e4e4e7", fontWeight: 500 }}>{p.tipo_ato}</div></div>
           <div style={{ marginBottom: 20 }}><div style={{ fontSize: 10.5, color: "#71717a", textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 6 }}>Data do ato</div><div style={{ fontSize: 14, color: "#e4e4e7", fontWeight: 500 }}>{p.data_ata}{p.hora_ata ? " — " + p.hora_ata : ""}</div></div>
@@ -304,6 +306,8 @@ function DetalheProcessoCliente({ p, sessao, onVoltar }) {
   );
 }
 export function Painel({ sessao, onSair }) {
+  const bp = useBreakpoint();
+  const mobile = bp === "mobile";
   const [processos, setProcessos] = useState([]);
   const [metricas, setMetricas] = useState({});
   const [fluxoAtivo, setFluxoAtivo] = useState(null);
@@ -340,7 +344,7 @@ export function Painel({ sessao, onSair }) {
     if (fAto && abreviarAto(p.identificador_ato, "").split(" ")[0] !== fAto) return false;
     return true;
   });
-  const s = estilos();
+  const s = estilos(mobile);
   useEffect(() => { carregar(); }, []);
 
   useEffect(() => {
@@ -606,7 +610,34 @@ export function Painel({ sessao, onSair }) {
                 {label}
                 <span style={{ fontSize: 11, color: "#94a3b8", fontWeight: 400 }}>({itens.length})</span>
               </div>
-              {aberto && itens.map(p => (
+              {aberto && itens.map(p => mobile ? (
+                // Mobile: tabela vira card empilhado (uma coluna larga nao cabe
+                // as 6 colunas da tabela) - mesmo dado, layout vertical.
+                <div key={p.id} style={{ padding: "14px 16px", borderBottom: "1px solid rgba(255,255,255,0.04)", display: "flex", flexDirection: "column", gap: 10 }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 8 }}>
+                    <div>
+                      <div style={s.empresa}>{p.empresa}</div>
+                      <div style={s.metaEmp}>{subtituloProcesso(p)}</div>
+                    </div>
+                    <span onClick={() => clicarStatus(p)}
+                      style={{ ...s.badge, flexShrink: 0, background: (STATUS_CONFIG[p.status]?.bg||"rgba(255,255,255,0.06)"), color: (STATUS_CONFIG[p.status]?.color||"#d4d4d8"),
+                        border: `1px solid ${STATUS_CONFIG[p.status]?.borda || "rgba(255,255,255,0.15)"}`, cursor: "pointer" }}>
+                      {STATUS_CONFIG[p.status]?.label || p.status}
+                    </span>
+                  </div>
+                  <div style={{ display: "flex", gap: 16, fontSize: 12, color: "#8a90b8" }}>
+                    <span>UF: <span style={{ color: "#d4d4d8" }}>{p.uf || "—"}</span></span>
+                    <span>Protocolo: <span style={{ color: "#d4d4d8", fontFamily: "monospace" }}>{p.numero_protocolo ? p.numero_protocolo.replace(/\D/g, "") : "—"}</span></span>
+                  </div>
+                  <div style={{ display: "flex", gap: 8 }}>
+                    <button onClick={() => setProcessoSelecionado(p)}
+                      style={{ flex: 1, background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.09)", color: "#d4d4d8", borderRadius: 8, padding: "9px 12px", fontSize: 12, cursor: "pointer", fontFamily: FONTE_CORPO }}>
+                      Ver processo
+                    </button>
+                    <BotaoIatos processo={p} onAbrir={setIatosAberto} />
+                  </div>
+                </div>
+              ) : (
                 <div key={p.id} style={s.row}>
                   <div>
                     <div style={s.empresa}>{p.empresa}</div>
@@ -758,10 +789,14 @@ export function Painel({ sessao, onSair }) {
                 : processos.length === 0 ? <div style={s.vazio}>Nenhum processo disponivel no momento.</div>
                 : (
                   <div style={s.tabela}>
-                    <div style={s.thead}>
-                      {["Empresa", "UF", "Ato", "Protocolo", "Status"].map((h, i) => <div key={i} style={s.th}>{h}</div>)}
+                    <div style={mobile ? {} : s.tableScroll}>
+                      {!mobile && (
+                        <div style={s.thead}>
+                          {["Empresa", "UF", "Ato", "Protocolo", "Status", ""].map((h, i) => <div key={i} style={s.th}>{h}</div>)}
+                        </div>
+                      )}
+                      <ListaProcessosAgrupada />
                     </div>
-                    <ListaProcessosAgrupada />
                   </div>
                 )}
             </div>
@@ -846,10 +881,10 @@ export function Painel({ sessao, onSair }) {
   );
 }
 
-function estilos() {
+function estilos(mobile) {
   return {
-    appCliente: { display: "flex", minHeight: "100vh", fontFamily: FONTE_CORPO, background: "#060608", color: "#e4e4e7", WebkitFontSmoothing: "antialiased" },
-    mainCliente: { flex: 1, padding: "32px 40px", overflowY: "auto" },
+    appCliente: { display: "flex", flexDirection: mobile ? "column" : "row", minHeight: "100vh", fontFamily: FONTE_CORPO, background: "#060608", color: "#e4e4e7", WebkitFontSmoothing: "antialiased" },
+    mainCliente: { flex: 1, minWidth: 0, padding: mobile ? "16px" : "32px 40px", overflowY: "auto" },
     topBar: { display: "flex", justifyContent: "flex-end", alignItems: "center", marginBottom: 20 },
     btnSair: { background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.08)", color: "#d4d4d8", borderRadius: 24, padding: "6px 16px", fontSize: 12.5, cursor: "pointer", fontFamily: FONTE_CORPO },
     conteudo: {},
@@ -859,9 +894,14 @@ function estilos() {
     aviso: { background: "rgba(0,255,170,0.1)", color: "#7dffce", borderRadius: 8, padding: "8px 12px", fontSize: 13, marginBottom: 14 },
     vazio: { background: "#0e0e14", border: "1px solid rgba(255,255,255,0.06)", borderRadius: 12, padding: "40px 16px", textAlign: "center", color: "#62666d", fontSize: 14 },
     tabela: { background: "#0e0e14", border: "1px solid rgba(255,255,255,0.06)", borderRadius: 18, overflow: "hidden" },
-    thead: { display: "grid", gridTemplateColumns: "2.5fr 0.5fr 1.3fr 1.2fr 1fr", padding: "10px 20px", background: "rgba(255,255,255,0.02)", borderBottom: "1px solid rgba(255,255,255,0.06)" },
+    tableScroll: { overflowX: "auto" },
+    // thead e row precisam ter o MESMO numero de tracks (senao as colunas nao
+    // alinham) - thead tinha so 5, row tem 6 (a ultima e a coluna de acoes
+    // Ver processo + BotaoIatos). minWidth junto com tableScroll evita corte
+    // em telas menores (scroll horizontal em vez de espremer o iatos.).
+    thead: { display: "grid", gridTemplateColumns: "2.2fr 0.5fr 1.2fr 1fr 0.9fr 260px", padding: "10px 20px", background: "rgba(255,255,255,0.02)", borderBottom: "1px solid rgba(255,255,255,0.06)", minWidth: 860 },
     th: { fontSize: 10.5, fontWeight: 500, color: "#62666d", textTransform: "uppercase", letterSpacing: 0.4 },
-    row: { display: "grid", gridTemplateColumns: "2.2fr 0.5fr 1.2fr 1fr 0.9fr 0.9fr", padding: "14px 20px", borderBottom: "1px solid rgba(255,255,255,0.04)", alignItems: "center" },
+    row: { display: "grid", gridTemplateColumns: "2.2fr 0.5fr 1.2fr 1fr 0.9fr 260px", padding: "14px 20px", borderBottom: "1px solid rgba(255,255,255,0.04)", alignItems: "center", minWidth: 860 },
     empresa: { fontSize: 13.5, fontWeight: 600, color: "#fff", margin: "0 0 3px" },
     metaEmp: { fontSize: 11, color: "#71717a", margin: 0 },
     cell: { fontSize: 13, color: "#d4d4d8" },

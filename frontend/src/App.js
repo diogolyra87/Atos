@@ -1,7 +1,7 @@
 ﻿import { useState, useEffect } from "react";
 import axios from "axios";
 import { Painel as PainelCliente } from "./Cliente";
-import { STATUS_CONFIG, formatarDataExtenso, BotaoIatos, IatosChat, subtituloProcesso, SidebarAtos, IconeProcessos, IconeGrupos, IconeAprendizado, DonutStatusCard, TelaLogin, FONTE_CORPO, FONTE_TITULO, FluxoDoDiaCardEscuro, AtividadeRecenteEscura } from "./components/Compartilhados";
+import { STATUS_CONFIG, formatarDataExtenso, BotaoIatos, IatosChat, subtituloProcesso, SidebarAtos, IconeProcessos, IconeGrupos, IconeAprendizado, DonutStatusCard, TelaLogin, FONTE_CORPO, FONTE_TITULO, FluxoDoDiaCardEscuro, AtividadeRecenteEscura, useBreakpoint } from "./components/Compartilhados";
 
 const API = "";
 
@@ -171,6 +171,8 @@ function TelaAprendizado() {
 }
 
 function AppPainel({ onSair, sessao }) {
+  const bp = useBreakpoint();
+  const mobile = bp === "mobile";
   const ehOperador = sessao && sessao.papel === "operador" && !sessao.is_admin;
   const [processos, setProcessos] = useState([]);
   const [metricas, setMetricas] = useState({});
@@ -452,7 +454,7 @@ function AppPainel({ onSair, sessao }) {
   }
   const s = {
     layout: { display: "flex", minHeight: "100vh", fontFamily: FONTE_CORPO, background: "#060608", color: "#e4e4e7", WebkitFontSmoothing: "antialiased" },
-    main: { flex: 1, padding: "32px 40px", overflowY: "auto" },
+    main: { flex: 1, minWidth: 0, padding: mobile ? "16px" : "32px 40px", overflowY: "auto" },
     topBar: { display: "flex", justifyContent: "flex-end", alignItems: "center", marginBottom: 20 },
     btnSair: { background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.08)", color: "#d4d4d8", borderRadius: 24, padding: "6px 16px", fontSize: 12.5, cursor: "pointer", fontFamily: FONTE_CORPO },
     topbar: { display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 20 },
@@ -460,9 +462,16 @@ function AppPainel({ onSair, sessao }) {
     btnPrimary: { background: "linear-gradient(135deg, #4d94ff, #8c5aff)", color: "#fff", border: "none", padding: "9px 18px", borderRadius: 9, fontSize: 13, cursor: "pointer", display: "flex", alignItems: "center", gap: 6, boxShadow: "0 4px 16px rgba(77,148,255,0.3)", fontFamily: FONTE_CORPO },
     filtro: { padding: "9px 10px", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 8, fontSize: 11.5, background: "rgba(255,255,255,0.05)", cursor: "pointer", color: "#d4d4d8", fontFamily: FONTE_CORPO },
     tableWrap: { background: "#0e0e14", border: "1px solid rgba(255,255,255,0.06)", borderRadius: 18, overflow: "hidden" },
-    tableHead: { display: "grid", gridTemplateColumns: "2.5fr 0.5fr 1.3fr 1.2fr 1fr 70px", padding: "10px 20px", background: "rgba(255,255,255,0.02)", borderBottom: "1px solid rgba(255,255,255,0.06)" },
+    tableScroll: { overflowX: "auto" },
+    // Ultima coluna precisa caber o botao "Ver" + o BotaoIatos inteiro (icone +
+    // "iatos." + "Posso ajudar?") - 70px (herdado de uma versao anterior sem
+    // esse botao) cortava o iatos. na borda direita da tabela. minWidth no
+    // container junto com tableScroll (overflow-x) garante que nunca aperta
+    // a ponto de cortar, mesmo em telas menores (scroll horizontal em vez de
+    // corte, conforme pedido).
+    tableHead: { display: "grid", gridTemplateColumns: "2.2fr 0.5fr 1.2fr 1fr 0.9fr 290px", padding: "10px 20px", background: "rgba(255,255,255,0.02)", borderBottom: "1px solid rgba(255,255,255,0.06)", minWidth: 900 },
     th: { fontSize: 10.5, fontWeight: 500, color: "#62666d", textTransform: "uppercase", letterSpacing: 0.4 },
-    row: { display: "grid", gridTemplateColumns: "2.5fr 0.5fr 1.3fr 1.2fr 1fr 70px", padding: "14px 20px", borderBottom: "1px solid rgba(255,255,255,0.04)", alignItems: "center", cursor: "pointer" },
+    row: { display: "grid", gridTemplateColumns: "2.2fr 0.5fr 1.2fr 1fr 0.9fr 290px", padding: "14px 20px", borderBottom: "1px solid rgba(255,255,255,0.04)", alignItems: "center", cursor: "pointer", minWidth: 900 },
     company: { fontSize: 13.5, fontWeight: 600, color: "#fff", margin: "0 0 3px" },
     cnpj: { fontSize: 11, color: "#71717a", margin: 0 },
     cell: { fontSize: 13, color: "#d4d4d8" },
@@ -476,10 +485,10 @@ function AppPainel({ onSair, sessao }) {
     input: { width: "100%", padding: "8px 12px", border: "1px solid rgba(255,255,255,0.12)", borderRadius: 8, fontSize: 13, outline: "none", background: "rgba(255,255,255,0.05)", color: "#fff", boxSizing: "border-box" },
     btnRow: { display: "flex", gap: 10, marginTop: 20, justifyContent: "flex-end" },
     btnSecondary: { background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 8, padding: "9px 18px", fontSize: 13, cursor: "pointer", color: "#d4d4d8", fontFamily: FONTE_CORPO },
-    detalhe: { background: "#0e0e14", border: "1px solid rgba(255,255,255,0.06)", borderRadius: 12, padding: 24 },
-    detalheHeader: { display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 20 },
+    detalhe: { background: "#0e0e14", border: "1px solid rgba(255,255,255,0.06)", borderRadius: 12, padding: mobile ? 16 : 24 },
+    detalheHeader: { display: "flex", flexDirection: mobile ? "column" : "row", gap: mobile ? 12 : 0, justifyContent: "space-between", alignItems: mobile ? "stretch" : "flex-start", marginBottom: 20 },
     detalheTitle: { fontFamily: FONTE_TITULO, fontSize: 18, fontWeight: 700, color: "#fff" },
-    detalheGrid: { display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16, marginBottom: 20 },
+    detalheGrid: { display: "grid", gridTemplateColumns: mobile ? "1fr" : "1fr 1fr", gap: 16, marginBottom: 20 },
     detalheItem: { background: "rgba(255,255,255,0.04)", borderRadius: 8, padding: 12 },
     detalheItemLabel: { fontSize: 10.5, color: "#71717a", textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 4 },
     detalheItemValue: { fontSize: 13, color: "#e4e4e7", fontWeight: 500 },
@@ -536,7 +545,27 @@ function AppPainel({ onSair, sessao }) {
                 {label}
                 <span style={{ fontSize: 11, color: "#62666d", fontWeight: 400 }}>({itens.length})</span>
               </div>
-              {aberto && itens.map(p => (
+              {aberto && itens.map(p => mobile ? (
+                // Mobile: tabela vira card empilhado - mesmo dado, layout vertical.
+                <div key={p.id} onClick={() => setProcessoSelecionado(p)}
+                  style={{ padding: "14px 16px", borderBottom: "1px solid rgba(255,255,255,0.04)", display: "flex", flexDirection: "column", gap: 10, cursor: "pointer" }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 8 }}>
+                    <div>
+                      <div style={s.company}>{p.empresa}</div>
+                      <div style={s.cnpj}>{subtituloProcesso(p)}</div>
+                    </div>
+                    <span style={{ ...s.badge(p.status), flexShrink: 0 }}>{STATUS_CONFIG[p.status]?.label || p.status}</span>
+                  </div>
+                  <div style={{ display: "flex", gap: 16, fontSize: 12, color: "#8a90b8" }}>
+                    <span>UF: <span style={{ color: "#d4d4d8" }}>{p.uf || "—"}</span></span>
+                    <span>Protocolo: <span style={{ color: "#d4d4d8", fontFamily: "monospace" }}>{p.numero_protocolo || "—"}</span></span>
+                  </div>
+                  <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                    <button style={{ ...s.btnVer, flex: 1 }} onClick={e => { e.stopPropagation(); setProcessoSelecionado(p); }}>Ver</button>
+                    <div onClick={e => e.stopPropagation()}><BotaoIatos processo={p} onAbrir={setIatosAberto} /></div>
+                  </div>
+                </div>
+              ) : (
                 <div key={p.id} style={s.row} onClick={() => setProcessoSelecionado(p)}>
                   <div>
                     <div style={s.company}>{p.empresa}</div>
@@ -1043,7 +1072,7 @@ async function excluirProcesso() {
       <link rel="preconnect" href="https://fonts.googleapis.com" />
       <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="" />
 
-      <div style={s.layout}>
+      <div style={{ ...s.layout, flexDirection: mobile ? "column" : "row" }}>
         <SidebarAtos
           onLogoClick={() => { setTela("processos"); setProcessoSelecionado(null); }}
           rodape={<div style={{ display: "inline-block", fontSize: 9.5, fontWeight: 700, color: "#6db2ff", background: "rgba(77,148,255,0.12)", border: "1px solid rgba(77,148,255,0.35)", borderRadius: 4, padding: "2px 7px", marginTop: 8, letterSpacing: 0.5 }}>ADMINISTRADOR</div>}
@@ -1176,16 +1205,20 @@ async function excluirProcesso() {
               </div>
 
               <div style={s.tableWrap}>
-                <div style={s.tableHead}>
-                  {["Empresa", "UF", "Ato", "Protocolo", "Status", ""].map((h, i) => (
-                    <div key={i} style={s.th}>{h}</div>
-                  ))}
+                <div style={mobile ? {} : s.tableScroll}>
+                  {!mobile && (
+                    <div style={s.tableHead}>
+                      {["Empresa", "UF", "Ato", "Protocolo", "Status", ""].map((h, i) => (
+                        <div key={i} style={s.th}>{h}</div>
+                      ))}
+                    </div>
+                  )}
+                  {processos.length === 0 ? (
+                    <div style={{ padding: "32px 16px", textAlign: "center", color: "#62666d", fontSize: 13 }}>
+                      Nenhum processo ainda. Clique em "Novo processo" para começar.
+                    </div>
+                  ) : <ListaProcessosAgrupada />}
                 </div>
-                {processos.length === 0 ? (
-                  <div style={{ padding: "32px 16px", textAlign: "center", color: "#62666d", fontSize: 13 }}>
-                    Nenhum processo ainda. Clique em "Novo processo" para começar.
-                  </div>
-                ) : <ListaProcessosAgrupada />}
               </div>
             </>
           )}

@@ -1,6 +1,29 @@
 import { useState, useEffect } from "react";
 import axios from "axios";
 
+// Breakpoints do redesign-visual-2026: mobile <768, tablet 768-1024, desktop
+// >1024. O projeto usa estilo inline em quase tudo (nao CSS classes) - reagir
+// a largura de tela via JS (em vez de @media + !important) mantem o mesmo
+// padrao do resto do codebase e evita brigar com a especificidade do inline
+// style (que sempre vence sobre classe, !important a parte).
+export function useBreakpoint() {
+  const calc = () => {
+    if (typeof window === "undefined") return "desktop";
+    const w = window.innerWidth;
+    if (w < 768) return "mobile";
+    if (w < 1024) return "tablet";
+    return "desktop";
+  };
+  const [bp, setBp] = useState(calc);
+  useEffect(() => {
+    function onResize() { setBp(calc()); }
+    window.addEventListener("resize", onResize);
+    return () => window.removeEventListener("resize", onResize);
+    /* eslint-disable-next-line */
+  }, []);
+  return bp;
+}
+
 export const STATUS_CONFIG = {
   recebido: { label: "Aberto", bg: "rgba(255,159,10,0.12)", color: "#ff9f0a", borda: "rgba(255,159,10,0.3)" },
   aberto: { label: "Aberto", bg: "rgba(255,159,10,0.12)", color: "#ff9f0a", borda: "rgba(255,159,10,0.3)" },
@@ -385,8 +408,54 @@ export const FONTE_CORPO = "'Plus Jakarta Sans', -apple-system, sans-serif";
 // Sidebar reutilizada por Cliente.js e App.js (admin) - so' os itens de
 // navegacao e o rodape (indicador de grupo vs. badge ADMINISTRADOR) mudam.
 export function SidebarAtos({ itens, rodape, onLogoClick }) {
+  const bp = useBreakpoint();
+  const mobile = bp === "mobile";
+  const [menuAberto, setMenuAberto] = useState(false);
+
+  const navBtnStyle = (it) => ({
+    padding: "9px 12px", borderRadius: 8, fontSize: 13, fontFamily: FONTE_CORPO,
+    color: it.disabled ? "#8b93b8" : (it.ativo ? "#b0dcff" : "#8b93b8"),
+    background: it.ativo ? "linear-gradient(90deg, rgba(77,148,255,0.28), rgba(0,212,255,0.1))" : "transparent",
+    borderLeft: it.ativo ? "2px solid #4d94ff" : "2px solid transparent",
+    boxShadow: it.ativo ? "0 0 24px rgba(77,148,255,0.2)" : "none",
+    border: "none", textAlign: "left", display: "flex", alignItems: "center", gap: 8,
+    cursor: it.disabled ? "default" : "pointer", opacity: it.disabled ? 0.35 : 1, width: "100%",
+  });
+
+  if (mobile) {
+    // Em telas <768px a sidebar vertical de 220px fixos nao cabe - vira uma
+    // barra horizontal compacta com o menu recolhido atras de um botao
+    // hamburguer, em vez de forcar 220px numa tela de ~375px.
+    return (
+      <div style={{ width: "100%", background: "linear-gradient(180deg,#0a0e2e 0%,#060810 100%)", borderBottom: "1px solid rgba(64,120,255,0.15)", position: "relative" }}>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "14px 16px" }}>
+          <div style={{ cursor: onLogoClick ? "pointer" : "default" }} onClick={() => { onLogoClick && onLogoClick(); setMenuAberto(false); }}>
+            <div style={{ fontFamily: FONTE_TITULO, fontSize: 18, fontWeight: 700, color: "#fff" }}>atos<span style={{ color: "#6db2ff", textShadow: "0 0 16px #4d94ff" }}>.</span></div>
+          </div>
+          <button onClick={() => setMenuAberto(a => !a)}
+            aria-label="Abrir menu"
+            style={{ background: "rgba(255,255,255,0.06)", border: "1px solid rgba(255,255,255,0.12)", borderRadius: 8, width: 36, height: 36, color: "#fff", fontSize: 16, cursor: "pointer" }}>
+            {menuAberto ? "✕" : "☰"}
+          </button>
+        </div>
+        {menuAberto && (
+          <div style={{ padding: "0 16px 16px" }}>
+            {rodape}
+            <nav style={{ display: "flex", flexDirection: "column", gap: 3, marginTop: 10 }}>
+              {itens.map((it, i) => (
+                <button key={i} onClick={it.disabled ? undefined : () => { it.onClick(); setMenuAberto(false); }} style={navBtnStyle(it)}>
+                  {it.icone}{it.label}
+                </button>
+              ))}
+            </nav>
+          </div>
+        )}
+      </div>
+    );
+  }
+
   return (
-    <div style={{ width: 220, background: "linear-gradient(180deg,#0a0e2e 0%,#060810 100%)", borderRight: "1px solid rgba(64,120,255,0.15)", padding: "24px 16px", position: "relative", overflow: "hidden", display: "flex", flexDirection: "column" }}>
+    <div style={{ width: 220, flexShrink: 0, background: "linear-gradient(180deg,#0a0e2e 0%,#060810 100%)", borderRight: "1px solid rgba(64,120,255,0.15)", padding: "24px 16px", position: "relative", overflow: "hidden", display: "flex", flexDirection: "column" }}>
       <div style={{ position: "absolute", top: -60, left: -60, width: 260, height: 260, background: "radial-gradient(circle, #4d94ff65 0%, transparent 70%)", filter: "blur(35px)" }} />
       <div style={{ position: "absolute", top: "40%", left: -50, width: 240, height: 240, background: "radial-gradient(circle, #00d4ff55 0%, transparent 70%)", filter: "blur(35px)" }} />
       <div style={{ position: "absolute", bottom: -80, left: -40, width: 260, height: 260, background: "radial-gradient(circle, #4d94ff60 0%, transparent 70%)", filter: "blur(35px)" }} />
@@ -398,16 +467,7 @@ export function SidebarAtos({ itens, rodape, onLogoClick }) {
       </div>
       <nav style={{ position: "relative", zIndex: 2, display: "flex", flexDirection: "column", gap: 3 }}>
         {itens.map((it, i) => (
-          <button key={i} onClick={it.disabled ? undefined : it.onClick}
-            style={{
-              padding: "9px 12px", borderRadius: 8, fontSize: 13, fontFamily: FONTE_CORPO,
-              color: it.disabled ? "#8b93b8" : (it.ativo ? "#b0dcff" : "#8b93b8"),
-              background: it.ativo ? "linear-gradient(90deg, rgba(77,148,255,0.28), rgba(0,212,255,0.1))" : "transparent",
-              borderLeft: it.ativo ? "2px solid #4d94ff" : "2px solid transparent",
-              boxShadow: it.ativo ? "0 0 24px rgba(77,148,255,0.2)" : "none",
-              border: "none", textAlign: "left", display: "flex", alignItems: "center", gap: 8,
-              cursor: it.disabled ? "default" : "pointer", opacity: it.disabled ? 0.35 : 1, width: "100%",
-            }}>
+          <button key={i} onClick={it.disabled ? undefined : it.onClick} style={navBtnStyle(it)}>
             {it.icone}
             {it.label}
           </button>
@@ -435,6 +495,8 @@ export function IconeAprendizado() {
 // com gradientes+glow (SVG) + legenda + grid de status-cards. idPrefix evita
 // colisao de ids de <defs> caso mais de um donut exista na mesma pagina.
 export function DonutStatusCard({ titulo, metricas, onClickStatus, idPrefix = "d" }) {
+  const bp = useBreakpoint();
+  const mobile = bp === "mobile";
   const total = metricas.total || 0;
   const tram = metricas.tramitacao || 0;
   const exig = metricas.exigencia || 0;
@@ -451,14 +513,24 @@ export function DonutStatusCard({ titulo, metricas, onClickStatus, idPrefix = "d
   ];
   let acumulado = 0;
   const clicavel = (chave) => onClickStatus ? { cursor: "pointer" } : {};
+  // Os 6 cards de status precisam ser QUADRADOS e, juntos, ocupar a mesma
+  // altura total do donut (180px, svg fixo) - por isso o grid usa tracks em
+  // pixel fixo (nao 1fr, que estica a celula pra preencher a coluna "1fr" do
+  // layout externo e vira retangulo gigante) em telas tablet/desktop. No
+  // mobile os cards abandonam o formato quadrado (auto-height, mais legivel)
+  // e o grid vira 2 colunas.
+  const CARD = 84; // (180 - gap) / 2 linhas
+  const gridCardsStyle = mobile
+    ? { display: "grid", gridTemplateColumns: "repeat(2,1fr)", gap: 10, width: "100%" }
+    : { display: "grid", gridTemplateColumns: `repeat(3, ${CARD}px)`, gridTemplateRows: `repeat(2, ${CARD}px)`, gap: 12 };
   return (
-    <div style={{ background: "radial-gradient(circle at 10% 0%, #1a1470 0%, #0e0e14 55%)", border: "1px solid rgba(140,90,255,0.35)", borderRadius: 22, padding: "28px 32px", marginBottom: 16, position: "relative", overflow: "hidden", fontFamily: FONTE_CORPO }}>
+    <div style={{ background: "radial-gradient(circle at 10% 0%, #1a1470 0%, #0e0e14 55%)", border: "1px solid rgba(140,90,255,0.35)", borderRadius: 22, padding: mobile ? "22px 18px" : "28px 32px", marginBottom: 16, position: "relative", overflow: "hidden", fontFamily: FONTE_CORPO }}>
       <div style={{ position: "absolute", top: "-30%", right: "-10%", width: 320, height: 320, background: "radial-gradient(circle, #7d3fff28, transparent 65%)", filter: "blur(24px)", pointerEvents: "none" }} />
       <div style={{ position: "relative", zIndex: 1, marginBottom: 24 }}>
-        <div style={{ fontFamily: FONTE_TITULO, fontSize: 24, fontWeight: 700, color: "#fff" }}>{titulo}</div>
+        <div style={{ fontFamily: FONTE_TITULO, fontSize: mobile ? 20 : 24, fontWeight: 700, color: "#fff" }}>{titulo}</div>
       </div>
-      <div style={{ position: "relative", zIndex: 1, display: "grid", gridTemplateColumns: "auto 1fr", gap: 36, alignItems: "stretch" }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 24 }}>
+      <div style={{ position: "relative", zIndex: 1, display: "flex", flexDirection: mobile ? "column" : "row", flexWrap: "wrap", gap: mobile ? 20 : 36, alignItems: mobile ? "stretch" : "flex-start" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 24, flexWrap: "wrap" }}>
           <svg width="180" height="180" viewBox="0 0 180 180">
             <defs>
               <filter id={`${idPrefix}Glow`} x="-80%" y="-80%" width="260%" height="260%"><feGaussianBlur stdDeviation="6.3" result="blur" /><feMerge><feMergeNode in="blur" /><feMergeNode in="blur" /><feMergeNode in="SourceGraphic" /></feMerge></filter>
@@ -503,7 +575,7 @@ export function DonutStatusCard({ titulo, metricas, onClickStatus, idPrefix = "d
             </div>
           </div>
         </div>
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gridTemplateRows: "repeat(2,1fr)", gap: 12 }}>
+        <div style={gridCardsStyle}>
           {[
             { lbl: "TOTAL", val: total, cor: "#fff", borda: "rgba(255,255,255,0.15)", bg: "rgba(255,255,255,0.06)", chave: "" },
             { lbl: "EM TRAMITAÇÃO", val: tram, cor: "#ff9f0a", borda: "rgba(255,159,10,0.3)", chave: "tramitacao" },
@@ -513,9 +585,14 @@ export function DonutStatusCard({ titulo, metricas, onClickStatus, idPrefix = "d
             { lbl: "FINALIZADOS", val: final, cor: "#00ffaa", borda: "rgba(0,255,170,0.3)", chave: "finalizado" },
           ].map((c, i) => (
             <div key={i} onClick={() => onClickStatus && onClickStatus(c.chave)}
-              style={{ background: c.bg || "rgba(255,255,255,0.04)", border: `1px solid ${c.borda}`, borderRadius: 14, padding: 14, display: "flex", flexDirection: "column", justifyContent: "center", aspectRatio: "1.15/1", ...clicavel(c.chave) }}>
+              style={{
+                background: c.bg || "rgba(255,255,255,0.04)", border: `1px solid ${c.borda}`, borderRadius: 14,
+                padding: mobile ? "12px 14px" : 14, display: "flex", flexDirection: "column", justifyContent: "center",
+                ...(mobile ? { minHeight: 74 } : { width: CARD, height: CARD }),
+                ...clicavel(c.chave),
+              }}>
               <div style={{ fontSize: 10, color: "#a8b0d8", marginBottom: 6 }}>{c.lbl}</div>
-              <div style={{ fontFamily: FONTE_TITULO, fontSize: 24, fontWeight: 700, color: c.cor }}>{c.val}</div>
+              <div style={{ fontFamily: FONTE_TITULO, fontSize: mobile ? 20 : 24, fontWeight: 700, color: c.cor }}>{c.val}</div>
             </div>
           ))}
         </div>
@@ -550,13 +627,15 @@ const KEYFRAMES_LANDING = `
 // visual pros dois, evitando divergencia entre eles. Campos usam Login (nao
 // E-mail) porque a autenticacao real e' por login/senha, nao por e-mail.
 export function TelaLogin({ subtitulo, erro, aviso, etapa, login, senha, codigo, carregando, onChangeLogin, onChangeSenha, onChangeCodigo, onEntrar, onVerificarCodigo, onVoltarEtapa }) {
+  const bp = useBreakpoint();
+  const mobile = bp === "mobile";
   const campoLabel = { fontSize: 12, color: "oklch(75% 0.03 250)", marginBottom: 6, display: "block", fontWeight: 600, fontFamily: FONTE_CORPO };
   const campoInput = { width: "100%", background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.12)", borderRadius: 10, padding: "12px 14px", color: "#fff", fontSize: 13.5, marginBottom: 18, fontFamily: FONTE_CORPO, outline: "none", boxSizing: "border-box" };
   const campoBtn = { width: "100%", background: "linear-gradient(120deg, oklch(65% 0.22 255), oklch(68% 0.2 210))", border: "none", borderRadius: 10, padding: 13, color: "#08070d", fontSize: 14, fontWeight: 700, fontFamily: FONTE_CORPO, boxShadow: "0 0 26px oklch(65% 0.22 255 / 0.4)", cursor: "pointer" };
   return (
-    <div style={{ display: "flex", minHeight: "100vh", color: "#e4e4e7", WebkitFontSmoothing: "antialiased", fontFamily: FONTE_CORPO }}>
+    <div style={{ display: "flex", flexDirection: mobile ? "column" : "row", minHeight: "100vh", color: "#e4e4e7", WebkitFontSmoothing: "antialiased", fontFamily: FONTE_CORPO }}>
       <style>{KEYFRAMES_LANDING}</style>
-      <div style={{ flex: 1.3, position: "relative", overflow: "hidden", background: "linear-gradient(165deg, #0a0e2e 0%, #060810 60%)", padding: "40px 56px", display: "flex", flexDirection: "column" }}>
+      <div style={{ flex: mobile ? "none" : 1.3, order: mobile ? 2 : 0, position: "relative", overflow: "hidden", background: "linear-gradient(165deg, #0a0e2e 0%, #060810 60%)", padding: mobile ? "28px 20px" : "40px 56px", display: "flex", flexDirection: "column" }}>
         <div className="atos-glow-1" style={{ position: "absolute", top: -90, left: -70, width: 360, height: 360, borderRadius: "50%", background: "radial-gradient(circle, oklch(65% 0.22 255 / 0.35), transparent 70%)", filter: "blur(10px)" }} />
         <div className="atos-glow-2" style={{ position: "absolute", bottom: "5%", left: "22%", width: 320, height: 320, borderRadius: "50%", background: "radial-gradient(circle, oklch(75% 0.17 195 / 0.22), transparent 70%)", filter: "blur(10px)" }} />
         <div className="atos-glow-3" style={{ position: "absolute", top: "25%", right: -70, width: 280, height: 280, borderRadius: "50%", background: "radial-gradient(circle, oklch(62% 0.24 300 / 0.28), transparent 70%)", filter: "blur(10px)" }} />
@@ -570,8 +649,8 @@ export function TelaLogin({ subtitulo, erro, aviso, etapa, login, senha, codigo,
         <p className="atos-subtext-block" style={{ position: "relative", zIndex: 1, fontSize: 13.5, color: "oklch(78% 0.03 250)", lineHeight: 1.55, maxWidth: 460, margin: "0 0 22px" }}>
           Do protocolo ao deferimento em qualquer Junta Comercial do Brasil — com IA acompanhando cada etapa por você.
         </p>
-        <div style={{ position: "relative", zIndex: 1, display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 12, flex: 1, minHeight: 200, minWidth: 0 }}>
-          <div className="atos-tile-a" style={{ minHeight: 0, minWidth: 0, background: "rgba(255,255,255,0.04)", border: "1px solid oklch(80% 0.22 145 / 0.3)", borderRadius: 20, padding: "22px 20px", display: "flex", flexDirection: "column", justifyContent: "flex-start", boxShadow: "0 0 22px oklch(80% 0.22 145 / 0.1)" }}>
+        <div style={{ position: "relative", zIndex: 1, display: "grid", gridTemplateColumns: mobile ? "1fr" : "repeat(3,1fr)", gap: 12, flex: mobile ? "none" : 1, minHeight: mobile ? 0 : 200, minWidth: 0 }}>
+          <div className="atos-tile-a" style={{ minHeight: 0, minWidth: 0, background: "rgba(255,255,255,0.04)", border: "1px solid oklch(80% 0.22 145 / 0.3)", borderRadius: 20, padding: "22px 20px", display: "flex", flexDirection: "column", justifyContent: "center", boxShadow: "0 0 22px oklch(80% 0.22 145 / 0.1)" }}>
             <div style={{ width: 39, height: 39, borderRadius: 10, background: "oklch(80% 0.22 145 / 0.18)", display: "flex", alignItems: "center", justifyContent: "center", marginBottom: 16, boxShadow: "0 0 18px oklch(80% 0.22 145 / 0.6), 0 0 34px oklch(80% 0.22 145 / 0.3)" }}>
               <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="oklch(85% 0.22 145)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 3v18h18" /><path d="M18 17V9" /><path d="M13 17V5" /><path d="M8 17v-3" /></svg>
             </div>
@@ -580,7 +659,7 @@ export function TelaLogin({ subtitulo, erro, aviso, etapa, login, senha, codigo,
               <div style={{ fontSize: 12.5, color: "oklch(70% 0.02 270)", lineHeight: 1.55 }}>Relatórios de processos gerados automaticamente, sua gestão societária organizada.</div>
             </div>
           </div>
-          <div className="atos-tile-b" style={{ minHeight: 0, minWidth: 0, background: "linear-gradient(135deg, oklch(30% 0.13 300 / 0.5), rgba(255,255,255,0.04))", border: "1px solid oklch(65% 0.24 300 / 0.35)", borderRadius: 20, padding: "22px 20px", display: "flex", flexDirection: "column", justifyContent: "flex-start", boxShadow: "0 0 22px oklch(65% 0.24 300 / 0.15)" }}>
+          <div className="atos-tile-b" style={{ minHeight: 0, minWidth: 0, background: "linear-gradient(135deg, oklch(30% 0.13 300 / 0.5), rgba(255,255,255,0.04))", border: "1px solid oklch(65% 0.24 300 / 0.35)", borderRadius: 20, padding: "22px 20px", display: "flex", flexDirection: "column", justifyContent: "center", boxShadow: "0 0 22px oklch(65% 0.24 300 / 0.15)" }}>
             <div style={{ width: 39, height: 39, borderRadius: 10, background: "oklch(75% 0.2 250)", display: "flex", alignItems: "center", justifyContent: "center", marginBottom: 16, boxShadow: "0 0 18px oklch(75% 0.2 250 / 0.9), 0 0 34px oklch(75% 0.2 250 / 0.5)" }}>
               <span style={{ fontFamily: "Georgia, serif", fontWeight: 700, fontSize: 18, color: "#08070d" }}>a.</span>
             </div>
@@ -589,7 +668,7 @@ export function TelaLogin({ subtitulo, erro, aviso, etapa, login, senha, codigo,
               <div style={{ fontSize: 12.5, color: "oklch(78% 0.05 300)", lineHeight: 1.55 }}>Assistente de IA para suporte em cada etapa do seu processo.</div>
             </div>
           </div>
-          <div className="atos-tile-e" style={{ minHeight: 0, minWidth: 0, background: "rgba(255,255,255,0.045)", border: "1px solid oklch(70% 0.2 250 / 0.25)", borderRadius: 20, padding: "22px 20px", display: "flex", flexDirection: "column", justifyContent: "flex-start", boxShadow: "0 0 30px oklch(70% 0.2 250 / 0.1)" }}>
+          <div className="atos-tile-e" style={{ minHeight: 0, minWidth: 0, background: "rgba(255,255,255,0.045)", border: "1px solid oklch(70% 0.2 250 / 0.25)", borderRadius: 20, padding: "22px 20px", display: "flex", flexDirection: "column", justifyContent: "center", boxShadow: "0 0 30px oklch(70% 0.2 250 / 0.1)" }}>
             <div style={{ width: 39, height: 39, borderRadius: 10, background: "oklch(70% 0.2 250 / 0.18)", display: "flex", alignItems: "center", justifyContent: "center", marginBottom: 16, boxShadow: "0 0 18px oklch(70% 0.2 250 / 0.6), 0 0 34px oklch(70% 0.2 250 / 0.3)" }}>
               <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="oklch(78% 0.2 250)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="9" /><path d="M12 7v5l3 3" /></svg>
             </div>
@@ -605,7 +684,7 @@ export function TelaLogin({ subtitulo, erro, aviso, etapa, login, senha, codigo,
           </div>
         </div>
       </div>
-      <div style={{ width: 440, background: "#0b0b0f", borderLeft: "1px solid rgba(255,255,255,0.06)", display: "flex", alignItems: "center", justifyContent: "center", padding: 40, position: "relative", overflow: "hidden" }}>
+      <div style={{ width: mobile ? "100%" : 440, order: mobile ? 1 : 0, background: "#0b0b0f", borderLeft: mobile ? "none" : "1px solid rgba(255,255,255,0.06)", borderBottom: mobile ? "1px solid rgba(255,255,255,0.06)" : "none", display: "flex", alignItems: "center", justifyContent: "center", padding: mobile ? "32px 20px" : 40, position: "relative", overflow: "hidden", boxSizing: "border-box" }}>
         <div style={{ position: "absolute", top: "-10%", right: "-20%", width: 300, height: 300, borderRadius: "50%", background: "radial-gradient(circle, oklch(65% 0.22 255 / 0.14), transparent 70%)" }} />
         <div className="atos-login-card-anim" style={{ position: "relative", width: "100%", maxWidth: 320, borderRadius: 22, background: "rgba(255,255,255,0.035)", border: "1px solid rgba(255,255,255,0.09)", padding: "32px 28px", boxShadow: "0 0 40px oklch(65% 0.22 255 / 0.1), 0 20px 50px rgba(0,0,0,0.4)" }}>
           <div style={{ fontFamily: FONTE_TITULO, fontSize: 21, fontWeight: 700, color: "#fff", marginBottom: 6 }}>Acessar plataforma</div>
@@ -701,7 +780,7 @@ export function PainelDownloadStatus({ processo, onBaixar }) {
   }
 
   return (
-    <div style={{ borderRadius: 16, padding: "20px 24px", marginBottom: 16, display: "flex", alignItems: "center", justifyContent: "space-between", background: c.bg, border: `1px solid ${c.borda}`, fontFamily: FONTE_CORPO }}>
+    <div style={{ borderRadius: 16, padding: "20px 24px", marginBottom: 16, display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 12, background: c.bg, border: `1px solid ${c.borda}`, fontFamily: FONTE_CORPO }}>
       <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
         <div style={{ width: 42, height: 42, borderRadius: 11, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, background: c.iconeBg }}>{icone}</div>
         <div>

@@ -1,5 +1,6 @@
 #!/bin/bash
 DB="/root/atos/backend/mane.db"
+DB_PRODUCAO="/root/atos/backend/mane.db"
 BKP_DIR="/root/atos/backups"
 ADMIN="diogo@realpublicidade.com.br"
 if ! command -v sqlite3 >/dev/null 2>&1; then
@@ -23,12 +24,12 @@ STATUS="SEM BACKUP - intervencao manual"
 if [ -n "$ULTIMO_ENC" ] && [ -n "$CRYPT_KEY" ]; then
     openssl enc -d -aes-256-cbc -pbkdf2 -in "$ULTIMO_ENC" -pass pass:"$CRYPT_KEY" 2>/dev/null | gunzip -c > "$DB" 2>/dev/null
     if [ -s "$DB" ]; then
-        systemctl restart atos-backend
+        if [ "$DB" = "$DB_PRODUCAO" ]; then systemctl restart atos-backend; fi
         STATUS="RESTAURADO de $ULTIMO_ENC (cifrado)"
     fi
 elif [ -n "$ULTIMO_GZ" ]; then
     gunzip -c "$ULTIMO_GZ" > "$DB"
-    systemctl restart atos-backend
+    if [ "$DB" = "$DB_PRODUCAO" ]; then systemctl restart atos-backend; fi
     STATUS="RESTAURADO de $ULTIMO_GZ"
 fi
 cd /root/atos/backend

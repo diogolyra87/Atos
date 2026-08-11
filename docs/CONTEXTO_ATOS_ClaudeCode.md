@@ -19,7 +19,7 @@ Papel LGPD: o ATOS é **operador** de dados (trata em nome dos clientes, que sã
 - **Frontend:** React, servido por nginx em `/var/www/atos/`. Fonte no PC: `D:\Mane\frontend\src\App.js` (admin) e `Cliente.js` (cliente).
 - **Banco:** SQLite em `/root/atos/backend/mane.db`. Documentos em `/root/atos/backend/uploads/`.
 - **Git:** repo `github.com/diogolyra87/Atos.git`. Fluxo: commits saem do **PC** (`D:\Mane\`); o **servidor** só faz `git pull`. Servidor NÃO faz push.
-- **Serviços systemd ativos:** `atos-backend` (API), `atos-bot` (bot Telegram, polling), `atos-sla.timer` (monitor SLA a cada 30min).
+- **Serviços systemd ativos:** `atos-backend` (API), `atos-bot` (bot Telegram, polling), `atos-sla.timer` (monitor SLA a cada 30min), `atos-consulta.timer` (consulta automática de status SP/RJ, 7x/dia — ver nota de timeout na seção 3), `atos-backup.timer` (backup cifrado do banco, **de hora em hora**), `atos-check.timer` (verificação de integridade do banco, **de hora em hora** — auto-restaura do backup mais recente se detectar corrupção; ver incidente abaixo).
 
 ### Regras de trabalho importantes
 - **Segredos NUNCA no chat.** Ficam só em `/root/atos/.env` (chmod 600). Se precisar de uma senha/chave nova, gerar/colar direto no `.env` do servidor, sem exibir. Se vazar, rotacionar imediatamente.
@@ -27,6 +27,21 @@ Papel LGPD: o ATOS é **operador** de dados (trata em nome dos clientes, que sã
 - Deploy do frontend: `npm run build` no PC → `scp` do JS + index.html pro servidor → remover JS antigo.
 - Alinhar servidor após push: `cd /root/atos && git stash && git pull && git stash drop && systemctl restart atos-backend`. (Se houver arquivo novo "untracked" que conflita, `rm` o arquivo no servidor antes do pull — a versão do Git é idêntica.)
 - Testar import com o venv e `.env` carregado: `cd /root/atos/backend && /root/atos/venv/bin/python -c "from dotenv import load_dotenv; load_dotenv('/root/atos/.env'); import main; print('import ok')"`.
+
+### ⚠️ Incidente: teste do check_db.sh reiniciou atos-backend em produção sem querer (11/08/2026)
+
+Durante o levantamento pré-rename do `mane.db` (parte de um rename Mane→Iatos que **não** mexe nesse arquivo ainda — só planejamento), rodei um teste-baseline do `check_db.sh` (script de auto-restore de corrupção) contra uma cópia isolada (`/root/atos/TESTE-corrupcao.db`, nunca o banco real). O teste funcionou tecnicamente (detectou a corrupção proposital, achou o backup certo, restaurou o arquivo de teste em ~3s), mas teve um efeito colateral não previsto: **`check_db.sh` chamava `systemctl restart atos-backend` de forma incondicional**, disparando mesmo quando o banco verificado era o arquivo de teste, não o `mane.db` real. Resultado: o `atos-backend` de produção reiniciou de verdade às 14:10:01, sem essa ação ter sido autorizada especificamente.
+
+**Verificação de impacto (evidência, não suposição):**
+- `mane.db` real nunca foi sobrescrito — prova: o registro mais recente em `audit_logs` no momento do teste (14:04:21) é **posterior** ao backup usado na restauração (14:00) e continuou presente depois; se o banco real tivesse sido restaurado, esse registro teria sumido.
+- O arquivo "corrompido preservado" (`CORROMPIDO-20260811-141000.db`) foi inspecionado byte a byte: estrutura normal de SQLite até o offset 5120, ruído aleatório puro exatamente até o offset 9216, estrutura normal depois — bate exatamente com os parâmetros do comando `dd` usado no teste (não é corrupção real/independente).
+- Nenhum request de cliente foi afetado: log do nginx mostra o último request antes do restart às 14:09:40 e o próximo às 14:10:13 (janela de 20s sem tráfego); log do `atos-backend` mostra shutdown gracioso (`Waiting for application shutdown` → `Application shutdown complete`), não um kill forçado.
+
+**Causa raiz:** o restart não era condicionado a qual banco (`$DB`) estava sendo checado.
+
+**Correção aplicada:** adicionada variável `DB_PRODUCAO="/root/atos/backend/mane.db"` e os dois `systemctl restart atos-backend` agora só disparam `if [ "$DB" = "$DB_PRODUCAO" ]`. Já implantado em `/root/atos/check_db.sh` (backup do original preservado em `check_db.sh.bak.20260811_142404`) e commitado no repo (`scripts/check_db.sh`, antes disso o arquivo nunca tinha sido versionado — ver seção sobre `mane.db` abaixo). Re-testado depois da correção: rodada completa de corrupção+restauração no arquivo de teste, `atos-backend` confirmado **sem restart** (`ActiveEnterTimestamp` inalterado antes/depois do teste).
+
+**Lição para o rename do `mane.db` (Categoria C, ainda não autorizado):** qualquer script que aja sobre "o banco verificado" só pode disparar efeitos em produção (restart de serviço, etc.) quando o caminho verificado é literalmente o caminho de produção — nunca assumir isso implicitamente por só existir um único uso hoje.
 
 ---
 
@@ -41,6 +56,16 @@ Arquivo: **`/root/atos/backend/atualizar_status.py`** (existe também uma cópia
 - As credenciais das Juntas ficam no `.env`.
 
 **Estude o fluxo RJ (JUCERJA) neste arquivo — ele é o modelo mais próximo do que vamos fazer, pois também é login + consulta por protocolo.**
+
+### ⚠️ Ajuste de TimeoutStartSec (11/08/2026) — remendo, não solução definitiva
+
+O serviço `atos-consulta.service` (unit em `/etc/systemd/system/atos-consulta.service`, dispara via `atos-consulta.timer`) passou a falhar **toda execução** com `Result: timeout` a partir de ~10/08/2026. Diagnóstico via `journalctl -u atos-consulta.service`: não era hCaptcha, credencial expirada, API (Gemini) ou disco/memória — era volume de trabalho puro. O script consulta cada processo (SP + RJ) sequencialmente via Playwright, ~19-30s por processo; com a base de clientes atual isso soma ~64 processos por execução (~20-25min necessários), acima do `TimeoutStartSec=900` (15min) original — o systemd matava o processo (SIGTERM) antes de terminar, toda vez.
+
+Antes de aumentar o timeout, confirmamos (via `man systemd.timer` no próprio servidor, não suposição) que não há risco de sobreposição: *"in case the unit to activate is already active at the time the timer elapses it is not restarted, but simply left running"* — o systemd nunca inicia uma segunda instância do mesmo service enquanto a anterior ainda roda.
+
+Aumentado para `TimeoutStartSec=2400` (40min) em 11/08/2026, direto no servidor (esse unit file não é versionado no Git — não faz parte do repo do app).
+
+**Isso é um remendo, não a solução definitiva.** Se o volume de processos continuar crescendo com a base de clientes, esse timeout pode precisar subir de novo. A solução definitiva seria paralelizar as consultas (ou de outra forma parar de depender de rodar tudo sequencial numa janela crescente). Se `atos-consulta.service` voltar a falhar com `Result: timeout`, é esse mesmo problema — revisar o volume atual antes de simplesmente aumentar o número de novo.
 
 ---
 

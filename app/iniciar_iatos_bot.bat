@@ -1,3 +1,3 @@
 @echo off
 cd /d D:\Mane\app
-python mane.py
+python iatos_bot.py

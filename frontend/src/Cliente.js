@@ -36,11 +36,11 @@ export default function Cliente() {
   const [etapa, setEtapa] = useState(1);
   const [codigo, setCodigo] = useState("");
   const [sessao, setSessao] = useState(() => {
-    try { const s = localStorage.getItem("mane_sessao"); return s ? JSON.parse(s) : null; } catch { return null; }
+    try { const s = localStorage.getItem("atos_sessao"); return s ? JSON.parse(s) : null; } catch { return null; }
   });
 
-  function salvarSessao(d) { try { localStorage.setItem("mane_sessao", JSON.stringify(d)); } catch {} setSessao(d); }
-  function limparSessao() { try { localStorage.removeItem("mane_sessao"); } catch {} setSessao(null); setSenha(""); }
+  function salvarSessao(d) { try { localStorage.setItem("atos_sessao", JSON.stringify(d)); } catch {} setSessao(d); }
+  function limparSessao() { try { localStorage.removeItem("atos_sessao"); } catch {} setSessao(null); setSenha(""); }
 
   async function cadastrar() {
     setErro(""); setAviso("");

@@ -510,7 +510,7 @@ def notificar_tramitacao_cliente(db, p, status_antes):
     """Avisa o cliente por email quando o processo entra em tramitacao.
     Se so tiver o numero do protocolo, notifica so com o numero no corpo (sem anexo).
     Se tiver o pdf do protocolo, notifica com numero + anexo + aviso de protocolo em anexo.
-    Compartilhada entre PATCH manual, upload de arquivo (Trocar/Salvar) e o Mane via
+    Compartilhada entre PATCH manual, upload de arquivo (Trocar/Salvar) e o Iatos Bot via
     Telegram, para nunca faltar aviso dependendo de qual caminho foi usado."""
     if (status_antes or "").lower() == "tramitacao" or (p.status or "").lower() != "tramitacao":
         return

@@ -63,7 +63,7 @@ CONHECIMENTO_REGISTRO = carregar_conhecimento()
 # ============================================================
 client = OpenAI(api_key=DEEPSEEK_KEY, base_url="https://api.deepseek.com")
 
-SYSTEM_MANE = """VocÃª Ã© o ManÃ©, assistente virtual pessoal e executivo especializado em registro empresarial na Junta Comercial.
+SYSTEM_IATOS_BOT = """VocÃª Ã© o Iatos Bot, assistente virtual pessoal e executivo especializado em registro empresarial na Junta Comercial.
 
 VocÃª tem conhecimento completo dos Manuais de Registro de Sociedade AnÃ´nima e de Ltda do DREI, e atua como suporte ao processo de registro de atas e alteraÃ§Ãµes contratuais nas Juntas Comerciais brasileiras, com foco no Rio de Janeiro (JUCERJ).
 
@@ -212,7 +212,7 @@ historico_conversa = []
 def perguntar_ai(mensagem):
     global historico_conversa
     contexto = f"\n\nCONHECIMENTO BASE DE REGISTRO:\n{json.dumps(CONHECIMENTO_REGISTRO, ensure_ascii=False)[:3000]}"
-    mensagens = [{"role": "system", "content": SYSTEM_MANE + contexto}]
+    mensagens = [{"role": "system", "content": SYSTEM_IATOS_BOT + contexto}]
     mensagens += historico_conversa[-10:]
     mensagens.append({"role": "user", "content": mensagem})
     try:
@@ -588,7 +588,7 @@ def processar_mensagem(texto, chat_id):
             corpo = (
                 f"Ola,\n\nVoce foi convidado a acessar o sistema do grupo {grupo.nome}.\n\n"
                 f"Para criar seu login e senha, acesse o link abaixo:\n{link}\n\n"
-                f"Apos o cadastro, voce podera acompanhar e baixar seus documentos.\n\nMane"
+                f"Apos o cadastro, voce podera acompanhar e baixar seus documentos.\n\nIatos Bot"
             )
             enviou = enviar_email(email_cliente, f"Acesso ao sistema - {grupo.nome}", corpo)
             if enviou:

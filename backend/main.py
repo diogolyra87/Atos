@@ -904,11 +904,14 @@ def cadastro(dados: dict, db: Session = Depends(get_db)):
     codigo_grupo = (dados.get("codigo_grupo") or "").strip()
     login = (dados.get("login") or "").strip()
     senha = dados.get("senha") or ""
+    email = (dados.get("email") or "").strip().lower()
 
-    if not codigo_grupo or not login or not senha:
-        raise HTTPException(status_code=400, detail="codigo_grupo, login e senha sao obrigatorios")
+    if not codigo_grupo or not login or not senha or not email:
+        raise HTTPException(status_code=400, detail="codigo_grupo, login, senha e email sao obrigatorios")
     if len(senha) < 6:
         raise HTTPException(status_code=400, detail="A senha deve ter pelo menos 6 caracteres")
+    if "@" not in email or "." not in email.split("@")[-1]:
+        raise HTTPException(status_code=400, detail="Informe um email valido")
 
     grupo = db.query(Grupo).filter(Grupo.codigo == codigo_grupo).first()
     if not grupo:
@@ -923,6 +926,7 @@ def cadastro(dados: dict, db: Session = Depends(get_db)):
         id=str(uuid.uuid4()),
         login=login,
         senha_hash=senha_hash,
+        email=email,
         grupo_id=grupo.id
     )
     db.add(novo)
@@ -1003,6 +1007,34 @@ def login_verificar(dados: dict, request: Request, db: Session = Depends(get_db)
         "is_admin": bool(usuario.is_admin),
     }
 
+
+def enviar_redefinicao_senha_email(usuario, email_destino, token):
+    link = BASE_URL_SISTEMA + "/criar-senha?token=" + token
+    corpo = (
+        "Ola, " + (usuario.nome or usuario.login) + "!" + chr(10) + chr(10) +
+        "Recebemos um pedido para redefinir a senha da sua conta Atos (login: " + usuario.login + ")." + chr(10) + chr(10) +
+        "Clique no link abaixo para criar uma nova senha (valido por " + str(TOKEN_CONVITE_VALIDADE_HORAS) + " horas):" + chr(10) + link + chr(10) + chr(10) +
+        "Se voce nao pediu essa redefinicao, ignore este email - sua senha atual continua valida."
+    )
+    return enviar_email(email_destino, "Redefinir senha - Atos", corpo)
+
+
+@app.post("/esqueci-senha")
+def esqueci_senha(dados: dict, request: Request, db: Session = Depends(get_db)):
+    ip = obter_ip(request) or "desconhecido"
+    if not _checar_rate_login(ip):
+        raise HTTPException(status_code=429, detail="Muitas tentativas. Tente novamente em alguns minutos.")
+    _registrar_falha_login(ip)
+    login = (dados.get("login") or "").strip()
+    if not login:
+        raise HTTPException(status_code=400, detail="Informe o login")
+    usuario = db.query(Usuario).filter(Usuario.login == login).first()
+    if usuario:
+        email_destino = email_do_usuario(db, usuario)
+        if email_destino:
+            token = gerar_convite(db, usuario, horas_validade=2)
+            enviar_redefinicao_senha_email(usuario, email_destino, token)
+    return {"mensagem": "Se o login existir, enviamos um link de redefinicao de senha para o email cadastrado."}
 
 
 
@@ -2848,6 +2880,43 @@ def criar_grupo(dados: dict, background: BackgroundTasks, x_token: str = Header(
         "codigo": codigo,
         "emails_enviados": enviados,
         "emails_falharam": falharam,
+        "link": link
+    }
+
+
+@app.post("/grupos/{grupo_id}/adicionar-email")
+def adicionar_email_grupo(grupo_id: str, dados: dict, background: BackgroundTasks, x_token: str = Header(None), db: Session = Depends(get_db)):
+    """Adiciona um novo e-mail de acesso a um grupo JA existente e dispara o
+    mesmo e-mail de convite ('Criar meu acesso') usado na criacao do grupo.
+    Cobre o caso que /grupos/criar nao cobre: convidar alguem novo para um
+    grupo que ja existe (antes so dava pra fazer isso editando o banco na mao,
+    sem nunca disparar o e-mail de convite de verdade)."""
+    if not x_token:
+        raise HTTPException(status_code=401, detail="Token necessario")
+    usuario = validar_token(x_token, db)
+    requer_acesso_admin(usuario)
+
+    email = (dados.get("email") or "").strip()
+    if not email:
+        raise HTTPException(status_code=400, detail="Informe o email")
+
+    grupo = db.query(Grupo).filter(Grupo.id == grupo_id).first()
+    if not grupo:
+        raise HTTPException(status_code=404, detail="Grupo nao encontrado")
+
+    ja = db.query(EmailGrupo).filter(EmailGrupo.email == email, EmailGrupo.grupo_id == grupo.id).first()
+    if not ja:
+        db.add(EmailGrupo(id=str(uuid.uuid4()), email=email, grupo_id=grupo.id))
+        db.commit()
+
+    link = f"{BASE_URL_SISTEMA}/cliente?grupo={grupo.codigo}"
+    background.add_task(_disparar_convites, grupo.nome, link, [email])
+
+    return {
+        "mensagem": "Email adicionado e convite enviado",
+        "grupo": grupo.nome,
+        "codigo": grupo.codigo,
+        "email": email,
         "link": link
     }
 

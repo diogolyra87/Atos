@@ -67,7 +67,15 @@ def verificar_saude_cron_consulta():
             print("erro lendo heartbeat do cron de consulta:", e)
             idade_horas = None
 
-    parado = idade_horas is None or idade_horas >= LIMITE_HORAS_SEM_RODAR
+    # atos-consulta.timer so roda em horario comercial (08h-20h, 7x/dia) -
+    # o gap noturno de ~12h entre a ultima rodada (20h) e a primeira do dia
+    # seguinte (08h) e' esperado, nao e' o cron parado. Sem esse filtro de
+    # horario, o heartbeat sempre fica mais velho que LIMITE_HORAS_SEM_RODAR
+    # toda madrugada e dispara alerta falso, todo santo dia, ate' a rodada
+    # das 08h "resolver" sozinho. So considerar "parado" de fato dentro da
+    # janela em que o timer deveria estar rodando.
+    DENTRO_HORARIO_COMERCIAL = 8 <= AGORA.hour < 21
+    parado = (idade_horas is None or idade_horas >= LIMITE_HORAS_SEM_RODAR) and DENTRO_HORARIO_COMERCIAL
     ja_alertado = os.path.exists(FLAG_ALERTA_CRON)
 
     if parado and not ja_alertado:

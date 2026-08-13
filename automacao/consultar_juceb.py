@@ -14,6 +14,14 @@ def classificar_status_ba(status_texto):
     s = _norm(status_texto)
     if "EXIGENCIA" in s:
         return "exigencia"
+    if "INDEFERIDO" in s:
+        # Checar antes de "DEFERIDO" - "DEFERIDO" in s tambem da match
+        # dentro de "INDEFERIDO" (substring), o que classificava um
+        # indeferimento (processo rejeitado) como se fosse aprovado. Nenhuma
+        # UF tem fluxo proprio pra indeferimento hoje (nem RJ, nem PE) -
+        # cai em tramitacao (sem marcar deferido, sem novo email ao cliente)
+        # em vez de inventar um estado novo sem consumidor no resto do sistema.
+        return "tramitacao"
     if "FINALIZADO" in s or "DEFERIDO" in s:
         return "deferido"
     if "TRAMITACAO" in s:

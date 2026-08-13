@@ -1,8 +1,5 @@
 ﻿# -*- coding: utf-8 -*-
 import sys, os, re
-import smtplib
-from email.mime.multipart import MIMEMultipart
-from email.mime.text import MIMEText
 from datetime import datetime, timedelta
 from dotenv import load_dotenv
 
@@ -10,7 +7,8 @@ sys.path.insert(0, "/root/atos/backend")
 sys.path.insert(0, "/root/atos/automacao")
 from database import SessionLocal, Processo, Grupo, EmailGrupo
 sys.path.insert(0, "/root/atos/backend")
-from main import corpo_status_cliente, enviar_email_anexo, emails_do_grupo, UPLOADS_DIR, recalcular_status, emails_admin, notificar_exigencia_cliente, _email_status_html, _empresa_linha, _email_finalizado
+from main import corpo_status_cliente, enviar_email, emails_do_grupo, UPLOADS_DIR, recalcular_status, emails_admin, notificar_exigencia_cliente, _email_status_html, _empresa_linha, _email_finalizado, notificar_cliente_processo, UFS_EMAIL_AUTOMATICO_SUSPENSO
+from nomenclatura import aplicar_nomenclatura_junta
 from consultar_jucesp import consultar
 from jucesp_infosimples import baixar_documento as baixar_documento_infosimples_sp
 from consultar_jucerja import consultar_jucerja, classificar_status_rj, baixar_documento_jucerja
@@ -21,12 +19,6 @@ from bot import enviar as enviar_telegram, ADMIN_CHAT_ID
 import json as _json
 
 load_dotenv("/root/atos/.env")
-
-EMAIL_USER = os.getenv("EMAIL_USER")
-EMAIL_FROM = os.getenv("EMAIL_FROM") or EMAIL_USER
-EMAIL_PASS = os.getenv("EMAIL_PASS")
-EMAIL_HOST = os.getenv("EMAIL_HOST", "mail.realpublicidade.com.br")
-EMAIL_PORT_SMTP = int(os.getenv("EMAIL_PORT_SMTP", "587"))
 
 INFOSIMPLES_TOKEN = os.getenv("INFOSIMPLES_TOKEN")
 INFOSIMPLES_CPF = os.getenv("INFOSIMPLES_CPF")
@@ -39,17 +31,6 @@ JUCEB_SENHA = os.getenv("JUCEB_SENHA")
 
 EMAIL_ADMIN = os.getenv("ADMIN_EMAIL")
 
-def aplicar_nomenclatura_junta(nome_base):
-    """Regra padrao de nomenclatura para documentos de registro baixados
-    automaticamente das Juntas Comerciais (RJ, BA, PE, e futuras). Se o nome
-    contiver 'Sec-Manifesto', troca por 'Sec-Junta'. Caso contrario, adiciona
-    '-Junta' antes da extensao. Aplicada uma unica vez, usada tanto no
-    salvamento do arquivo quanto no nome do anexo enviado por email - qualquer
-    automacao nova que reutilizar essa funcao ja herda a regra automaticamente."""
-    if "Sec-Manifesto" in nome_base:
-        return nome_base.replace("Sec-Manifesto", "Sec-Junta")
-    nome, ext = os.path.splitext(nome_base)
-    return nome + "-Junta" + ext
 BASE_URL = "https://atos.net.br"
 
 INTERVALO_NORMAL = timedelta(hours=24)
@@ -62,31 +43,6 @@ def enviar_email_admin_todos(db, assunto, corpo):
     main.py, reaproveitada aqui pra nao duplicar quem recebe."""
     for destinatario in emails_admin(db):
         enviar_email(destinatario, assunto, corpo)
-
-
-def enviar_email(destinatario, assunto, corpo, corpo_html=None):
-    try:
-        msg = MIMEMultipart("alternative")
-        msg["From"] = "Atos - Gestao Societaria <%s>" % EMAIL_FROM
-        msg["To"] = destinatario
-        msg["Subject"] = assunto
-        msg.attach(MIMEText(corpo, "plain"))
-        try:
-            if not corpo_html:
-                from main import envolver_html
-                corpo_html = envolver_html(corpo)
-            msg.attach(MIMEText(corpo_html, "html"))
-        except Exception as _e:
-            print("   [aviso html]:", _e)
-        server = smtplib.SMTP(EMAIL_HOST, EMAIL_PORT_SMTP)
-        server.starttls()
-        server.login(EMAIL_USER, EMAIL_PASS)
-        server.send_message(msg)
-        server.quit()
-        return True
-    except Exception as e:
-        print("   [ERRO email para", destinatario, "]:", e)
-        return False
 
 
 def emails_do_grupo(db, grupo_id):
@@ -139,20 +95,20 @@ def aplicar_classificacao(db, p, classificacao, agora):
             p.deferido_em = agora
             db.commit()
             enviar_email_admin_todos(db, "[Atos] Deferido - " + str(p.empresa), corpo_admin(p, "Deferido") + "\n\nAguardando a Junta Comercial disponibilizar o Registro.")
-            # SUSPENSO 30/07/2026: e-mail ao cliente da automacao JUCESP (SP)
-            # desativado por decisao explicita, ate revisao do fluxo de
-            # documento (ver aplicar_nomenclatura_junta / processar_sp).
-            # Admin continua sendo avisado normalmente acima.
-            if not p.avisado_deferido and (p.uf or "").upper() != "SP":
+            if not p.avisado_deferido:
                 _frase_deferido = "Seu processo foi aprovado, aguardando a Junta Comercial disponibilizar o Registro."
                 _corpo_deferido = corpo_status_cliente(p, "Deferido", _frase_deferido)
                 _corpo_html_deferido = _email_status_html("deferido", "Deferido", "Seu Processo foi Deferido", _empresa_linha(p),
                                                             protocolo=p.numero_protocolo or None, nota_tipo="aguardando", nota_texto=_frase_deferido)
-                for em in emails_do_grupo(db, p.grupo_id):
-                    enviar_email(em, "Atualizacao do seu processo - " + str(p.empresa), _corpo_deferido, _corpo_html_deferido)
-                p.avisado_deferido = True
-                db.commit()
-            print("   -> mudou para DEFERIDO + alertou admin" + (" (cliente suspenso - SP)" if (p.uf or "").upper() == "SP" else " e cliente"))
+                # avisado_deferido so avanca em envio confirmado (>=1
+                # destinatario recebeu) - antes era setado incondicionalmente,
+                # entao uma falha de envio nunca era repetida nem sinalizada.
+                # Suprimido (UFS_EMAIL_AUTOMATICO_SUSPENSO) continua tentando
+                # a cada consulta, visivel via p.email_status="pendente_revisao".
+                if notificar_cliente_processo(db, p, "deferido", "Atualizacao do seu processo - " + str(p.empresa), _corpo_deferido, _corpo_html_deferido):
+                    p.avisado_deferido = True
+                    db.commit()
+            print("   -> mudou para DEFERIDO + alertou admin" + (" (cliente suspenso - " + (p.uf or "") + ")" if (p.uf or "").upper() in UFS_EMAIL_AUTOMATICO_SUSPENSO else " e cliente"))
         else:
             if precisa_alertar(p, agora):
                 p.ultimo_alerta_em = agora
@@ -245,9 +201,9 @@ def processar_sp(db, agora):
                         if p.status == "finalizado":
                             try:
                                 corpo, corpo_html = _email_finalizado(p)
-                                destinatarios = set(emails_do_grupo(db, p.grupo_id)) | set(emails_admin(db))
-                                for em in destinatarios:
-                                    enviar_email_anexo(em, "Processo Finalizado - " + (p.empresa or ""), corpo, caminho, nome_arquivo, corpo_html=corpo_html)
+                                destinatarios = list(set(emails_do_grupo(db, p.grupo_id)) | set(emails_admin(db)))
+                                notificar_cliente_processo(db, p, "registro", "Processo Finalizado - " + (p.empresa or ""), corpo, corpo_html,
+                                                            anexo_caminho=caminho, anexo_nome=nome_arquivo, destinatarios=destinatarios)
                                 print("   [SP] e-mail de finalizacao enviado (cliente + administradores).")
                             except Exception as e:
                                 print("   [SP] erro ao enviar e-mail de finalizacao:", e)
@@ -302,9 +258,9 @@ def processar_sp_registro_sem_protocolo(db, agora):
                 if p.status == "finalizado":
                     try:
                         corpo, corpo_html = _email_finalizado(p)
-                        destinatarios = set(emails_do_grupo(db, p.grupo_id)) | set(emails_admin(db))
-                        for em in destinatarios:
-                            enviar_email_anexo(em, "Processo Finalizado - " + (p.empresa or ""), corpo, caminho, nome_arquivo, corpo_html=corpo_html)
+                        destinatarios = list(set(emails_do_grupo(db, p.grupo_id)) | set(emails_admin(db)))
+                        notificar_cliente_processo(db, p, "registro", "Processo Finalizado - " + (p.empresa or ""), corpo, corpo_html,
+                                                    anexo_caminho=caminho, anexo_nome=nome_arquivo, destinatarios=destinatarios)
                         print("   e-mail de finalizacao enviado (cliente + administradores).")
                     except Exception as e:
                         print("   erro ao enviar e-mail de finalizacao:", e)
@@ -355,8 +311,8 @@ def processar_rj(db, agora):
                     if p.status == "finalizado":
                         try:
                             corpo, corpo_html = _email_finalizado(p)
-                            for em in emails_do_grupo(db, p.grupo_id):
-                                enviar_email_anexo(em, "Processo Finalizado - " + (p.empresa or ""), corpo, caminho, nome_arquivo, corpo_html=corpo_html)
+                            notificar_cliente_processo(db, p, "registro", "Processo Finalizado - " + (p.empresa or ""), corpo, corpo_html,
+                                                        anexo_caminho=caminho, anexo_nome=nome_arquivo)
                             print("   [RJ] e-mail de finalizacao enviado.")
                         except Exception as e:
                             print("   [RJ] erro ao enviar e-mail de finalizacao:", e)
@@ -406,8 +362,8 @@ def processar_ba(db, agora):
                     if p.status == "finalizado":
                         try:
                             corpo, corpo_html = _email_finalizado(p)
-                            for em in emails_do_grupo(db, p.grupo_id):
-                                enviar_email_anexo(em, "Processo Finalizado - " + (p.empresa or ""), corpo, caminho, nome_arquivo, corpo_html=corpo_html)
+                            notificar_cliente_processo(db, p, "registro", "Processo Finalizado - " + (p.empresa or ""), corpo, corpo_html,
+                                                        anexo_caminho=caminho, anexo_nome=nome_arquivo)
                             print("   [BA] e-mail de finalizacao enviado.")
                         except Exception as e:
                             print("   [BA] erro ao enviar e-mail de finalizacao:", e)
@@ -459,8 +415,8 @@ def processar_pe(db, agora):
                     if p.status == "finalizado":
                         try:
                             corpo, corpo_html = _email_finalizado(p)
-                            for em in emails_do_grupo(db, p.grupo_id):
-                                enviar_email_anexo(em, "Processo Finalizado - " + (p.empresa or ""), corpo, caminho, nome_arquivo, corpo_html=corpo_html)
+                            notificar_cliente_processo(db, p, "registro", "Processo Finalizado - " + (p.empresa or ""), corpo, corpo_html,
+                                                        anexo_caminho=caminho, anexo_nome=nome_arquivo)
                             print("   [PE] e-mail de finalizacao enviado.")
                         except Exception as e:
                             print("   [PE] erro ao enviar e-mail de finalizacao:", e)

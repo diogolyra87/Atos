@@ -43,6 +43,12 @@ class Usuario(Base):
     # sempre teve senha definida pelo fluxo antigo (cliente via /cadastro).
     token_convite = Column(String, nullable=True)
     convite_expira_em = Column(DateTime, nullable=True)
+    # Plano da conta: None = conta de Grupo tradicional (criada por admin, sem
+    # limite de plano). "free" = Usuario Individual auto-cadastrado via
+    # /solicitar-acesso (ver main.py) - bloqueado de iatos e consulta
+    # automatica as Juntas. Futuros planos pagos usam esse mesmo campo
+    # ("pro", "premium").
+    plano = Column(String, nullable=True)
     criado_em = Column(DateTime, default=datetime.now)
 
 class EmailGrupo(Base):
@@ -69,6 +75,11 @@ class Anexo(Base):
     processo_id = Column(String, nullable=False)
     arquivo = Column(String, nullable=False)
     nome_original = Column(String)
+    # Nome de exibicao calculado uma unica vez no upload (regra "- JUNTA",
+    # ver backend/nomenclatura.py), reutilizado na listagem/download - nunca
+    # recalculado. NULL em anexos antigos, anteriores a essa coluna: cai no
+    # fallback pro nome_original sem transformacao.
+    nome_exibicao = Column(String, nullable=True)
     descricao = Column(String)
     enviado_por = Column(String)
     criado_em = Column(DateTime, default=datetime.now)
@@ -233,11 +244,24 @@ class Processo(Base):
     arquivo_registro = Column(String)
     arquivo_nd = Column(String)
     arquivo_nf = Column(String)
+    # Nomes de exibicao (regra "- JUNTA", ver backend/nomenclatura.py),
+    # calculados uma unica vez no upload sobre o nome original recebido -
+    # nunca recalculados no envio de email/download. Usados no lugar do nome
+    # fisico (que continua sintetico, ex: "{id}_protocolo.pdf") sempre que
+    # existirem; NULL em processos antigos, anteriores a essas colunas, cai
+    # no fallback pro nome fisico sem transformacao (nunca tiveram o nome
+    # original preservado, entao nao ha o que recalcular retroativamente).
+    arquivo_ata_nome_exibicao = Column(String, nullable=True)
+    arquivo_protocolo_nome_exibicao = Column(String, nullable=True)
+    arquivo_registro_nome_exibicao = Column(String, nullable=True)
+    arquivo_nd_nome_exibicao = Column(String, nullable=True)
+    arquivo_nf_nome_exibicao = Column(String, nullable=True)
     criado_em = Column(DateTime, default=datetime.now)
     grupo_id = Column(String, nullable=True)
     uf = Column(String, nullable=True)
     texto_exigencia = Column(Text, nullable=True)
     arquivo_exigencia = Column(String, nullable=True)
+    arquivo_exigencia_nome_exibicao = Column(String, nullable=True)
     exigencia_ativa = Column(Boolean, default=False)
     status_jucesp = Column(String, nullable=True)
     uf_destino_transferencia = Column(String, nullable=True)
@@ -258,11 +282,36 @@ class Processo(Base):
     deferido_em = Column(DateTime, nullable=True)
     alertado_atraso_deferido = Column(Boolean, default=False)
     fluxo_id = Column(String, nullable=True)
+    # Estado do ultimo evento de e-mail ao cliente relevante (registro
+    # finalizado, deferido, protocolo, exigencia) - ver notificar_cliente_processo
+    # em main.py. "enviado" = pelo menos um destinatario recebeu; "falhou" =
+    # tentou mas nenhum envio teve sucesso; "pendente_revisao" = suprimido de
+    # proposito (ex: UF em UFS_EMAIL_AUTOMATICO_SUSPENSO) - visivel no painel
+    # admin em vez de silencioso, ao contrario da supressao de SP de 30/07/2026
+    # que nao deixava rastro nenhum. NULL = processo nunca passou por um evento
+    # de e-mail (comportamento anterior a esta coluna, ou nenhum evento ainda).
+    email_status = Column(String, nullable=True)
     # Texto integral extraido do documento/ata deste processo (mesma extracao
     # ja feita na insercao para classificacao via IA) - antes era descartado
     # apos a classificacao; agora persistido pra alimentar o contexto do
     # iatos. (nao precisa re-OCRizar o PDF a cada pergunta do cliente).
     texto_documento_extraido = Column(Text, nullable=True)
+
+
+class LogEmail(Base):
+    """Log persistente de toda tentativa de e-mail ao cliente relacionada a
+    processo (registro/protocolo/deferido/exigencia), disparada via
+    notificar_cliente_processo em main.py. Antes desta tabela a unica
+    evidencia era print() no journalctl, que expira em 7 dias - insuficiente
+    pra auditar reclamacao de cliente que chega semanas depois."""
+    __tablename__ = "log_emails"
+    id = Column(String, primary_key=True)
+    processo_id = Column(String, nullable=False)
+    destinatario = Column(String, nullable=True)
+    tipo = Column(String, nullable=False)
+    sucesso = Column(Boolean, nullable=True)
+    erro = Column(Text, nullable=True)
+    criado_em = Column(DateTime, default=datetime.now)
 
 
 def criar_banco():

@@ -170,14 +170,53 @@ function TelaAprendizado() {
   );
 }
 
+// Componente proprio (fora de AppPainel) para o poll de fluxo/eventos: assim
+// o tick de 5s so re-renderiza este pedaco, sem recriar DetalheProcesso nem
+// ChatProcesso (que sao definidos dentro de AppPainel e perdiam estado local
+// - secao fechava e texto digitado sumia sozinho - toda vez que AppPainel
+// re-renderizava por causa desse poll).
+function ExtraFluxoEAtividade() {
+  const [fluxosAtivos, setFluxosAtivos] = useState([]);
+  const [eventosRecentes, setEventosRecentes] = useState([]);
+
+  useEffect(() => {
+    async function carregarFluxos() {
+      try {
+        const r = await axios.get(`${API}/fluxo/ativo`);
+        setFluxosAtivos(Array.isArray(r.data) ? r.data : []);
+      } catch (e) {}
+    }
+    carregarFluxos();
+    const _t = setInterval(carregarFluxos, 5000);
+    return () => clearInterval(_t);
+  }, []);
+
+  useEffect(() => {
+    async function carregarEventos() {
+      try {
+        const r = await axios.get(`${API}/eventos/recentes`, { params: { limit: 5 } });
+        setEventosRecentes(r.data || []);
+      } catch (e) {}
+    }
+    carregarEventos();
+    const _t = setInterval(carregarEventos, 5000);
+    return () => clearInterval(_t);
+  }, []);
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 12, height: "100%" }}>
+      {fluxosAtivos.length > 0 && fluxosAtivos.map(f => <FluxoDoDiaCardEscuro key={f.grupo_id} fluxo={f} />)}
+      <AtividadeRecenteEscura eventos={eventosRecentes} />
+    </div>
+  );
+}
+
 function AppPainel({ onSair, sessao }) {
   const bp = useBreakpoint();
   const mobile = bp === "mobile";
   const ehOperador = sessao && sessao.papel === "operador" && !sessao.is_admin;
   const [processos, setProcessos] = useState([]);
   const [metricas, setMetricas] = useState({});
-  const [fluxosAtivos, setFluxosAtivos] = useState([]);
-  const [eventosRecentes, setEventosRecentes] = useState([]);
   const [tela, setTela] = useState("processos");
   const [processoSelecionado, setProcessoSelecionado] = useState(null);
   const [iatosAberto, setIatosAberto] = useState(null);
@@ -221,30 +260,6 @@ function AppPainel({ onSair, sessao }) {
   const [arquivoSelecionado, setArquivoSelecionado] = useState(null);
 
   useEffect(() => { carregar(); }, []);
-
-  useEffect(() => {
-    async function carregarFluxos() {
-      try {
-        const r = await axios.get(`${API}/fluxo/ativo`);
-        setFluxosAtivos(Array.isArray(r.data) ? r.data : []);
-      } catch (e) {}
-    }
-    carregarFluxos();
-    const _t = setInterval(carregarFluxos, 5000);
-    return () => clearInterval(_t);
-  }, []);
-
-  useEffect(() => {
-    async function carregarEventos() {
-      try {
-        const r = await axios.get(`${API}/eventos/recentes`, { params: { limit: 5 } });
-        setEventosRecentes(r.data || []);
-      } catch (e) {}
-    }
-    carregarEventos();
-    const _t = setInterval(carregarEventos, 5000);
-    return () => clearInterval(_t);
-  }, []);
 
   async function carregar() {
     const [p, m] = await Promise.all([
@@ -476,6 +491,12 @@ function AppPainel({ onSair, sessao }) {
     cnpj: { fontSize: 11, color: "#71717a", margin: 0 },
     cell: { fontSize: 13, color: "#d4d4d8" },
     badge: (status) => ({ display: "inline-block", padding: "4px 11px", borderRadius: 20, fontSize: 11, background: STATUS_CONFIG[status]?.bg || "rgba(255,255,255,0.06)", color: STATUS_CONFIG[status]?.color || "#d4d4d8", border: `1px solid ${STATUS_CONFIG[status]?.borda || "rgba(255,255,255,0.15)"}` }),
+    // Badge de email_status (ver notificar_cliente_processo em main.py) -
+    // so aparece quando o processo NAO seguiu o caminho normal de aviso ao
+    // cliente (suprimido de proposito, ou tentou e falhou). Antes da
+    // supressao de SP de 30/07/2026 ficar visivel aqui, nao havia nenhum
+    // jeito de saber pelo painel que um processo estava com aviso pendente.
+    badgeEmail: (tipo) => ({ display: "inline-block", padding: "3px 9px", borderRadius: 20, fontSize: 10.5, marginLeft: 6, background: tipo === "falhou" ? "rgba(255,69,58,0.12)" : "rgba(255,159,10,0.12)", color: tipo === "falhou" ? "#ff6b60" : "#ffc266", border: `1px solid ${tipo === "falhou" ? "rgba(255,69,58,0.3)" : "rgba(255,159,10,0.3)"}` }),
     btnVer: { background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.09)", borderRadius: 8, padding: "9px 16px", fontSize: 12, color: "#d4d4d8", cursor: "pointer", fontFamily: FONTE_CORPO },
     overlay: { position: "fixed", inset: 0, background: "rgba(0,0,0,0.6)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 1000 },
     modal: { background: "#0e0e14", border: "1px solid rgba(255,255,255,0.08)", borderRadius: 16, padding: 28, width: 560, maxHeight: "80vh", overflowY: "auto", color: "#e4e4e7" },
@@ -556,6 +577,9 @@ function AppPainel({ onSair, sessao }) {
                     </div>
                     <span style={{ ...s.badge(p.status), flexShrink: 0 }}>{STATUS_CONFIG[p.status]?.label || p.status}</span>
                   </div>
+                  {(p.email_status === "pendente_revisao" || p.email_status === "falhou") && (
+                    <span style={s.badgeEmail(p.email_status)}>{p.email_status === "falhou" ? "E-mail ao cliente: falhou" : "E-mail ao cliente pendente"}</span>
+                  )}
                   <div style={{ display: "flex", gap: 16, fontSize: 12, color: "#8a90b8" }}>
                     <span>UF: <span style={{ color: "#d4d4d8" }}>{p.uf || "—"}</span></span>
                     <span>Protocolo: <span style={{ color: "#d4d4d8", fontFamily: "monospace" }}>{p.numero_protocolo || "—"}</span></span>
@@ -574,7 +598,12 @@ function AppPainel({ onSair, sessao }) {
                   <div style={{ ...s.cell, fontWeight: 500 }}>{p.uf || "—"}</div>
                   <div style={s.cell}>{abreviarAto(p.identificador_ato, p.data_ata, p.hora_ata)}</div>
                   <div style={{ ...s.cell, fontFamily: "monospace", fontSize: 11 }}>{p.numero_protocolo || "—"}</div>
-                  <div><span style={s.badge(p.status)}>{STATUS_CONFIG[p.status]?.label || p.status}</span></div>
+                  <div>
+                    <span style={s.badge(p.status)}>{STATUS_CONFIG[p.status]?.label || p.status}</span>
+                    {(p.email_status === "pendente_revisao" || p.email_status === "falhou") && (
+                      <span style={s.badgeEmail(p.email_status)}>{p.email_status === "falhou" ? "E-mail: falhou" : "E-mail pendente"}</span>
+                    )}
+                  </div>
                   <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
                     <button style={s.btnVer} onClick={e => { e.stopPropagation(); setProcessoSelecionado(p); }}>Ver</button>
                     <div onClick={e => e.stopPropagation()}><BotaoIatos processo={p} onAbrir={setIatosAberto} /></div>
@@ -1104,12 +1133,7 @@ async function excluirProcesso() {
 
               <BannerPendencias />
               <DonutStatusCard titulo="Todos os Processos" metricas={metricas} onClickStatus={setFStatus} idPrefix="da" grande
-                extra={(
-                  <div style={{ display: "flex", flexDirection: "column", gap: 12, height: "100%" }}>
-                    {fluxosAtivos.length > 0 && fluxosAtivos.map(f => <FluxoDoDiaCardEscuro key={f.grupo_id} fluxo={f} />)}
-                    <AtividadeRecenteEscura eventos={eventosRecentes} />
-                  </div>
-                )} />
+                extra={<ExtraFluxoEAtividade />} />
 
               <div
                 onDragOver={e => { e.preventDefault(); }}

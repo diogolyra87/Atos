@@ -1,10 +1,11 @@
-﻿from fastapi import FastAPI, Depends, UploadFile, File, Form, HTTPException, Header, BackgroundTasks, Request, Body
+from fastapi import FastAPI, Depends, UploadFile, File, Form, HTTPException, Header, BackgroundTasks, Request, Body
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from sqlalchemy.orm import Session, defer
 from sqlalchemy import func
-from database import get_db, Processo, Grupo, Usuario, EmailGrupo, criar_banco, AuditLog, Codigo2FA, Anexo, RegraAprendizado, MensagemProcesso, TelegramVinculo, Fluxo, Evento, AssistenteConversa
+from database import get_db, Processo, Grupo, Usuario, EmailGrupo, criar_banco, AuditLog, Codigo2FA, Anexo, RegraAprendizado, MensagemProcesso, TelegramVinculo, Fluxo, Evento, AssistenteConversa, LogEmail
 from cnpj_utils import normalizar_cnpj, validar_cnpj, formatar_cnpj
+from nomenclatura import aplicar_nomenclatura_junta
 from datetime import datetime, timedelta, date
 from openai import OpenAI
 import json, os, uuid, shutil, bcrypt, secrets
@@ -189,6 +190,15 @@ def requer_admin_completo(usuario):
     gerenciamento de usuarios/integracoes e acoes destrutivas (excluir processo)."""
     if not usuario or not usuario.is_admin:
         raise HTTPException(status_code=403, detail="Acesso restrito ao administrador")
+
+
+def requer_plano_pago(usuario):
+    """Levanta 403 se a conta logada for plano 'free' (Usuario Individual
+    auto-cadastrado via /solicitar-acesso). Usado pra bloquear no backend
+    (nao so' esconder no frontend) o que o plano Free nao inclui: iatos. e
+    consulta automatica as Juntas Comerciais."""
+    if usuario and getattr(usuario, "plano", None) == "free":
+        raise HTTPException(status_code=403, detail="Recurso nao disponivel no plano Free")
 
 
 def nome_usuario(usuario):
@@ -477,6 +487,75 @@ def _email_finalizado(p):
     return corpo, corpo_html
 
 
+# UFs onde o e-mail automatico ao cliente para tipo="registro"/"deferido" fica
+# suspenso (ver notificar_cliente_processo). Criado 30/07/2026: a automacao
+# JUCESP (Infosimples) estava baixando a copia digitalizada avulsa ("SEM
+# VALOR DE CERTIDAO"), nao a Certidao de Inteiro Teor oficial - 4 processos
+# reais (NBD BRASIL, NEOENERGIA TRANSMISSORA 13/16/17) chegaram a notificar o
+# cliente com o documento errado antes do problema ser percebido e revertido
+# manualmente. Permanece ate revisao do fluxo de emissao da Certidao de
+# Inteiro Teor para SP (ver aplicar_nomenclatura_junta / processar_sp em
+# atualizar_status.py) - so remover com decisao explicita registrada aqui.
+UFS_EMAIL_AUTOMATICO_SUSPENSO = {"SP"}
+
+
+def _registrar_log_email(db, p, destinatario, tipo, sucesso, erro=None):
+    db.add(LogEmail(id=str(uuid.uuid4()), processo_id=p.id, destinatario=destinatario, tipo=tipo, sucesso=sucesso, erro=erro))
+
+
+def notificar_cliente_processo(db, p, tipo, assunto, corpo, corpo_html=None, anexo_caminho=None, anexo_nome=None, destinatarios=None):
+    """Funcao central de disparo de e-mail ao cliente para eventos de processo.
+    tipo: 'registro' (documento final) | 'protocolo' (tramitacao) | 'deferido'
+    | 'exigencia'. TODOS os fluxos que inserem/atualizam documento ou
+    protocolo - manual (upload, PATCH) ou automatico (consulta as Juntas) -
+    devem chamar esta funcao em vez de montar o envio na mao, pra nunca mais
+    repetir o que aconteceu em 30/07/2026: a supressao de e-mail pra SP foi
+    feita direto em cada ponto de envio (`if uf != "SP"`), de forma
+    silenciosa - upload/registro continuou funcionando normalmente, mas
+    ninguem foi avisado que o aviso ao cliente tinha ficado pausado, e ficou
+    assim represado por semanas. Aqui a supressao fica visivel
+    (`p.email_status = "pendente_revisao"` + registro em log_emails) em vez
+    de um `if` perdido no meio do codigo.
+
+    tipo 'registro'/'deferido': sujeitos a UFS_EMAIL_AUTOMATICO_SUSPENSO.
+    tipo 'protocolo'/'exigencia': nunca suprimidos (nunca tiveram excecao).
+
+    destinatarios: lista explicita de e-mails; se None, usa
+    emails_do_grupo(db, p.grupo_id) (comportamento padrao de todo chamador
+    exceto processar_sp_registro_sem_protocolo, que tambem inclui admin).
+
+    Retorna True se pelo menos um destinatario recebeu o e-mail com sucesso,
+    False caso contrario (suprimido, sem destinatario, ou todos os envios
+    falharam). Nunca levanta excecao - falha de envio fica em email_status e
+    log_emails, nunca silenciosa."""
+    if tipo in ("registro", "deferido") and (p.uf or "").upper() in UFS_EMAIL_AUTOMATICO_SUSPENSO:
+        p.email_status = "pendente_revisao"
+        _registrar_log_email(db, p, None, tipo, sucesso=None, erro="suprimido: uf=" + (p.uf or "") + " em UFS_EMAIL_AUTOMATICO_SUSPENSO")
+        db.commit()
+        print("   [email ao cliente suprimido - uf em revisao]", p.empresa, "| tipo:", tipo)
+        return False
+
+    dests = destinatarios if destinatarios is not None else emails_do_grupo(db, p.grupo_id)
+    if not dests:
+        p.email_status = "falhou"
+        _registrar_log_email(db, p, None, tipo, sucesso=False, erro="sem destinatario cadastrado no grupo")
+        db.commit()
+        print("   [email ao cliente sem destinatario]", p.empresa, "| tipo:", tipo)
+        return False
+
+    algum_sucesso = False
+    for em in dests:
+        if anexo_caminho:
+            ok = enviar_email_anexo(em, assunto, corpo, anexo_caminho, anexo_nome, corpo_html=corpo_html)
+        else:
+            ok = enviar_email(em, assunto, corpo, corpo_html)
+        _registrar_log_email(db, p, em, tipo, sucesso=ok, erro=None if ok else "falha no envio (ver journalctl atos-backend)")
+        algum_sucesso = algum_sucesso or ok
+    p.email_status = "enviado" if algum_sucesso else "falhou"
+    db.commit()
+    return algum_sucesso
+
+
 def notificar_exigencia_cliente(db, p, origem="manual"):
     """Avisa o cliente por email quando o processo entra em exigencia.
     origem="autonoma": deteccao pela consulta autonoma (scraper, ver
@@ -493,15 +572,14 @@ def notificar_exigencia_cliente(db, p, origem="manual"):
             corpo_html = _email_status_html("exigencia", "Exigência", "Processo em Exigência", _empresa_linha(p),
                                              protocolo=p.numero_protocolo or None, nota_tipo="anexo", nota_texto="Exigência em Anexo")
             cam = os.path.join(UPLOADS_DIR, p.arquivo_exigencia)
-            for em in emails_do_grupo(db, p.grupo_id):
-                enviar_email_anexo(em, "Exigencia no seu processo - " + (p.empresa or ""), corpo, cam, p.arquivo_exigencia, corpo_html=corpo_html)
+            notificar_cliente_processo(db, p, "exigencia", "Exigencia no seu processo - " + (p.empresa or ""), corpo, corpo_html,
+                                        anexo_caminho=cam, anexo_nome=(p.arquivo_exigencia_nome_exibicao or p.arquivo_exigencia))
         else:
             corpo = corpo_status_cliente(p, "Exigencia", "Aguardando a Junta Comercial disponibilizar a exigencia.")
             corpo_html = _email_status_html("exigencia", "Exigência", "Processo em Exigência", _empresa_linha(p),
                                              protocolo=p.numero_protocolo or None, nota_tipo="aguardando",
                                              nota_texto="Aguardando a Junta Comercial disponibilizar a exigência.")
-            for em in emails_do_grupo(db, p.grupo_id):
-                enviar_email(em, "Exigencia no seu processo - " + (p.empresa or ""), corpo, corpo_html)
+            notificar_cliente_processo(db, p, "exigencia", "Exigencia no seu processo - " + (p.empresa or ""), corpo, corpo_html)
     except Exception as e:
         print("Erro ao notificar exigencia ao cliente:", e)
 
@@ -525,14 +603,13 @@ def notificar_tramitacao_cliente(db, p, status_antes):
             corpo_html = _email_status_html("tramitacao", "Tramitação", "Documento Protocolado", _empresa_linha(p),
                                              protocolo=p.numero_protocolo or None, nota_tipo="anexo", nota_texto="Protocolo em Anexo")
             cam = os.path.join(UPLOADS_DIR, p.arquivo_protocolo)
-            for em in emails_do_grupo(db, p.grupo_id):
-                enviar_email_anexo(em, "Atualizacao do seu processo - " + (p.empresa or ""), corpo, cam, p.arquivo_protocolo, corpo_html=corpo_html)
+            notificar_cliente_processo(db, p, "protocolo", "Atualizacao do seu processo - " + (p.empresa or ""), corpo, corpo_html,
+                                        anexo_caminho=cam, anexo_nome=(p.arquivo_protocolo_nome_exibicao or p.arquivo_protocolo))
         else:
             corpo = corpo_status_cliente(p, "Tramitacao", "Aguardando analise da Junta Comercial.")
             corpo_html = _email_status_html("tramitacao", "Tramitação", "Documento Protocolado", _empresa_linha(p),
                                              protocolo=p.numero_protocolo or None)
-            for em in emails_do_grupo(db, p.grupo_id):
-                enviar_email(em, "Atualizacao do seu processo - " + (p.empresa or ""), corpo, corpo_html)
+            notificar_cliente_processo(db, p, "protocolo", "Atualizacao do seu processo - " + (p.empresa or ""), corpo, corpo_html)
     except Exception as e:
         print("Erro ao notificar tramitacao:", e)
 
@@ -1005,6 +1082,7 @@ def login_verificar(dados: dict, request: Request, db: Session = Depends(get_db)
         "grupo_id": usuario.grupo_id,
         "grupo": grupo.nome if grupo else None,
         "is_admin": bool(usuario.is_admin),
+        "plano": getattr(usuario, "plano", None),
     }
 
 
@@ -1035,7 +1113,6 @@ def esqueci_senha(dados: dict, request: Request, db: Session = Depends(get_db)):
             token = gerar_convite(db, usuario, horas_validade=2)
             enviar_redefinicao_senha_email(usuario, email_destino, token)
     return {"mensagem": "Se o login existir, enviamos um link de redefinicao de senha para o email cadastrado."}
-
 
 
 # ===== ANEXOS DO PROCESSO =====
@@ -1333,6 +1410,7 @@ async def assistente_abrir(dados: dict = Body(...), x_token: str = Header(None),
     usuario = validar_token(x_token, db)
     if not usuario:
         raise HTTPException(status_code=401, detail="Token invalido ou sessao expirada")
+    requer_plano_pago(usuario)
     processo_id = dados.get("processo_id")
     if not processo_id:
         raise HTTPException(status_code=400, detail="processo_id e obrigatorio")
@@ -1352,6 +1430,7 @@ async def assistente_perguntar(dados: dict = Body(...), x_token: str = Header(No
     usuario = validar_token(x_token, db)
     if not usuario:
         raise HTTPException(status_code=401, detail="Token invalido ou sessao expirada")
+    requer_plano_pago(usuario)
     processo_id = dados.get("processo_id")
     pergunta = (dados.get("pergunta") or "").strip()
     historico = dados.get("historico") or []
@@ -1520,7 +1599,8 @@ async def enviar_anexo(processo_id: str, arquivo: UploadFile = File(...), descri
     caminho = os.path.join(UPLOADS_DIR, nome_arquivo)
     with open(caminho, "wb") as f:
         f.write(conteudo)
-    novo = Anexo(id=anexo_id, processo_id=processo_id, arquivo=nome_arquivo, nome_original=(arquivo.filename or ""), descricao=(descricao or ""), enviado_por=usuario.login)
+    nome_exibicao = aplicar_nomenclatura_junta(arquivo.filename or "")
+    novo = Anexo(id=anexo_id, processo_id=processo_id, arquivo=nome_arquivo, nome_original=(arquivo.filename or ""), nome_exibicao=nome_exibicao, descricao=(descricao or ""), enviado_por=usuario.login)
     db.add(novo)
     db.commit()
     _ip = obter_ip(request)
@@ -1540,7 +1620,7 @@ def listar_anexos(processo_id: str, x_token: str = Header(None), db: Session = D
     if not _tem_acesso_admin(usuario) and p.grupo_id != usuario.grupo_id:
         raise HTTPException(status_code=403, detail="Sem permissao para este processo")
     anexos = db.query(Anexo).filter(Anexo.processo_id == processo_id).order_by(Anexo.criado_em).all()
-    return [{"id": a.id, "nome_original": a.nome_original, "descricao": a.descricao, "enviado_por": a.enviado_por, "criado_em": str(a.criado_em)} for a in anexos]
+    return [{"id": a.id, "nome_original": a.nome_original, "nome_exibicao": (a.nome_exibicao or a.nome_original), "descricao": a.descricao, "enviado_por": a.enviado_por, "criado_em": str(a.criado_em)} for a in anexos]
 
 @app.get("/anexos/{anexo_id}/download")
 def baixar_anexo(anexo_id: str, request: Request = None, x_token: str = Header(None), db: Session = Depends(get_db)):
@@ -1561,7 +1641,7 @@ def baixar_anexo(anexo_id: str, request: Request = None, x_token: str = Header(N
         raise HTTPException(status_code=404, detail="Arquivo nao encontrado no disco")
     _ip = obter_ip(request)
     registrar_auditoria(db, usuario, "anexo_download", a.processo_id, "anexo=" + (a.nome_original or ""), _ip)
-    return FileResponse(caminho, filename=(a.nome_original or a.arquivo))
+    return FileResponse(caminho, filename=(a.nome_exibicao or a.nome_original or a.arquivo))
 
 @app.delete("/anexos/{anexo_id}")
 def excluir_anexo(anexo_id: str, request: Request = None, x_token: str = Header(None), db: Session = Depends(get_db)):
@@ -1602,6 +1682,7 @@ def emitir_certidao_simplificada(processo_id: str, request: Request = None, x_to
     usuario = validar_token(x_token, db)
     if not usuario:
         raise HTTPException(status_code=401, detail="Token invalido ou sessao expirada")
+    requer_plano_pago(usuario)
     p = db.query(Processo).filter(Processo.id == processo_id).first()
     if not p:
         raise HTTPException(status_code=404, detail="Processo nao encontrado")
@@ -1653,17 +1734,29 @@ def download(processo_id: str, tipo: str, request: Request = None, x_token: str 
     if not _tem_acesso_admin(usuario) and p.grupo_id != usuario.grupo_id:
         raise HTTPException(status_code=403, detail="Acesso negado a este processo")
     campo_map = {"ata": p.arquivo_ata, "protocolo": p.arquivo_protocolo, "registro": p.arquivo_registro, "nd": p.arquivo_nd, "nf": p.arquivo_nf, "exigencia": p.arquivo_exigencia}
+    # nome de exibicao (regra "- JUNTA") por tipo, com fallback pro nome
+    # fisico sintetico quando a coluna nao existir (processo antigo) - o
+    # arquivo em disco continua sendo lido pelo nome sintetico, sempre.
+    campo_map_exibicao = {
+        "ata": p.arquivo_ata_nome_exibicao,
+        "protocolo": p.arquivo_protocolo_nome_exibicao,
+        "registro": p.arquivo_registro_nome_exibicao,
+        "nd": p.arquivo_nd_nome_exibicao,
+        "nf": p.arquivo_nf_nome_exibicao,
+        "exigencia": p.arquivo_exigencia_nome_exibicao,
+    }
     if tipo not in campo_map:
         raise HTTPException(status_code=400, detail="Tipo invalido")
     nome_arquivo = campo_map[tipo]
     if not nome_arquivo:
         raise HTTPException(status_code=404, detail="Arquivo nao disponivel")
+    nome_exibicao = campo_map_exibicao.get(tipo) or nome_arquivo
     caminho = os.path.join(UPLOADS_DIR, nome_arquivo)
     if not os.path.exists(caminho):
         raise HTTPException(status_code=404, detail="Arquivo nao encontrado no disco")
     _ip = obter_ip(request)
     registrar_auditoria(db, usuario, "download", processo_id, "tipo=" + str(tipo) + " arquivo=" + str(nome_arquivo), _ip)
-    return FileResponse(caminho, filename=nome_arquivo)
+    return FileResponse(caminho, filename=nome_exibicao)
 
 @app.get("/processos")
 def listar_processos(codigo_grupo: str = None, x_token: str = Header(None), db: Session = Depends(get_db)):
@@ -2477,6 +2570,7 @@ async def criar_processo(
         grupo_id = usuario_tok.grupo_id
 
     arquivo_ata = None
+    arquivo_ata_nome_exibicao = None
     if arquivo:
         ext = os.path.splitext(arquivo.filename)[1]
         nome_arquivo = f"{processo_id}_ata{ext}"
@@ -2484,6 +2578,7 @@ async def criar_processo(
         with open(caminho, "wb") as f:
             f.write(await arquivo.read())
         arquivo_ata = nome_arquivo
+        arquivo_ata_nome_exibicao = aplicar_nomenclatura_junta(arquivo.filename)
 
     p = Processo(
         id=processo_id,
@@ -2504,6 +2599,7 @@ async def criar_processo(
         observacoes=info.get("observacoes", ""),
         status="aberto",
         arquivo_ata=arquivo_ata,
+        arquivo_ata_nome_exibicao=arquivo_ata_nome_exibicao,
         grupo_id=grupo_id,
         uf_destino_transferencia=(info.get("uf_destino_transferencia") or "").upper().strip()[:2] or None,
         leitura_parcial=bool(info.get("leitura_parcial", False)),
@@ -2703,6 +2799,7 @@ async def upload_arquivo(
     if tipo in campo_map:
         status_antes_up = (p.status or "").lower()
         setattr(p, campo_map[tipo], nome_arquivo)
+        setattr(p, campo_map[tipo] + "_nome_exibicao", aplicar_nomenclatura_junta(arquivo.filename or ""))
         if tipo == "protocolo":
             _num = await asyncio.to_thread(_tentar_extrair_protocolo, conteudo, nome_arquivo)
             if _num:
@@ -2724,15 +2821,9 @@ async def upload_arquivo(
         try:
             novo_status = (p.status or "").lower()
             if tipo == "registro" and novo_status == "finalizado":
-                # SUSPENSO 30/07/2026: e-mail ao cliente da automacao JUCESP
-                # (SP) desativado por decisao explicita, ate revisao do fluxo
-                # de documento. Upload/registro continua funcionando
-                # normalmente (arquivo salvo, status atualizado) - so o aviso
-                # ao cliente que fica em pausa pra SP.
-                if (p.uf or "").upper() != "SP":
-                    corpo, corpo_html = _email_finalizado(p)
-                    for em in emails_do_grupo(db, p.grupo_id):
-                        enviar_email_anexo(em, "Processo Finalizado - " + (p.empresa or ""), corpo, caminho, nome_arquivo, corpo_html=corpo_html)
+                corpo, corpo_html = _email_finalizado(p)
+                notificar_cliente_processo(db, p, "registro", "Processo Finalizado - " + (p.empresa or ""), corpo, corpo_html,
+                                            anexo_caminho=caminho, anexo_nome=(p.arquivo_registro_nome_exibicao or nome_arquivo))
                 try:
                     _criar_processo_transferencia(db, p)
                 except Exception as e:
@@ -2770,6 +2861,7 @@ async def registrar_exigencia(
         with open(caminho, "wb") as f:
             f.write(await arquivo.read())
         p.arquivo_exigencia = nome_arquivo
+        p.arquivo_exigencia_nome_exibicao = aplicar_nomenclatura_junta(arquivo.filename or "")
     p.exigencia_ativa = True
     p.status = recalcular_status(p)
     p.atualizado_em = datetime.now()
@@ -2982,6 +3074,78 @@ def definir_senha_convite(dados: dict, db: Session = Depends(get_db)):
     usuario.convite_expira_em = None
     db.commit()
     return {"mensagem": "Senha definida com sucesso. Voce ja pode fazer login."}
+
+
+def _enviar_email_solicitar_acesso(usuario, token):
+    """E-mail de boas-vindas do auto-cadastro (plano Free) - mesmo padrao
+    visual (tabela unica, bgcolor duplo) dos demais e-mails do sistema via
+    envolver_html; reaproveita o mesmo link/tela de /criar-senha usado pelo
+    convite de operador."""
+    link = f"{BASE_URL_SISTEMA}/criar-senha?token={token}"
+    corpo = (
+        "Ola, " + (usuario.nome or usuario.login) + "!\n\n"
+        "Recebemos sua solicitacao de acesso ao Atos - Gestao Societaria, no plano Free.\n\n"
+        "Clique no link abaixo para criar sua senha e comecar a organizar seus processos "
+        "(valido por " + str(TOKEN_CONVITE_VALIDADE_HORAS) + " horas):\n" + link + "\n\n"
+        "Se voce nao fez essa solicitacao, ignore este e-mail."
+    )
+    return enviar_email(usuario.email, "Bem-vindo ao Atos - crie sua senha", corpo,
+                         corpo_html=envolver_html(corpo, titulo="Bem-vindo ao Atos!"))
+
+
+@app.post("/solicitar-acesso")
+def solicitar_acesso(dados: dict, db: Session = Depends(get_db)):
+    """Auto-cadastro publico (sem token de sessao) de Usuario Individual - novo
+    tipo de conta paralela ao Grupo administrado por admin. NAO vinculada a
+    nenhum Grupo existente: ganha um Grupo proprio (uso exclusivo dela), o que
+    reaproveita toda a filtragem por grupo_id ja existente (Processo,
+    permissoes, etc.) sem exigir migrar grupo_id pra nullable no banco em
+    producao. Plano "free" (bloqueado de iatos/consulta automatica - ver
+    requer_plano_pago). Liberacao e' imediata (sem aprovacao manual, decidido
+    com o Diogo); usuario define a propria senha via o mesmo convite por
+    e-mail usado no fluxo de operador."""
+    nome = (dados.get("nome") or "").strip()
+    email = (dados.get("email") or "").strip().lower()
+
+    if not nome or not email:
+        raise HTTPException(status_code=400, detail="nome e email sao obrigatorios")
+    if "@" not in email or "." not in email.split("@")[-1]:
+        raise HTTPException(status_code=400, detail="Informe um email valido")
+
+    existente = db.query(Usuario).filter(Usuario.login == email).first()
+    if existente:
+        raise HTTPException(status_code=400, detail="Este email ja possui uma conta. Faca login.")
+
+    grupo = Grupo(
+        id=str(uuid.uuid4()),
+        nome=("Individual - " + nome)[:120],
+        codigo=f"IND-{uuid.uuid4().hex[:8].upper()}",
+    )
+    db.add(grupo)
+    db.commit()
+
+    # senha_hash placeholder (aleatorio, nunca comunicado) - login so funciona
+    # depois que o convite definir uma senha de verdade (mesmo padrao do
+    # /usuarios/operador).
+    senha_placeholder = bcrypt.hashpw(secrets.token_urlsafe(24).encode()[:72], bcrypt.gensalt()).decode()
+    novo = Usuario(
+        id=str(uuid.uuid4()),
+        login=email,
+        senha_hash=senha_placeholder,
+        email=email,
+        nome=nome,
+        grupo_id=grupo.id,
+        is_admin=False,
+        papel="cliente",
+        plano="free",
+    )
+    db.add(novo)
+    db.commit()
+
+    token = gerar_convite(db, novo)
+    _enviar_email_solicitar_acesso(novo, token)
+
+    return {"mensagem": "Cadastro recebido. Verifique seu email para criar sua senha.", "email": email}
 
 
 @app.post("/usuarios/operador")

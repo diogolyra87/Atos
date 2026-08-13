@@ -488,15 +488,19 @@ def _email_finalizado(p):
 
 
 # UFs onde o e-mail automatico ao cliente para tipo="registro"/"deferido" fica
-# suspenso (ver notificar_cliente_processo). Criado 30/07/2026: a automacao
-# JUCESP (Infosimples) estava baixando a copia digitalizada avulsa ("SEM
-# VALOR DE CERTIDAO"), nao a Certidao de Inteiro Teor oficial - 4 processos
-# reais (NBD BRASIL, NEOENERGIA TRANSMISSORA 13/16/17) chegaram a notificar o
-# cliente com o documento errado antes do problema ser percebido e revertido
-# manualmente. Permanece ate revisao do fluxo de emissao da Certidao de
-# Inteiro Teor para SP (ver aplicar_nomenclatura_junta / processar_sp em
-# atualizar_status.py) - so remover com decisao explicita registrada aqui.
-UFS_EMAIL_AUTOMATICO_SUSPENSO = {"SP"}
+# suspenso (ver notificar_cliente_processo). Mecanismo criado 30/07/2026,
+# quando a automacao JUCESP (Infosimples) estava baixando a copia
+# digitalizada avulsa ("SEM VALOR DE CERTIDAO"), nao a Certidao de Inteiro
+# Teor oficial - 4 processos reais (NBD BRASIL, NEOENERGIA TRANSMISSORA
+# 13/16/17) chegaram a notificar o cliente com o documento errado. SP ficou
+# suspenso ate 13/08/2026: removido porque o download automatico da
+# Infosimples pra SP ja estava (e continua) desativado desde 30/07 - o unico
+# caminho que gera "registro"/"deferido" pra SP hoje e' upload manual, ja
+# verificado por um humano antes de subir, sem o risco que motivou a
+# supressao. Vazio por padrao - preenchido apenas com decisao explicita
+# registrada aqui, igual foi feito com SP, se surgir problema semelhante
+# com outra UF/fluxo automatico no futuro.
+UFS_EMAIL_AUTOMATICO_SUSPENSO = set()
 
 
 def _registrar_log_email(db, p, destinatario, tipo, sucesso, erro=None):

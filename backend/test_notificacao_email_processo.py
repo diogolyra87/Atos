@@ -4,8 +4,14 @@
 
 Cobre a correcao do incidente de 30/07/2026: e-mail de SP ficava suprimido
 de forma silenciosa (upload/registro continuava normal, ninguem era avisado
-do aviso pendente). Agora a supressao fica visivel via email_status +
-log_emails, e avisado_deferido so avanca com envio confirmado.
+do aviso pendente). A supressao ficou visivel via email_status + log_emails
+em 13/08/2026, e depois removida no mesmo dia (decisao do Diogo) - o
+download automatico da Infosimples pra SP (motivo original da supressao) ja
+estava desativado desde 30/07, entao o unico caminho que resta pra SP e'
+upload manual, ja verificado por humano. UFS_EMAIL_AUTOMATICO_SUSPENSO
+continua vazio por padrao, mas o mecanismo (e' testado aqui com uma UF
+falsa) segue disponivel pra um caso futuro semelhante. avisado_deferido so
+avanca com envio confirmado, pra nunca mais silenciar uma falha de envio.
 
 Roda contra um banco sqlite em memoria (nao toca em backend/mane.db).
 Rodar com: python -m unittest test_notificacao_email_processo -v
@@ -54,13 +60,18 @@ class TestSupressaoPorUf(unittest.TestCase):
     def tearDown(self):
         self.db.close()
 
-    def test_registro_sp_suprimido_nao_chama_envio_e_marca_pendente_revisao(self):
-        p = _criar_processo(self.db, uf="SP")
-        with patch("main.enviar_email") as mock_email, patch("main.enviar_email_anexo") as mock_anexo:
-            resultado = notificar_cliente_processo(
-                self.db, p, "registro", "Processo Finalizado - Empresa Teste", "corpo", "corpo_html",
-                anexo_caminho="/tmp/x.pdf", anexo_nome="x.pdf",
-            )
+    def test_mecanismo_supressao_bloqueia_uf_configurada(self):
+        """UFS_EMAIL_AUTOMATICO_SUSPENSO esta vazio por padrao hoje (ver
+        docstring do modulo) - o mecanismo em si continua coberto aqui com
+        uma UF falsa, pra garantir que ele funciona se precisar ser usado de
+        novo no futuro, sem depender de nenhuma UF real estar suprimida."""
+        p = _criar_processo(self.db, uf="XX")
+        with patch("main.UFS_EMAIL_AUTOMATICO_SUSPENSO", {"XX"}):
+            with patch("main.enviar_email") as mock_email, patch("main.enviar_email_anexo") as mock_anexo:
+                resultado = notificar_cliente_processo(
+                    self.db, p, "registro", "Processo Finalizado - Empresa Teste", "corpo", "corpo_html",
+                    anexo_caminho="/tmp/x.pdf", anexo_nome="x.pdf",
+                )
         self.assertFalse(resultado)
         mock_email.assert_not_called()
         mock_anexo.assert_not_called()
@@ -70,13 +81,40 @@ class TestSupressaoPorUf(unittest.TestCase):
         self.assertIsNone(log.sucesso)
         self.assertIn("suprimido", log.erro)
 
-    def test_deferido_sp_tambem_suprimido(self):
-        p = _criar_processo(self.db, uf="sp")  # minuscula - .upper() precisa cobrir
-        with patch("main.enviar_email") as mock_email:
-            resultado = notificar_cliente_processo(self.db, p, "deferido", "assunto", "corpo")
+    def test_mecanismo_supressao_cobre_tipo_deferido_tambem(self):
+        p = _criar_processo(self.db, uf="xx")  # minuscula - .upper() precisa cobrir
+        with patch("main.UFS_EMAIL_AUTOMATICO_SUSPENSO", {"XX"}):
+            with patch("main.enviar_email") as mock_email:
+                resultado = notificar_cliente_processo(self.db, p, "deferido", "assunto", "corpo")
         self.assertFalse(resultado)
         mock_email.assert_not_called()
         self.assertEqual(p.email_status, "pendente_revisao")
+
+    def test_registro_sp_nao_e_mais_suprimido(self):
+        """Removido 13/08/2026 (decisao do Diogo): o download automatico da
+        Infosimples pra SP, motivo original da supressao (30/07/2026), ja
+        estava desativado desde entao - o unico caminho que resta pra SP e'
+        upload manual, ja verificado por humano antes de subir."""
+        p = _criar_processo(self.db, uf="SP")
+        self.db.add(EmailGrupo(id=str(uuid.uuid4()), email="cliente@exemplo.com", grupo_id=p.grupo_id))
+        self.db.commit()
+        with patch("main.enviar_email_anexo", return_value=True) as mock_anexo:
+            resultado = notificar_cliente_processo(
+                self.db, p, "registro", "assunto", "corpo", anexo_caminho="/tmp/x.pdf", anexo_nome="x.pdf",
+            )
+        self.assertTrue(resultado)
+        mock_anexo.assert_called_once()
+        self.assertEqual(p.email_status, "enviado")
+
+    def test_deferido_sp_nao_e_mais_suprimido(self):
+        p = _criar_processo(self.db, uf="SP")
+        self.db.add(EmailGrupo(id=str(uuid.uuid4()), email="cliente@exemplo.com", grupo_id=p.grupo_id))
+        self.db.commit()
+        with patch("main.enviar_email", return_value=True) as mock_email:
+            resultado = notificar_cliente_processo(self.db, p, "deferido", "assunto", "corpo")
+        self.assertTrue(resultado)
+        mock_email.assert_called_once()
+        self.assertEqual(p.email_status, "enviado")
 
     def test_protocolo_sp_nao_e_suprimido(self):
         """Tipo 'protocolo' nunca teve excecao de UF - so 'registro' e 'deferido'."""
@@ -220,14 +258,27 @@ class TestAvisadoDeferidoSoAvancaComSucesso(unittest.TestCase):
         self.assertFalse(p.avisado_deferido)
         self.assertEqual(p.email_status, "falhou")
 
-    def test_supressao_sp_nao_marca_avisado_deferido(self):
+    def test_mecanismo_supressao_generico_nao_marca_avisado_deferido(self):
         import datetime
-        p = _criar_processo(self.db, uf="SP")
-        with patch("main.enviar_email") as mock_email:
-            self.aplicar_classificacao(self.db, p, "deferido", datetime.datetime.now())
+        p = _criar_processo(self.db, uf="XX")
+        with patch("main.UFS_EMAIL_AUTOMATICO_SUSPENSO", {"XX"}):
+            with patch("main.enviar_email") as mock_email:
+                self.aplicar_classificacao(self.db, p, "deferido", datetime.datetime.now())
         mock_email.assert_not_called()
         self.assertFalse(p.avisado_deferido)
         self.assertEqual(p.email_status, "pendente_revisao")
+
+    def test_deferido_sp_marca_avisado_deferido_normalmente(self):
+        """SP nao esta mais em UFS_EMAIL_AUTOMATICO_SUSPENSO (removido
+        13/08/2026) - deferido de SP se comporta igual qualquer outra UF."""
+        import datetime
+        p = _criar_processo(self.db, uf="SP")
+        self.db.add(EmailGrupo(id=str(uuid.uuid4()), email="cliente@exemplo.com", grupo_id=p.grupo_id))
+        self.db.commit()
+        with patch("main.enviar_email", return_value=True):
+            self.aplicar_classificacao(self.db, p, "deferido", datetime.datetime.now())
+        self.assertTrue(p.avisado_deferido)
+        self.assertEqual(p.email_status, "enviado")
 
 
 if __name__ == "__main__":

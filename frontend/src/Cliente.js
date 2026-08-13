@@ -1,4 +1,4 @@
-﻿import { useState, useEffect } from "react";
+import { useState, useEffect } from "react";
 import { useSearchParams } from "react-router-dom";
 import axios from "axios";
 import { STATUS_CONFIG, formatarDataExtenso, FluxoDoDiaCardEscuro, AtividadeRecenteEscura, BotaoIatos, IatosChat, subtituloProcesso, SidebarAtos, IconeProcessos, IconeRelatorios, DonutStatusCard, TelaLogin, TelaCriarAcesso, PainelDownloadStatus, FONTE_CORPO, FONTE_TITULO, useBreakpoint } from "./components/Compartilhados";
@@ -691,7 +691,7 @@ export function Painel({ sessao, onSair }) {
             </div>
           ) : tela === "processos" ? (
             <div style={s.conteudo}>
-              <DonutStatusCard titulo="Meus Processos" metricas={metricas} onClickStatus={setFStatus} idPrefix="dc" grande legenda={false}
+              <DonutStatusCard titulo="Meus Processos" metricas={metricas} onClickStatus={setFStatus} statusAtivo={fStatus} idPrefix="dc" grande legenda={false}
                 extra={(
                   <div style={{ display: "flex", flexDirection: "column", gap: 12, height: "100%" }}>
                     {fluxoAtivo && <FluxoDoDiaCardEscuro fluxo={fluxoAtivo} />}

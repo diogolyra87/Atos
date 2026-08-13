@@ -494,7 +494,30 @@ export function IconeAprendizado() {
 // Card principal do dashboard (Meus Processos / Todos os Processos): donut
 // com gradientes+glow (SVG) + legenda + grid de status-cards. idPrefix evita
 // colisao de ids de <defs> caso mais de um donut exista na mesma pagina.
-export function DonutStatusCard({ titulo, metricas, onClickStatus, idPrefix = "d", extra, grande = false, legenda = true }) {
+// Glow de canto (halo irradiando do canto superior direito) nos cards de
+// status do DonutStatusCard, quando selecionado (ver statusAtivo). So' o
+// ::before precisa de CSS de verdade (pseudo-elemento nao da' pra fazer via
+// style inline, unico motivo de sair do padrao inline-only do resto do
+// arquivo) - a cor em si continua vindo por variavel CSS setada inline por
+// card (--glow-color), igual o resto do componente controla cor por dado.
+const CARD_GLOW_CSS = `
+.card-glow-canto { position: relative; overflow: hidden; }
+.card-glow-canto::before {
+  content: "";
+  position: absolute;
+  top: -45%;
+  right: -45%;
+  width: 75%;
+  height: 150%;
+  opacity: 0;
+  pointer-events: none;
+  background: radial-gradient(circle, var(--glow-color, transparent), transparent 70%);
+  transition: opacity .25s ease;
+}
+.card-glow-canto.glow-ativo::before { opacity: 1; }
+`;
+
+export function DonutStatusCard({ titulo, metricas, onClickStatus, idPrefix = "d", extra, grande = false, legenda = true, statusAtivo = "" }) {
   const bp = useBreakpoint();
   const mobile = bp === "mobile";
   // "grande" (usado em "Meus Processos") aumenta donut/legenda/cards pra
@@ -529,12 +552,12 @@ export function DonutStatusCard({ titulo, metricas, onClickStatus, idPrefix = "d
   let acumulado = 0;
   const clicavel = (chave) => onClickStatus ? { cursor: "pointer" } : {};
   const cardsDados = [
-    { lbl: "TOTAL", val: total, cor: "#fff", borda: "rgba(255,255,255,0.15)", bg: "rgba(255,255,255,0.06)", chave: "" },
-    { lbl: "EM TRAMITAÇÃO", val: tram, cor: "#ff9f0a", borda: "rgba(255,159,10,0.3)", chave: "tramitacao" },
-    { lbl: "EM EXIGÊNCIA", val: exig, cor: "#ff4d4d", borda: "rgba(255,77,77,0.3)", chave: "exigencia" },
-    { lbl: "ABERTOS", val: aberto, cor: "#ff9f0a", borda: "rgba(255,159,10,0.3)", chave: "aberto" },
-    { lbl: "DEFERIDOS", val: defer, cor: "#4d94ff", borda: "rgba(77,148,255,0.3)", chave: "deferido" },
-    { lbl: "FINALIZADOS", val: final, cor: "#00ffaa", borda: "rgba(0,255,170,0.3)", chave: "finalizado" },
+    { lbl: "TOTAL", val: total, cor: "#fff", borda: "rgba(255,255,255,0.15)", bordaAtiva: "rgba(175,169,236,0.35)", glow: "rgba(175,169,236,0.30)", bg: "rgba(255,255,255,0.06)", chave: "" },
+    { lbl: "EM TRAMITAÇÃO", val: tram, cor: "#ff9f0a", borda: "rgba(255,159,10,0.3)", bordaAtiva: "rgba(255,159,10,0.4)", glow: "rgba(255,159,10,0.35)", chave: "tramitacao" },
+    { lbl: "EM EXIGÊNCIA", val: exig, cor: "#ff4d4d", borda: "rgba(255,77,77,0.3)", bordaAtiva: "rgba(255,77,77,0.4)", glow: "rgba(255,77,77,0.35)", chave: "exigencia" },
+    { lbl: "ABERTOS", val: aberto, cor: "#ff9f0a", borda: "rgba(255,159,10,0.3)", bordaAtiva: "rgba(250,199,117,0.4)", glow: "rgba(250,199,117,0.32)", chave: "aberto" },
+    { lbl: "DEFERIDOS", val: defer, cor: "#4d94ff", borda: "rgba(77,148,255,0.3)", bordaAtiva: "rgba(77,148,255,0.4)", glow: "rgba(77,148,255,0.35)", chave: "deferido" },
+    { lbl: "FINALIZADOS", val: final, cor: "#00ffaa", borda: "rgba(0,255,170,0.3)", bordaAtiva: "rgba(0,255,170,0.4)", glow: "rgba(0,255,170,0.35)", chave: "finalizado" },
   ];
   // Os 6 cards de status precisam ser QUADRADOS e, juntos, ocupar a mesma
   // altura total do donut (180px, svg fixo, ou 200px no modo "grande") - por
@@ -558,6 +581,7 @@ export function DonutStatusCard({ titulo, metricas, onClickStatus, idPrefix = "d
       : { flex: 1, minWidth: 260, width: "auto", alignSelf: "stretch" };
   return (
     <div style={{ background: "radial-gradient(circle at 10% 0%, #1a1470 0%, #0e0e14 55%)", border: "1px solid rgba(140,90,255,0.35)", borderRadius: 22, padding: mobile ? "22px 18px" : (big ? "32px 38px" : "28px 32px"), marginBottom: 16, position: "relative", overflow: "hidden", fontFamily: FONTE_CORPO }}>
+      <style>{CARD_GLOW_CSS}</style>
       <div style={{ position: "absolute", top: "-30%", right: "-10%", width: 320, height: 320, background: "radial-gradient(circle, #7d3fff28, transparent 65%)", filter: "blur(24px)", pointerEvents: "none" }} />
       <div style={{ position: "relative", zIndex: 1, marginBottom: 24 }}>
         <div style={{ fontFamily: FONTE_TITULO, fontSize: mobile ? 20 : 24, fontWeight: 700, color: "#fff" }}>{titulo}</div>
@@ -594,18 +618,24 @@ export function DonutStatusCard({ titulo, metricas, onClickStatus, idPrefix = "d
             </svg>
           </div>
           <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gridTemplateRows: "repeat(2, 1fr)", gap: 16 }}>
-            {cardsDados.map((c, i) => (
-              <div key={i} onClick={() => onClickStatus && onClickStatus(c.chave)}
-                style={{
-                  boxSizing: "border-box",
-                  background: "rgba(255,255,255,0.05)", border: `1px solid ${c.borda}`, borderRadius: 18,
-                  padding: 22, display: "flex", flexDirection: "column", justifyContent: "center",
-                  ...clicavel(c.chave),
-                }}>
-                <div style={{ fontSize: 13, color: "#a8b0d8", marginBottom: 10 }}>{c.lbl}</div>
-                <div style={{ fontFamily: FONTE_TITULO, fontSize: 38, fontWeight: 700, color: c.cor }}>{c.val}</div>
-              </div>
-            ))}
+            {cardsDados.map((c, i) => {
+              const selecionado = statusAtivo === c.chave;
+              return (
+                <div key={i} onClick={() => onClickStatus && onClickStatus(c.chave)}
+                  className={"card-glow-canto" + (selecionado ? " glow-ativo" : "")}
+                  style={{
+                    boxSizing: "border-box",
+                    background: "rgba(255,255,255,0.05)", border: `1px solid ${selecionado ? c.bordaAtiva : c.borda}`, borderRadius: 18,
+                    padding: 22, display: "flex", flexDirection: "column", justifyContent: "center",
+                    transition: "border-color .25s ease",
+                    "--glow-color": c.glow,
+                    ...clicavel(c.chave),
+                  }}>
+                  <div style={{ fontSize: 13, color: "#a8b0d8", marginBottom: 10 }}>{c.lbl}</div>
+                  <div style={{ fontFamily: FONTE_TITULO, fontSize: 38, fontWeight: 700, color: c.cor }}>{c.val}</div>
+                </div>
+              );
+            })}
           </div>
           {extra && <div style={{ minWidth: 0 }}>{extra}</div>}
         </div>
@@ -657,19 +687,25 @@ export function DonutStatusCard({ titulo, metricas, onClickStatus, idPrefix = "d
             </div>
           </div>
           <div style={gridCardsStyle}>
-            {cardsDados.map((c, i) => (
-              <div key={i} onClick={() => onClickStatus && onClickStatus(c.chave)}
-                style={{
-                  boxSizing: "border-box",
-                  background: c.bg || "rgba(255,255,255,0.04)", border: `1px solid ${c.borda}`, borderRadius: 14,
-                  padding: mobile ? "12px 14px" : (big ? 16 : 14), display: "flex", flexDirection: "column", justifyContent: "center",
-                  ...(mobile ? { minHeight: 74 } : { width: CARD, height: CARD }),
-                  ...clicavel(c.chave),
-                }}>
-                <div style={{ fontSize: big ? 11.5 : 10, color: "#a8b0d8", marginBottom: 6 }}>{c.lbl}</div>
-                <div style={{ fontFamily: FONTE_TITULO, fontSize: mobile ? 20 : (big ? 28 : 24), fontWeight: 700, color: c.cor }}>{c.val}</div>
-              </div>
-            ))}
+            {cardsDados.map((c, i) => {
+              const selecionado = statusAtivo === c.chave;
+              return (
+                <div key={i} onClick={() => onClickStatus && onClickStatus(c.chave)}
+                  className={"card-glow-canto" + (selecionado ? " glow-ativo" : "")}
+                  style={{
+                    boxSizing: "border-box",
+                    background: c.bg || "rgba(255,255,255,0.04)", border: `1px solid ${selecionado ? c.bordaAtiva : c.borda}`, borderRadius: 14,
+                    padding: mobile ? "12px 14px" : (big ? 16 : 14), display: "flex", flexDirection: "column", justifyContent: "center",
+                    transition: "border-color .25s ease",
+                    "--glow-color": c.glow,
+                    ...(mobile ? { minHeight: 74 } : { width: CARD, height: CARD }),
+                    ...clicavel(c.chave),
+                  }}>
+                  <div style={{ fontSize: big ? 11.5 : 10, color: "#a8b0d8", marginBottom: 6 }}>{c.lbl}</div>
+                  <div style={{ fontFamily: FONTE_TITULO, fontSize: mobile ? 20 : (big ? 28 : 24), fontWeight: 700, color: c.cor }}>{c.val}</div>
+                </div>
+              );
+            })}
           </div>
           {extra && (
             <div style={extraStyle}>

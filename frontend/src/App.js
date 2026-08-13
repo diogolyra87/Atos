@@ -1132,7 +1132,7 @@ async function excluirProcesso() {
               </div>
 
               <BannerPendencias />
-              <DonutStatusCard titulo="Todos os Processos" metricas={metricas} onClickStatus={setFStatus} idPrefix="da" grande
+              <DonutStatusCard titulo="Todos os Processos" metricas={metricas} onClickStatus={setFStatus} statusAtivo={fStatus} idPrefix="da" grande
                 extra={<ExtraFluxoEAtividade />} />
 
               <div

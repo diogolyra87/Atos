@@ -113,7 +113,7 @@ class TestOperadorMovimentaProcesso(unittest.TestCase):
 
         log = (
             self.db.query(AuditLog)
-            .filter(AuditLog.processo_id == p.id, AuditLog.acao == "editar")
+            .filter(AuditLog.processo_id == p.id, AuditLog.acao == "editar_campo")
             .order_by(AuditLog.data_hora.desc())
             .first()
         )

@@ -5,6 +5,9 @@ import { STATUS_CONFIG, formatarDataExtenso, BotaoIatos, IatosChat, subtituloPro
 
 const API = "";
 
+// Mantido em sincronia manual com TIPOS_ATO_VALIDOS em backend/main.py
+const TIPOS_ATO_OPCOES = ["AGO", "AGE", "AGOE", "RCA", "ARD", "ARS", "Alteração Contratual"];
+
 function abreviarAto(texto, data, hora) {
   const t = (texto || "").toUpperCase();
   const _dt = data ? `${(data || "").replace(/\//g, ".")}` : "";
@@ -755,6 +758,42 @@ function AppPainel({ onSair, sessao }) {
     const [numProtocolo, setNumProtocolo] = useState(p.numero_protocolo || "");
     const [salvandoProt, setSalvandoProt] = useState(false);
     const [anexados, setAnexados] = useState({});
+    const camposEdicaoIniciais = () => ({
+      tipo_ato: p.tipo_ato || "",
+      identificador_ato: p.identificador_ato || "",
+      empresa: p.empresa || "",
+      uf: p.uf || "",
+      numero_protocolo: p.numero_protocolo || "",
+      data_ata: p.data_ata || "",
+      hora_ata: p.hora_ata || "",
+    });
+    const [editandoDados, setEditandoDados] = useState(false);
+    const [formEdicao, setFormEdicao] = useState(camposEdicaoIniciais);
+    const [salvandoEdicao, setSalvandoEdicao] = useState(false);
+    const [erroEdicao, setErroEdicao] = useState("");
+    function iniciarEdicaoDados() {
+      setFormEdicao(camposEdicaoIniciais());
+      setErroEdicao("");
+      setEditandoDados(true);
+    }
+    function cancelarEdicaoDados() {
+      setErroEdicao("");
+      setEditandoDados(false);
+    }
+    async function salvarEdicaoDados() {
+      setSalvandoEdicao(true);
+      setErroEdicao("");
+      try {
+        await axios.patch(`${API}/processos/${p.id}`, formEdicao);
+        setProcessoSelecionado({ ...processoSelecionado, ...formEdicao });
+        setNumProtocolo(formEdicao.numero_protocolo);
+        setEditandoDados(false);
+        carregar();
+      } catch (e) {
+        setErroEdicao((e.response && e.response.data && e.response.data.detail) || "Erro ao salvar as alterações.");
+      }
+      setSalvandoEdicao(false);
+    }
     async function uploadProtocoloLocal(tipo, arquivo) {
       const form = new FormData();
       form.append("arquivo", arquivo);
@@ -934,15 +973,68 @@ async function excluirProcesso() {
           ))}
         </div>
 
-        <div style={s.detalheGrid}>
-          <div style={s.detalheItem}><div style={s.detalheItemLabel}>Tipo de ato</div><div style={s.detalheItemValue}>{p.tipo_ato}</div></div>
-          <div style={s.detalheItem}><div style={s.detalheItemLabel}>Identificador</div><div style={s.detalheItemValue}>{p.identificador_ato}</div></div>
-          <div style={s.detalheItem}><div style={s.detalheItemLabel}>Data da ata</div><div style={s.detalheItemValue}>{p.data_ata} {p.hora_ata && `· ${p.hora_ata}`}</div></div>
-          <div style={s.detalheItem}><div style={s.detalheItemLabel}>Tipo de sociedade</div><div style={s.detalheItemValue}>{p.tipo_sociedade}</div></div>
-          <div style={s.detalheItem}><div style={s.detalheItemLabel}>Recebido em</div><div style={s.detalheItemValue}>{new Date(p.data_recebimento).toLocaleDateString("pt-BR")}</div></div>
-          <div style={s.detalheItem}><div style={s.detalheItemLabel}>Processo criado em</div><div style={s.detalheItemValue}>{p.criado_em ? new Date(p.criado_em).toLocaleString("pt-BR") : "—"}</div></div>
-          <div style={s.detalheItem}><div style={s.detalheItemLabel}>Protocolo</div><div style={s.detalheItemValue}>{p.numero_protocolo || "—"}</div></div>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
+          <div style={{ fontSize: 13, fontWeight: 500, color: "#fff" }}>Dados do processo</div>
+          {!editandoDados && (
+            <button style={s.btnSecondary} onClick={iniciarEdicaoDados}>✎ Editar</button>
+          )}
         </div>
+        {erroEdicao && (
+          <div style={{ background: "rgba(255,77,77,0.15)", color: "#ff9494", borderRadius: 6, padding: "6px 10px", fontSize: 12, marginBottom: 10 }}>
+            {erroEdicao}
+          </div>
+        )}
+        {editandoDados ? (
+          <div style={s.detalheGrid}>
+            <div>
+              <label style={s.label}>Tipo de ato</label>
+              <select style={s.input} value={formEdicao.tipo_ato} onChange={e => setFormEdicao(f => ({ ...f, tipo_ato: e.target.value }))}>
+                <option value="">—</option>
+                {TIPOS_ATO_OPCOES.map(t => <option key={t} value={t}>{t}</option>)}
+              </select>
+            </div>
+            <div>
+              <label style={s.label}>Identificador</label>
+              <input style={s.input} value={formEdicao.identificador_ato} onChange={e => setFormEdicao(f => ({ ...f, identificador_ato: e.target.value }))} />
+            </div>
+            <div>
+              <label style={s.label}>Empresa</label>
+              <input style={s.input} value={formEdicao.empresa} onChange={e => setFormEdicao(f => ({ ...f, empresa: e.target.value }))} />
+            </div>
+            <div>
+              <label style={s.label}>UF</label>
+              <input style={s.input} value={formEdicao.uf} onChange={e => setFormEdicao(f => ({ ...f, uf: e.target.value }))} />
+            </div>
+            <div>
+              <label style={s.label}>Protocolo</label>
+              <input style={s.input} value={formEdicao.numero_protocolo} onChange={e => setFormEdicao(f => ({ ...f, numero_protocolo: e.target.value }))} />
+            </div>
+            <div>
+              <label style={s.label}>Data da ata</label>
+              <input style={s.input} value={formEdicao.data_ata} onChange={e => setFormEdicao(f => ({ ...f, data_ata: e.target.value }))} placeholder="dd/mm/aaaa" />
+            </div>
+            <div>
+              <label style={s.label}>Hora da ata</label>
+              <input style={s.input} value={formEdicao.hora_ata} onChange={e => setFormEdicao(f => ({ ...f, hora_ata: e.target.value }))} placeholder="hh:mm" />
+            </div>
+            <div style={{ display: "flex", alignItems: "flex-end", gap: 8 }}>
+              <button style={s.btnPrimary} onClick={salvarEdicaoDados} disabled={salvandoEdicao}>{salvandoEdicao ? "Salvando..." : "Salvar"}</button>
+              <button style={s.btnSecondary} onClick={cancelarEdicaoDados} disabled={salvandoEdicao}>Cancelar</button>
+            </div>
+          </div>
+        ) : (
+          <div style={s.detalheGrid}>
+            <div style={s.detalheItem}><div style={s.detalheItemLabel}>Tipo de ato</div><div style={s.detalheItemValue}>{p.tipo_ato}</div></div>
+            <div style={s.detalheItem}><div style={s.detalheItemLabel}>Identificador</div><div style={s.detalheItemValue}>{p.identificador_ato}</div></div>
+            <div style={s.detalheItem}><div style={s.detalheItemLabel}>Empresa</div><div style={s.detalheItemValue}>{p.empresa}</div></div>
+            <div style={s.detalheItem}><div style={s.detalheItemLabel}>UF</div><div style={s.detalheItemValue}>{p.uf || "—"}</div></div>
+            <div style={s.detalheItem}><div style={s.detalheItemLabel}>Data da ata</div><div style={s.detalheItemValue}>{p.data_ata} {p.hora_ata && `· ${p.hora_ata}`}</div></div>
+            <div style={s.detalheItem}><div style={s.detalheItemLabel}>Tipo de sociedade</div><div style={s.detalheItemValue}>{p.tipo_sociedade}</div></div>
+            <div style={s.detalheItem}><div style={s.detalheItemLabel}>Recebido em</div><div style={s.detalheItemValue}>{new Date(p.data_recebimento).toLocaleDateString("pt-BR")}</div></div>
+            <div style={s.detalheItem}><div style={s.detalheItemLabel}>Processo criado em</div><div style={s.detalheItemValue}>{p.criado_em ? new Date(p.criado_em).toLocaleString("pt-BR") : "—"}</div></div>
+            <div style={s.detalheItem}><div style={s.detalheItemLabel}>Protocolo</div><div style={s.detalheItemValue}>{p.numero_protocolo || "—"}</div></div>
+          </div>
+        )}
 
         {eventos.length > 0 && (
           <div style={{ marginBottom: 16 }}>

@@ -2734,6 +2734,23 @@ def recalcular_status(p):
     return "aberto"
 
 
+# Vocabulario fechado de tipo_ato aceito na edicao manual (PATCH /processos/{id}).
+# ARD (Ata de Reuniao de Diretoria) e ARS (Ata de Reuniao de Socios) sao tipos
+# distintos - o prompt de classificacao da IA (analisar_ata_ia, acima) so lista
+# ARS, o que e a provavel causa raiz de classificacoes erradas de ARD como RCA.
+TIPOS_ATO_VALIDOS = ["AGO", "AGE", "AGOE", "RCA", "ARD", "ARS", "Alteração Contratual"]
+
+# Campos que o PATCH /processos/{id} aceita. Inclui os usados hoje pelo
+# frontend (status, numero_protocolo, arquivo_protocolo) e os novos campos de
+# edicao manual do processo. "status" fica de fora da edicao manual: eh
+# alterado apenas pelos botoes de status (atualizarStatus), nunca pelo
+# formulario de edicao dos dados do processo.
+CAMPOS_PATCH_PROCESSO_PERMITIDOS = {
+    "status", "numero_protocolo", "arquivo_protocolo", "observacoes",
+    "tipo_ato", "identificador_ato", "empresa", "uf", "data_ata", "hora_ata",
+}
+
+
 @app.patch("/processos/{processo_id}")
 def atualizar_processo(processo_id: str, dados: dict, request: Request = None, x_token: str = Header(None), db: Session = Depends(get_db)):
     if not x_token:
@@ -2741,20 +2758,33 @@ def atualizar_processo(processo_id: str, dados: dict, request: Request = None, x
     usuario = validar_token(x_token, db)
     if not usuario:
         raise HTTPException(status_code=401, detail="Token invalido ou sessao expirada")
+    requer_acesso_admin(usuario)
     p = db.query(Processo).filter(Processo.id == processo_id).first()
     if p and not _tem_acesso_admin(usuario) and p.grupo_id != usuario.grupo_id:
         raise HTTPException(status_code=403, detail="Sem permissao para este processo")
     if not p:
         raise HTTPException(status_code=404, detail="Processo não encontrado")
+    campos_invalidos = set(dados.keys()) - CAMPOS_PATCH_PROCESSO_PERMITIDOS
+    if campos_invalidos:
+        raise HTTPException(status_code=400, detail="Campo(s) não permitido(s): " + ", ".join(sorted(campos_invalidos)))
+    if dados.get("tipo_ato") and dados["tipo_ato"] not in TIPOS_ATO_VALIDOS:
+        raise HTTPException(status_code=400, detail="Tipo de ato inválido: " + str(dados["tipo_ato"]) + ". Valores aceitos: " + ", ".join(TIPOS_ATO_VALIDOS))
     _ip = obter_ip(request)
-    registrar_auditoria(db, usuario, "editar", processo_id, "campos=" + ",".join(list(dados.keys())), _ip)
     for campo, valor in dados.items():
         if hasattr(p, campo):
             if campo == "empresa" and valor:
                 valor = valor.upper()
             if campo == "cnpj" and valor:
                 valor = formatar_cnpj(normalizar_cnpj(valor))
+            valor_anterior = getattr(p, campo)
             setattr(p, campo, valor)
+            if valor_anterior != valor:
+                protocolo_sensivel = campo == "numero_protocolo" and valor_anterior
+                registrar_auditoria(
+                    db, usuario,
+                    "editar_campo_sensivel" if protocolo_sensivel else "editar_campo",
+                    processo_id, f"{campo}: '{valor_anterior}' -> '{valor}'", _ip,
+                )
     # Reinserir/atualizar protocolo cumpre a exigencia ativa
     protocolo_editado = "numero_protocolo" in dados or "arquivo_protocolo" in dados
     if protocolo_editado and getattr(p, "exigencia_ativa", False):
@@ -2765,7 +2795,8 @@ def atualizar_processo(processo_id: str, dados: dict, request: Request = None, x
     if protocolo_editado:
         registrar_evento(db, p, "protocolo_inserido", "Protocolo inserido manualmente" + (f": {p.numero_protocolo}" if p.numero_protocolo else ""), usuario)
     db.commit()
-    notificar_tramitacao_cliente(db, p, status_antes_patch)
+    if "status" in dados:
+        notificar_tramitacao_cliente(db, p, status_antes_patch)
     return {"mensagem": "Atualizado com sucesso"}
 
 @app.post("/processos/{processo_id}/upload/{tipo}")

@@ -746,6 +746,15 @@ const KEYFRAMES_LANDING = `
 export function TelaLogin({ subtitulo, erro, aviso, etapa, login, senha, codigo, carregando, onChangeLogin, onChangeSenha, onChangeCodigo, onEntrar, onVerificarCodigo, onVoltarEtapa }) {
   const bp = useBreakpoint();
   const mobile = bp === "mobile";
+  const [modoEsqueci, setModoEsqueci] = useState(false);
+  const [loginEsqueci, setLoginEsqueci] = useState("");
+  const [statusEsqueci, setStatusEsqueci] = useState("");
+  async function enviarEsqueciSenha() {
+    if (!loginEsqueci || statusEsqueci === "enviando") return;
+    setStatusEsqueci("enviando");
+    try { await axios.post("/esqueci-senha", { login: loginEsqueci }); } catch (e) {}
+    setStatusEsqueci("enviado");
+  }
   const campoLabel = { fontSize: 12, color: "oklch(75% 0.03 250)", marginBottom: 6, display: "block", fontWeight: 600, fontFamily: FONTE_CORPO };
   const campoInput = { width: "100%", background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.12)", borderRadius: 10, padding: "12px 14px", color: "#fff", fontSize: 13.5, marginBottom: 18, fontFamily: FONTE_CORPO, outline: "none", boxSizing: "border-box" };
   const campoBtn = { width: "100%", background: "linear-gradient(120deg, oklch(65% 0.22 255), oklch(68% 0.2 210))", border: "none", borderRadius: 10, padding: 13, color: "#08070d", fontSize: 14, fontWeight: 700, fontFamily: FONTE_CORPO, boxShadow: "0 0 26px oklch(65% 0.22 255 / 0.4)", cursor: "pointer" };
@@ -831,6 +840,26 @@ export function TelaLogin({ subtitulo, erro, aviso, etapa, login, senha, codigo,
         <label style={campoLabel}>Senha</label>
         <input style={campoInput} type="password" value={senha} onChange={e => onChangeSenha(e.target.value)} onKeyDown={e => e.key === "Enter" && onEntrar()} />
         <button style={campoBtn} onClick={onEntrar} disabled={carregando}>{carregando ? "Aguarde..." : "Entrar"}</button>
+        <div style={{ textAlign: "center", marginTop: 14 }}>
+          <button
+            onClick={() => { setModoEsqueci(m => !m); setStatusEsqueci(""); setLoginEsqueci(""); }}
+            style={{ background: "none", border: "none", color: "oklch(70% 0.05 250)", fontSize: 12.5, cursor: "pointer", textDecoration: "underline", fontFamily: FONTE_CORPO, padding: 0 }}>
+            Esqueci minha senha
+          </button>
+        </div>
+        {modoEsqueci && (
+          <div style={{ marginTop: 14, padding: 14, borderRadius: 10, background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.1)" }}>
+            {statusEsqueci === "enviado" ? (
+              <div style={{ fontSize: 12.5, color: "oklch(78% 0.15 160)", lineHeight: 1.5 }}>Se o login existir, enviamos um link de redefinição de senha para o e-mail cadastrado.</div>
+            ) : (<>
+              <label style={campoLabel}>Seu login</label>
+              <input style={{ ...campoInput, marginBottom: 10 }} value={loginEsqueci} onChange={e => setLoginEsqueci(e.target.value)} onKeyDown={e => e.key === "Enter" && enviarEsqueciSenha()} />
+              <button style={{ ...campoBtn, padding: 10, fontSize: 13 }} onClick={enviarEsqueciSenha} disabled={statusEsqueci === "enviando" || !loginEsqueci}>
+                {statusEsqueci === "enviando" ? "Enviando..." : "Enviar link de redefinição"}
+              </button>
+            </>)}
+          </div>
+        )}
         <a href="mailto:contato@atos.net.br?subject=Solicita%C3%A7%C3%A3o%20de%20acesso%20%E2%80%94%20ATOS"
           style={{ display: "block", textAlign: "center", fontSize: 12.5, color: "oklch(70% 0.02 270)", textDecoration: "none", fontFamily: FONTE_CORPO, marginTop: 16 }}>
           Solicitar acesso

@@ -15,30 +15,46 @@ from dotenv import load_dotenv
 import os
 load_dotenv()
 
-# --- Rate limiter simples em memoria (anti-forca-bruta no login) ---
+# --- Rate limiter simples em memoria (anti-forca-bruta) ---
+# Generico por "store" (dict isolado por finalidade) pra login e esqueci-senha
+# nao compartilharem o mesmo balde de tentativas - um cliente pedindo reset de
+# senha varias vezes nao pode se autobloquear do login (e vice-versa).
 import time as _time
-_login_tentativas = {}
 _LOGIN_MAX = 5          # tentativas
 _LOGIN_JANELA = 300     # segundos (5 min)
 _LOGIN_BLOQUEIO = 900   # segundos (15 min de bloqueio)
-def _checar_rate_login(ip):
+def _checar_rate(store, ip, max_tentativas=_LOGIN_MAX, janela=_LOGIN_JANELA):
     agora = _time.time()
-    reg = _login_tentativas.get(ip)
+    reg = store.get(ip)
     if reg and reg.get("bloqueado_ate", 0) > agora:
         return False
-    if not reg or (agora - reg.get("inicio", 0)) > _LOGIN_JANELA:
-        _login_tentativas[ip] = {"inicio": agora, "falhas": 0, "bloqueado_ate": 0}
+    if not reg or (agora - reg.get("inicio", 0)) > janela:
+        store[ip] = {"inicio": agora, "falhas": 0, "bloqueado_ate": 0}
     return True
-def _registrar_falha_login(ip):
+def _registrar_falha(store, ip, max_tentativas=_LOGIN_MAX, bloqueio=_LOGIN_BLOQUEIO):
     agora = _time.time()
-    reg = _login_tentativas.get(ip) or {"inicio": agora, "falhas": 0, "bloqueado_ate": 0}
+    reg = store.get(ip) or {"inicio": agora, "falhas": 0, "bloqueado_ate": 0}
     reg["falhas"] = reg.get("falhas", 0) + 1
-    if reg["falhas"] >= _LOGIN_MAX:
-        reg["bloqueado_ate"] = agora + _LOGIN_BLOQUEIO
-    _login_tentativas[ip] = reg
+    if reg["falhas"] >= max_tentativas:
+        reg["bloqueado_ate"] = agora + bloqueio
+    store[ip] = reg
+def _limpar_falhas(store, ip):
+    if ip in store:
+        del store[ip]
+
+_login_tentativas = {}
+def _checar_rate_login(ip):
+    return _checar_rate(_login_tentativas, ip)
+def _registrar_falha_login(ip):
+    _registrar_falha(_login_tentativas, ip)
 def _limpar_falhas_login(ip):
-    if ip in _login_tentativas:
-        del _login_tentativas[ip]
+    _limpar_falhas(_login_tentativas, ip)
+
+_esqueci_senha_tentativas = {}
+def _checar_rate_esqueci_senha(ip):
+    return _checar_rate(_esqueci_senha_tentativas, ip)
+def _registrar_falha_esqueci_senha(ip):
+    _registrar_falha(_esqueci_senha_tentativas, ip)
 
 import smtplib
 from email.mime.multipart import MIMEMultipart
@@ -1104,9 +1120,9 @@ def enviar_redefinicao_senha_email(usuario, email_destino, token):
 @app.post("/esqueci-senha")
 def esqueci_senha(dados: dict, request: Request, db: Session = Depends(get_db)):
     ip = obter_ip(request) or "desconhecido"
-    if not _checar_rate_login(ip):
+    if not _checar_rate_esqueci_senha(ip):
         raise HTTPException(status_code=429, detail="Muitas tentativas. Tente novamente em alguns minutos.")
-    _registrar_falha_login(ip)
+    _registrar_falha_esqueci_senha(ip)
     login = (dados.get("login") or "").strip()
     if not login:
         raise HTTPException(status_code=400, detail="Informe o login")

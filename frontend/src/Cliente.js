@@ -184,6 +184,7 @@ function ChatProcessoCliente({ processoId, token }) {
 function DetalheProcessoCliente({ p, sessao, onVoltar }) {
   const bp = useBreakpoint();
   const mobile = bp === "mobile";
+  const eventos = JSON.parse(p.eventos || "[]");
   const [anexos, setAnexos] = useState([]);
   const [enviando, setEnviando] = useState(false);
   const [iatosAberto, setIatosAberto] = useState(false);
@@ -274,6 +275,23 @@ function DetalheProcessoCliente({ p, sessao, onVoltar }) {
           <div style={{ marginBottom: 20 }}><div style={{ fontSize: 10.5, color: "#71717a", textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 6 }}>Protocolo</div><div style={{ fontSize: 14, color: p.numero_protocolo ? "#e4e4e7" : "#71717a", fontWeight: 500 }}>{p.numero_protocolo || "—"}</div></div>
           <div><div style={{ fontSize: 10.5, color: "#71717a", textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 6 }}>Processo criado em</div><div style={{ fontSize: 14, color: "#e4e4e7", fontWeight: 500 }}>{p.criado_em ? new Date(p.criado_em).toLocaleString("pt-BR") : "-"}</div></div>
         </div>
+      </div>
+
+      {eventos.length > 0 && (
+        <div style={{ background: "#0e0e14", border: "1px solid rgba(255,255,255,0.06)", borderRadius: 18, padding: "24px 28px", marginBottom: 16 }}>
+          <div style={{ fontSize: 13, color: "#a8b0d8", marginBottom: 14, fontWeight: 500 }}>Histórico</div>
+          <div style={{ background: "rgba(255,255,255,0.04)", borderRadius: 8, padding: 14 }}>
+            {eventos.map((e, i) => (
+              <div key={i} style={{ fontSize: 13, color: "#c4c8e4", padding: "4px 0", borderBottom: i < eventos.length - 1 ? "1px solid rgba(255,255,255,0.06)" : "none", display: "flex", alignItems: "center", gap: 8 }}>
+                • {e}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      <div style={{ background: "#0e0e14", border: "1px solid rgba(255,255,255,0.06)", borderRadius: 18, padding: "24px 28px", marginBottom: 16 }}>
+        <ChatProcessoCliente processoId={p.id} token={sessao.token} />
       </div>
 
       <PainelDownloadStatus processo={p} onBaixar={baixarDocumento} />
@@ -852,7 +870,6 @@ export function Painel({ sessao, onSair }) {
               <div style={{ marginTop: 16, marginBottom: 8 }}>
                 <BotaoIatos processo={docsAbertos} onAbrir={setIatosAberto} />
               </div>
-              <ChatProcessoCliente processoId={docsAbertos.id} token={sessao.token} />
               <div style={s.modalBtns}>
                 <button style={s.btnFechar} onClick={() => setDocsAbertos(null)}>Fechar</button>
               </div>

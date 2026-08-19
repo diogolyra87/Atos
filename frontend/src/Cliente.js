@@ -27,9 +27,10 @@ function abreviarAto(texto, data) {
 export default function Cliente() {
   const [params] = useSearchParams();
   const codigoGrupo = params.get("grupo") || "";
-  const modo = codigoGrupo ? "cadastro" : "login"; // nunca muda em runtime (setModo nunca era chamado) - simplificado de useState pra constante derivada
+  const [modo, setModo] = useState(codigoGrupo ? "cadastro" : "login");
   const [login, setLogin] = useState("");
   const [senha, setSenha] = useState("");
+  const [email, setEmail] = useState("");
   const [erro, setErro] = useState("");
   const [aviso, setAviso] = useState("");
   const [carregando, setCarregando] = useState(false);
@@ -44,12 +45,14 @@ export default function Cliente() {
 
   async function cadastrar() {
     setErro(""); setAviso("");
-    if (!login || !senha) { setErro("Preencha login e senha."); return; }
+    if (!login || !senha || !email) { setErro("Preencha login, e-mail e senha."); return; }
     if (senha.length < 6) { setErro("A senha deve ter pelo menos 6 caracteres."); return; }
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) { setErro("Informe um e-mail válido."); return; }
     setCarregando(true);
     try {
-      await axios.post(`${API}/cadastro`, { codigo_grupo: codigoGrupo, login, senha });
-            const resLogin = await axios.post(`${API}/login`, { login, senha });
+      await axios.post(`${API}/cadastro`, { codigo_grupo: codigoGrupo, login, senha, email });
+      const resLogin = await axios.post(`${API}/login`, { login, senha });
+      setModo("login");
       if (resLogin.data && resLogin.data.requer_2fa) { setEtapa(2); setCarregando(false); return; }
       salvarSessao(resLogin.data);
     } catch (e) {
@@ -94,9 +97,9 @@ export default function Cliente() {
     return (
       <TelaCriarAcesso
         codigoGrupo={codigoGrupo}
-        login={login} senha={senha}
+        login={login} senha={senha} email={email}
         erro={erro} aviso={aviso} carregando={carregando}
-        onChangeLogin={setLogin} onChangeSenha={setSenha}
+        onChangeLogin={setLogin} onChangeSenha={setSenha} onChangeEmail={setEmail}
         onCadastrar={cadastrar}
       />
     );

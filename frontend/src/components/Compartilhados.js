@@ -924,7 +924,7 @@ export function TelaLogin({ subtitulo, erro, aviso, etapa, login, senha, codigo,
 // Tela "Criar Acesso" (primeiro acesso via link do e-mail de boas-vindas) -
 // replica fielmente docs/criar_acesso_v1.html. Renderizada por Cliente.js
 // quando ha' ?grupo=CODIGO na URL (ver Cliente(), ehCadastro).
-export function TelaCriarAcesso({ codigoGrupo, login, senha, erro, aviso, carregando, onChangeLogin, onChangeSenha, onCadastrar }) {
+export function TelaCriarAcesso({ codigoGrupo, login, senha, email, erro, aviso, carregando, onChangeLogin, onChangeSenha, onChangeEmail, onCadastrar }) {
   const campoLabel = { fontSize: 12, color: "#a8b0d8", marginBottom: 6, display: "block", fontWeight: 600 };
   const campoInput = { width: "100%", background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.12)", borderRadius: 10, padding: "12px 14px", color: "#fff", fontSize: 13.5, marginBottom: 18, fontFamily: FONTE_CORPO, outline: "none", boxSizing: "border-box" };
   return (
@@ -942,6 +942,8 @@ export function TelaCriarAcesso({ codigoGrupo, login, senha, erro, aviso, carreg
         </div>
         <label style={campoLabel}>Login</label>
         <input style={campoInput} value={login} onChange={e => onChangeLogin(e.target.value)} placeholder="Escolha seu login" onKeyDown={e => e.key === "Enter" && onCadastrar()} />
+        <label style={campoLabel}>E-mail</label>
+        <input style={campoInput} type="email" value={email} onChange={e => onChangeEmail(e.target.value)} placeholder="Seu e-mail (recebe o código de acesso)" onKeyDown={e => e.key === "Enter" && onCadastrar()} />
         <label style={campoLabel}>Senha</label>
         <input style={campoInput} type="password" value={senha} onChange={e => onChangeSenha(e.target.value)} placeholder="Crie uma senha segura" onKeyDown={e => e.key === "Enter" && onCadastrar()} />
         <button style={{ width: "100%", background: "linear-gradient(135deg, #4d94ff, #8c5aff)", border: "none", borderRadius: 10, padding: 14, color: "#fff", fontSize: 14, fontWeight: 600, boxShadow: "0 4px 20px rgba(77,148,255,0.3)", cursor: carregando ? "default" : "pointer", fontFamily: FONTE_CORPO }} onClick={onCadastrar} disabled={carregando}>

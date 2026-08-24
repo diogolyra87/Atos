@@ -862,6 +862,7 @@ os.makedirs(UPLOADS_DIR, exist_ok=True)
 # app.mount("/uploads", StaticFiles(directory=UPLOADS_DIR), name="uploads")  # desativado: arquivos agora so via /download protegido
 
 GEMINI_KEY = os.getenv("GEMINI_KEY")
+ANTHROPIC_KEY = os.getenv("ANTHROPIC_API_KEY")
 EMAIL_ADMIN = os.getenv("ADMIN_EMAIL")
 
 
@@ -2024,6 +2025,43 @@ def _gemini_texto_documento(caminho_pdf):
         print("Gemini texto documento falhou:", e)
         return None
 
+
+def _claude_texto_documento(caminho_pdf):
+    """Parte 2.3 (24/08/2026): fallback multi-IA pra PDFs 100% imagem - so
+    chamada quando Gemini vision E pytesseract E tesseract CLI ja falharam
+    (ultimo recurso, pago, antes de desistir e cair pra camada 3/revisao
+    manual). Usa a mesma ANTHROPIC_API_KEY ja configurada em /root/atos/.env
+    pro bot Iatos - manda o PDF direto como documento (sem precisar
+    converter pra imagem, igual o Gemini ja faz)."""
+    import base64
+    if not ANTHROPIC_KEY:
+        return None
+    try:
+        import anthropic
+        with open(caminho_pdf, "rb") as f:
+            pdf_b64 = base64.b64encode(f.read()).decode()
+        client_claude = anthropic.Anthropic(api_key=ANTHROPIC_KEY)
+        resposta = client_claude.with_options(timeout=60.0).messages.create(
+            model="claude-sonnet-5",
+            max_tokens=8000,
+            messages=[{
+                "role": "user",
+                "content": [
+                    {"type": "document", "source": {"type": "base64", "media_type": "application/pdf", "data": pdf_b64}},
+                    {"type": "text", "text": (
+                        "Transcreva todo o texto visivel deste documento (ata, certidao ou comprovante de registro "
+                        "de Junta Comercial), incluindo carimbos, selos e textos de certificacao de registro/arquivamento. "
+                        "Responda APENAS com o texto transcrito, sem comentarios."
+                    )},
+                ],
+            }],
+        )
+        txt = "".join(b.text for b in resposta.content if b.type == "text").strip()
+        return txt or None
+    except Exception as e:
+        print("Claude texto documento falhou:", str(e)[:200])
+        return None
+
 def _tesseract_texto_documento(caminho_pdf):
     import subprocess, os, glob, tempfile
     try:
@@ -2123,9 +2161,11 @@ def _camada2_ocr_pytesseract(caminho_pdf):
     """Camada 2 da estrategia de leitura de PDF: OCR. So chamada quando a
     camada 1 (extracao direta) falhou ou veio curta demais. Tenta primeiro
     Gemini vision (ja usado em producao, melhor em documentos escaneados
-    reais com carimbo/selo) e, se indisponivel ou falhar, pdf2image +
-    pytesseract com lang='por+eng' (biblioteca pedida). Retorna o texto
-    resultante, ou None se todas as tentativas falharem."""
+    reais com carimbo/selo), depois pdf2image + pytesseract com lang='por+eng'
+    (biblioteca pedida), depois tesseract CLI, e por ultimo Claude via API
+    (Parte 2.3, 24/08/2026 - fallback multi-IA pra PDFs 100% imagem quando
+    todo o resto falhou, antes de desistir e cair pra camada 3). Retorna o
+    texto resultante, ou None se todas as tentativas falharem."""
     texto_gemini = _gemini_texto_documento(caminho_pdf)
     if texto_gemini and texto_gemini.strip():
         print("   [PDF-camada2] OCR via Gemini vision OK,", len(texto_gemini.strip()), "caracteres")
@@ -2150,7 +2190,12 @@ def _camada2_ocr_pytesseract(caminho_pdf):
         print("   [PDF-camada2] OCR via tesseract CLI (fallback extra) OK,", len(texto_tess_cli.strip()), "caracteres")
         return texto_tess_cli.strip()
 
-    print("   [PDF-camada2] nenhuma tentativa de OCR retornou texto")
+    texto_claude = _claude_texto_documento(caminho_pdf)
+    if texto_claude and texto_claude.strip():
+        print("   [PDF-camada2] OCR via Claude (fallback multi-IA) OK,", len(texto_claude.strip()), "caracteres")
+        return texto_claude.strip()
+
+    print("   [PDF-camada2] nenhuma tentativa de OCR retornou texto (Gemini, pytesseract, tesseract CLI, Claude)")
     return None
 
 

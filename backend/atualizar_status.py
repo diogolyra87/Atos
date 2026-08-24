@@ -29,6 +29,14 @@ JUCERJA_USUARIO = os.getenv("JUCERJA_USUARIO")
 JUCERJA_SENHA = os.getenv("JUCERJA_SENHA")
 JUCEB_LOGIN = os.getenv("JUCEB_LOGIN")
 JUCEB_SENHA = os.getenv("JUCEB_SENHA")
+# Auditoria 24/08/2026: processar_pe() usava JUCEB_LOGIN/JUCEB_SENHA (Bahia)
+# pra logar no portal da JUCEPE (Pernambuco) - dominios completamente
+# diferentes (regin.juceb.ba.gov.br vs redesim.jucepe.pe.gov.br), nunca
+# funcionaria de verdade. JUCEPE_LOGIN/JUCEPE_SENHA ainda NAO existem no
+# .env - processar_pe() agora pula com aviso claro ate serem cadastradas,
+# em vez de tentar logar com credenciais erradas.
+JUCEPE_LOGIN = os.getenv("JUCEPE_LOGIN")
+JUCEPE_SENHA = os.getenv("JUCEPE_SENHA")
 
 EMAIL_ADMIN = os.getenv("ADMIN_EMAIL")
 
@@ -384,13 +392,13 @@ def processar_pe(db, agora):
     print("[PE] " + str(len(pendentes)) + " processo(s) com protocolo.\n")
     if not pendentes:
         return
-    if not JUCEB_LOGIN or not JUCEB_SENHA:
-        print("   [PE] credenciais ausentes no .env - pulando PE.")
+    if not JUCEPE_LOGIN or not JUCEPE_SENHA:
+        print("   [PE] JUCEPE_LOGIN/JUCEPE_SENHA ausentes no .env - pulando PE (ver auditoria 24/08/2026: nao usar JUCEB_LOGIN/JUCEB_SENHA aqui, sao credenciais de outro portal).")
         return
     for p in pendentes:
         print("-> [PE] " + str(p.empresa) + " | prot " + str(p.numero_protocolo) + " | status: " + (p.status or ""))
         try:
-            res = consultar_jucepe(p.numero_protocolo, JUCEB_LOGIN, JUCEB_SENHA, headless=True)
+            res = consultar_jucepe(p.numero_protocolo, JUCEPE_LOGIN, JUCEPE_SENHA, headless=True)
         except Exception as e:
             print("   ERRO consulta JUCEPE (mantem):", e)
             continue
@@ -407,7 +415,7 @@ def processar_pe(db, agora):
             try:
                 nome_arquivo = aplicar_nomenclatura_junta(p.id + "_registro_auto.pdf")
                 caminho = os.path.join(UPLOADS_DIR, nome_arquivo)
-                ok_dl = baixar_documento_jucepe(p.numero_protocolo, JUCEB_LOGIN, JUCEB_SENHA, caminho, headless=True)
+                ok_dl = baixar_documento_jucepe(p.numero_protocolo, JUCEPE_LOGIN, JUCEPE_SENHA, caminho, headless=True)
                 if ok_dl and os.path.exists(caminho):
                     p.arquivo_registro = nome_arquivo
                     p.status = recalcular_status(p)

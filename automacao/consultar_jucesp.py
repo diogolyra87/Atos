@@ -13,6 +13,16 @@ def sem_acento(texto):
 def classificar(andamento, despacho):
     junto = sem_acento(andamento) + " " + sem_acento(despacho)
 
+    # 0) Indeferido - checar ANTES de deferido: "DEFERIDO" in junto tambem
+    # da match dentro de "INDEFERIDO" (substring), mesmo bug ja corrigido em
+    # consultar_juceb.py (auditoria de 24/08/2026 encontrou que aqui ainda
+    # nao tinha sido corrigido). Devolve o andamento literal (nao "DEFERIDO")
+    # - o chamador (processar_sp) so reconhece "EXIGENCIA"/"DEFERIDO" como
+    # strings exatas, entao qualquer outra coisa cai em tramitacao (sem
+    # marcar deferido, sem notificar o cliente errado).
+    if "INDEFERIDO" in junto:
+        return andamento or None
+
     # 1) Exigencia tem prioridade
     if "EXIGENCIA" in junto:
         return "EXIGENCIA"
@@ -39,7 +49,16 @@ def consultar(protocolo, mostrar_navegador=False):
         pagina.wait_for_timeout(1500)
         pagina.fill("#txtProtocolo_txt", protocolo)
         pagina.click("#btnPesquisar")
-        pagina.wait_for_timeout(4000)
+        # Auditoria 24/08/2026: era wait_for_timeout(4000) fixo - causa
+        # provavel de boa parte dos ~29% de retorno "vazio" (pagina mais
+        # lenta que 4s). Espera dinamica pelo elemento de resultado, com o
+        # mesmo timeout fixo como fallback se o elemento nunca aparecer
+        # (nunca bloqueia - so' devolve vazio como ja fazia antes).
+        try:
+            pagina.wait_for_selector("#lblDadosDoUltimoArquivamento", timeout=15000)
+        except Exception:
+            pass
+        pagina.wait_for_timeout(500)
 
         def pegar(seletor):
             el = pagina.query_selector(seletor)

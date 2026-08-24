@@ -12,6 +12,14 @@ def _norm(txt):
 
 def classificar_status_pe(status_texto):
     s = _norm(status_texto)
+    if "INDEFERIDO" in s:
+        # Checar antes de "DEFERIDO" - "DEFERIDO" in s tambem da match
+        # dentro de "INDEFERIDO" (substring), mesmo bug ja corrigido em
+        # consultar_juceb.py (auditoria de 24/08/2026 encontrou que aqui
+        # ainda nao tinha sido corrigido). Nenhuma UF tem fluxo proprio pra
+        # indeferimento hoje - cai em tramitacao (sem marcar deferido, sem
+        # notificar o cliente errado).
+        return "tramitacao"
     if "EXIGENCIA" in s:
         return "exigencia"
     if "FINALIZADO" in s or "DEFERIDO" in s:
@@ -156,9 +164,14 @@ def baixar_documento_jucepe(protocolo, login, senha, destino_path, headless=True
             nav.close()
 
 # teste manual
+# ATENCAO (auditoria 24/08/2026): usar JUCEPE_LOGIN/JUCEPE_SENHA reais da
+# JUCEPE aqui - JUCEB_LOGIN/JUCEB_SENHA sao credenciais da JUCEB (Bahia),
+# de um portal completamente diferente (regin.juceb.ba.gov.br), e nunca
+# funcionaram pra logar em redesim.jucepe.pe.gov.br. Ainda nao existe
+# JUCEPE_LOGIN/JUCEPE_SENHA no .env - adicionar antes de testar de verdade.
 if __name__ == "__main__":
     import os
     from dotenv import load_dotenv
     load_dotenv("/root/atos/.env")
-    r = consultar_jucepe("267951590", os.getenv("JUCEB_LOGIN"), os.getenv("JUCEB_SENHA"))
+    r = consultar_jucepe("267951590", os.getenv("JUCEPE_LOGIN"), os.getenv("JUCEPE_SENHA"))
     print(r)

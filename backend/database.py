@@ -296,6 +296,11 @@ class Processo(Base):
     # apos a classificacao; agora persistido pra alimentar o contexto do
     # iatos. (nao precisa re-OCRizar o PDF a cada pergunta do cliente).
     texto_documento_extraido = Column(Text, nullable=True)
+    # Nome do arquivo da Guia Bancaria (boleto) emitida automaticamente na
+    # JUCERJA (ver automacao/emitir_guia_jucerja.py) - so processos uf="RJ".
+    # NULL = ainda nao emitida. Preenchida = tambem serve de trava de
+    # idempotencia (nao gera boleto duplicado pro mesmo processo).
+    arquivo_guia_bancaria = Column(String, nullable=True)
 
 
 class LogEmail(Base):
@@ -312,6 +317,10 @@ class LogEmail(Base):
     sucesso = Column(Boolean, nullable=True)
     erro = Column(Text, nullable=True)
     criado_em = Column(DateTime, default=datetime.now)
+    # Usado por notificar_taxa_jucerja (guia bancaria JUCERJA) pra
+    # diferenciar o tipo de notificacao no mesmo log. Nulo em linhas
+    # gravadas antes desse campo existir.
+    destinatario_tipo = Column(String, nullable=True)
 
 
 def criar_banco():

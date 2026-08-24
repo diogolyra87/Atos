@@ -24,6 +24,14 @@ def _norm(txt):
 
 def classificar_status_rj(status_texto):
     s = _norm(status_texto)
+    if "INDEFERIDO" in s:
+        # Checar antes de "DEFERIDO" - "DEFERIDO" in s tambem da match
+        # dentro de "INDEFERIDO" (substring), mesmo bug ja corrigido em
+        # consultar_juceb.py (auditoria de 24/08/2026 encontrou que aqui
+        # ainda nao tinha sido corrigido). Nenhuma UF tem fluxo proprio pra
+        # indeferimento hoje - cai em tramitacao (sem marcar deferido, sem
+        # notificar o cliente errado) em vez de inventar um estado novo.
+        return "tramitacao"
     deferido = ["DEFERIDO", "AUTENTICADO E DISPONIVEL PARA CADASTRO", "FINALIZADO"]
     exigencia = ["EM EXIGENCIA", "CUMPRINDO EXIGENCIA"]
     for d in deferido:
@@ -47,7 +55,15 @@ def consultar_jucerja(protocolo, usuario, senha, headless=True):
             try:
                 with pagina.expect_navigation(timeout=15000):
                     pagina.eval_on_selector("#campoSenhaUsuario", "el => el.form.submit()")
-            except: pass
+            except Exception as e:
+                # Auditoria 24/08/2026: isso era "except: pass" (silencioso) -
+                # ~35% das consultas RJ falhavam com o erro generico "tabela
+                # de resultado nao apareceu" la na frente, sem rastro da
+                # causa real. Logar aqui (sem mudar o comportamento - segue
+                # tentando mesmo assim, pode ser so um redirect via AJAX sem
+                # navegacao completa) da visibilidade se o problema real e
+                # aqui no login.
+                print("   [RJ] aviso: submit do login nao navegou como esperado:", str(e)[:150])
             pagina.wait_for_timeout(2500)
 
             if "Termo" in pagina.url:
@@ -56,7 +72,8 @@ def consultar_jucerja(protocolo, usuario, senha, headless=True):
                 try:
                     with pagina.expect_navigation(timeout=15000):
                         pagina.click("#btnConfirmarTermoUtilizacao")
-                except: pass
+                except Exception as e:
+                    print("   [RJ] aviso: confirmacao do Termo de Utilizacao nao navegou como esperado:", str(e)[:150])
                 pagina.wait_for_timeout(2000)
 
             pagina.goto(URL_CONSULTA, timeout=60000)
@@ -70,8 +87,8 @@ def consultar_jucerja(protocolo, usuario, senha, headless=True):
             # espera a tabela de resultado aparecer (chave do sucesso)
             try:
                 pagina.wait_for_selector("tbody tr", timeout=15000)
-            except:
-                return {"erro": "tabela de resultado nao apareceu"}
+            except Exception as e:
+                return {"erro": "tabela de resultado nao apareceu (" + str(e)[:100] + ")"}
             pagina.wait_for_timeout(1500)
 
             linhas = pagina.query_selector_all("tbody tr")

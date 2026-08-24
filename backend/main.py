@@ -895,6 +895,111 @@ INFOSIMPLES_SENHA_NFP = os.getenv("INFOSIMPLES_SENHA_NFP")
 import sys as _sys
 _sys.path.insert(0, os.path.join(BASE_DIR, "..", "automacao"))
 from jucesp_infosimples import baixar_certidao_simplificada
+from emitir_guia_jucerja import emitir_guia_bancaria
+
+JUCERJA_USUARIO = os.getenv("JUCERJA_USUARIO")
+JUCERJA_SENHA = os.getenv("JUCERJA_SENHA")
+
+
+def notificar_taxa_jucerja(db, p, sucesso, motivo_falha=None, caminho_pdf=None):
+    """Notifica Diogo (admin) + operadores sobre a emissao automatica da Guia
+    Bancaria (taxa) na JUCERJA pra um processo uf='RJ' - sucesso (com o PDF
+    anexado) ou falha (com o motivo, pra emissao manual). Usa emails_admin()
+    de proposito (mesma lista de destinatarios nos dois casos - Diogo +
+    operadores com e-mail). So' o destinatario_tipo no log_emails diferencia
+    sucesso de falha nas consultas de auditoria depois. Nunca deve quebrar o
+    fluxo principal."""
+    try:
+        destinatarios = emails_admin(db)
+        if not destinatarios:
+            return False
+        if sucesso:
+            assunto = "[Atos] Guia Bancária JUCERJA - " + (p.empresa or p.id)
+            corpo = (
+                "Segue a taxa do processo " + str(p.id) + " (" + (p.empresa or "-") + ") para pagamento.\n\n"
+                "Emitida automaticamente na JUCERJA."
+            )
+            nome_anexo = os.path.basename(caminho_pdf) if caminho_pdf else None
+        else:
+            assunto = "[Atos] ATENÇÃO - Falha ao emitir Guia Bancária JUCERJA - " + (p.empresa or p.id)
+            corpo = (
+                "Não foi possível emitir automaticamente a Guia Bancária do processo " + str(p.id) +
+                " (" + (p.empresa or "-") + ") na JUCERJA.\n\n"
+                "Motivo: " + (motivo_falha or "não informado") + "\n\n"
+                "É necessário emitir manualmente."
+            )
+            caminho_pdf = None
+            nome_anexo = None
+        algum_sucesso = False
+        for dest in destinatarios:
+            if sucesso and caminho_pdf:
+                ok = enviar_email_anexo(dest, assunto, corpo, caminho_anexo=caminho_pdf, nome_anexo=nome_anexo)
+            else:
+                ok = enviar_email(dest, assunto, corpo)
+            if not sucesso:
+                erro_log = motivo_falha or (None if ok else "falha no envio")
+            else:
+                erro_log = None if ok else "falha no envio"
+            db.add(LogEmail(
+                id=str(uuid.uuid4()), processo_id=p.id, destinatario=dest,
+                tipo="guia_bancaria_jucerja", sucesso=ok, erro=erro_log,
+                destinatario_tipo="taxa_jucerja" if sucesso else "taxa_jucerja_falha",
+            ))
+            algum_sucesso = algum_sucesso or ok
+        db.commit()
+        return algum_sucesso
+    except Exception as e:
+        print("Erro em notificar_taxa_jucerja:", e)
+        return False
+
+
+def processar_guia_bancaria_jucerja(db, processo_id, headless=True):
+    """Orquestra a emissao automatica da Guia Bancaria JUCERJA pra um
+    processo: checa idempotencia, chama a automacao Playwright
+    (emitir_guia_jucerja.emitir_guia_bancaria), salva o PDF em UPLOADS_DIR,
+    marca o processo, registra auditoria e notifica (sucesso ou falha) via
+    notificar_taxa_jucerja. Nunca levanta excecao nem trava quem chamou -
+    ETAPA 2A: ainda NAO ligada a nenhum gatilho automatico, so' chamada
+    manualmente (supervisionada) ate a Etapa 2b ser aprovada separadamente.
+
+    IMPORTANTE (auditoria 24/08/2026, deploy inicial): os selectors de
+    emitir_guia_bancaria alem da selecao de Ato/Evento (botao Adicionar,
+    busca por CNPJ, tipo de Protocolo, Gerar Boleto, Imprimir Guia Bancaria)
+    ainda NAO foram confirmados contra o site real da JUCERJA - ver docstring
+    de automacao/emitir_guia_jucerja.py. A primeira chamada deve ser
+    supervisionada (Diogo acompanhando, headless=False) contra um processo
+    real pendente de guia - nunca em execucao autonoma antes disso.
+
+    Retorna o dict de emitir_guia_bancaria (sucesso/motivo_falha/caminho_pdf)."""
+    try:
+        p = db.query(Processo).filter(Processo.id == processo_id).first()
+        if not p:
+            return {"sucesso": False, "motivo_falha": "Processo não encontrado", "caminho_pdf": None}
+        if (p.uf or "").upper() != "RJ":
+            return {"sucesso": False, "motivo_falha": "Processo não é uf=RJ", "caminho_pdf": None}
+        if p.arquivo_guia_bancaria:
+            print("   [GB] guia já emitida antes para", processo_id, "- ignorando (idempotência)")
+            return {"sucesso": True, "motivo_falha": None, "caminho_pdf": p.arquivo_guia_bancaria, "ja_existia": True}
+        if not JUCERJA_USUARIO or not JUCERJA_SENHA:
+            resultado = {"sucesso": False, "motivo_falha": "JUCERJA_USUARIO/JUCERJA_SENHA não configuradas no .env", "caminho_pdf": None}
+        else:
+            nome_arquivo = f"{processo_id}_guia_bancaria.pdf"
+            destino = os.path.join(UPLOADS_DIR, nome_arquivo)
+            resultado = emitir_guia_bancaria(p, JUCERJA_USUARIO, JUCERJA_SENHA, destino, headless=headless)
+
+        if resultado.get("sucesso"):
+            p.arquivo_guia_bancaria = os.path.basename(resultado["caminho_pdf"])
+            db.commit()
+            registrar_auditoria(db, None, "guia_bancaria_emitida", processo_id, "arquivo=" + p.arquivo_guia_bancaria)
+            notificar_taxa_jucerja(db, p, sucesso=True, caminho_pdf=resultado["caminho_pdf"])
+        else:
+            registrar_auditoria(db, None, "guia_bancaria_falhou", processo_id, "motivo=" + str(resultado.get("motivo_falha")))
+            notificar_taxa_jucerja(db, p, sucesso=False, motivo_falha=resultado.get("motivo_falha"))
+        return resultado
+    except Exception as e:
+        print("Erro em processar_guia_bancaria_jucerja:", e)
+        return {"sucesso": False, "motivo_falha": str(e)[:300], "caminho_pdf": None}
+
 
 CONHECIMENTO_FILE = r"D:\Mane\dados\conhecimento_registro.json"
 def carregar_conhecimento():

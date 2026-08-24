@@ -829,6 +829,7 @@ function AppPainel({ onSair, sessao }) {
     const [anexos, setAnexos] = useState([]);
     const [enviandoAnexo, setEnviandoAnexo] = useState(false);
     const [descAnexo, setDescAnexo] = useState("");
+    const [baixandoZip, setBaixandoZip] = useState(false);
     async function carregarAnexos() {
       try {
         const r = await axios.get(`${API}/processos/${p.id}/anexos`);
@@ -864,6 +865,18 @@ function AppPainel({ onSair, sessao }) {
         await axios.delete(`${API}/anexos/${anexoId}`);
         await carregarAnexos();
       } catch (e) { alert("Nao foi possivel remover o anexo."); }
+    }
+    async function baixarTodosAnexos() {
+      setBaixandoZip(true);
+      try {
+        const res = await axios.get(`${API}/processos/${p.id}/anexos/zip`, { responseType: "blob" });
+        const url = window.URL.createObjectURL(new Blob([res.data], { type: "application/zip" }));
+        const a = document.createElement("a");
+        a.href = url; a.download = `anexos_processo_${p.id}.zip`;
+        document.body.appendChild(a); a.click(); a.remove();
+        window.URL.revokeObjectURL(url);
+      } catch (e) { alert("Nao foi possivel baixar o ZIP de anexos."); }
+      setBaixandoZip(false);
     }
 
     async function registrarExigencia() {
@@ -1129,8 +1142,16 @@ async function excluirProcesso() {
           ))}
         </div>
 
-        <div style={{ fontSize: 13, fontWeight: 500, color: "#fff", marginTop: 24, marginBottom: 8 }}>
-          Anexos <span style={{ fontSize: 12, color: "#62666d", fontWeight: 400 }}>({anexos.length})</span>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginTop: 24, marginBottom: 8 }}>
+          <div style={{ fontSize: 13, fontWeight: 500, color: "#fff" }}>
+            Anexos <span style={{ fontSize: 12, color: "#62666d", fontWeight: 400 }}>({anexos.length})</span>
+          </div>
+          {anexos.length > 0 && (
+            <button onClick={baixarTodosAnexos} disabled={baixandoZip}
+              style={{ background: "transparent", border: "1px solid rgba(77,148,255,0.4)", color: "#8ec2ff", borderRadius: 6, padding: "3px 10px", fontSize: 11, cursor: baixandoZip ? "not-allowed" : "pointer", fontFamily: FONTE_CORPO, opacity: baixandoZip ? 0.6 : 1 }}>
+              {baixandoZip ? "Gerando ZIP..." : "↓ Baixar Todos os Anexos"}
+            </button>
+          )}
         </div>
         <div style={{ background: "rgba(255,255,255,0.04)", borderRadius: 8, padding: 14, marginBottom: 16 }}>
           {anexos.length === 0 ? (

@@ -1663,6 +1663,49 @@ def baixar_anexo(anexo_id: str, request: Request = None, x_token: str = Header(N
     registrar_auditoria(db, usuario, "anexo_download", a.processo_id, "anexo=" + (a.nome_original or ""), _ip)
     return FileResponse(caminho, filename=(a.nome_exibicao or a.nome_original or a.arquivo))
 
+@app.get("/processos/{processo_id}/anexos/zip")
+def baixar_anexos_zip(processo_id: str, request: Request = None, x_token: str = Header(None), db: Session = Depends(get_db)):
+    """Baixa todos os anexos do processo num unico ZIP (gerado em memoria via
+    io.BytesIO, nunca escrito em disco). Mesma permissao das demais rotas de
+    anexo (admin ou operador via _tem_acesso_admin) - cliente final nunca
+    acessa, mesmo tentando a URL direto."""
+    from fastapi.responses import StreamingResponse
+    import zipfile, io
+    if not x_token:
+        raise HTTPException(status_code=401, detail="Token necessario")
+    usuario = validar_token(x_token, db)
+    if not usuario:
+        raise HTTPException(status_code=401, detail="Token invalido ou sessao expirada")
+    requer_acesso_admin(usuario)
+    p = db.query(Processo).filter(Processo.id == processo_id).first()
+    if not p:
+        raise HTTPException(status_code=404, detail="Processo nao encontrado")
+    anexos = db.query(Anexo).filter(Anexo.processo_id == processo_id).order_by(Anexo.criado_em).all()
+    buffer = io.BytesIO()
+    nomes_usados = {}
+    total_incluidos = 0
+    with zipfile.ZipFile(buffer, "w", zipfile.ZIP_DEFLATED) as zf:
+        for a in anexos:
+            caminho_disco = os.path.join(UPLOADS_DIR, a.arquivo)
+            if not os.path.exists(caminho_disco):
+                continue
+            nome = a.nome_exibicao or a.nome_original or a.arquivo
+            if nome in nomes_usados:
+                nomes_usados[nome] += 1
+                base, ext = os.path.splitext(nome)
+                nome = base + "_" + str(nomes_usados[nome]) + ext
+            else:
+                nomes_usados[nome] = 1
+            zf.write(caminho_disco, arcname=nome)
+            total_incluidos += 1
+    if total_incluidos == 0:
+        raise HTTPException(status_code=404, detail="Nenhum anexo encontrado para este processo")
+    buffer.seek(0)
+    _ip = obter_ip(request)
+    registrar_auditoria(db, usuario, "anexos_zip_download", processo_id, "total=" + str(total_incluidos), _ip)
+    nome_zip = "anexos_processo_" + processo_id + ".zip"
+    return StreamingResponse(buffer, media_type="application/zip", headers={"Content-Disposition": 'attachment; filename="' + nome_zip + '"'})
+
 @app.delete("/anexos/{anexo_id}")
 def excluir_anexo(anexo_id: str, request: Request = None, x_token: str = Header(None), db: Session = Depends(get_db)):
     if not x_token:

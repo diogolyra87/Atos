@@ -1,4 +1,4 @@
-﻿# -*- coding: utf-8 -*-
+# -*- coding: utf-8 -*-
 import sys, os, re
 from datetime import datetime, timedelta
 from dotenv import load_dotenv
@@ -432,13 +432,10 @@ def processar_sc(db, agora):
     modulo (24/08/2026) e so acompanhamento de status - ao contrario de
     RJ/BA/PE, NAO baixa documento automaticamente (fora do pedido original).
 
-    ATENCAO - NAO CHAMADA AINDA em processar(): consultar_jucesc.py so foi
-    validado manualmente contra o caminho de "protocolo nao encontrado"
-    (confirmado real, ver docstring do modulo); a extracao da pagina de
-    RESULTADO (quando o protocolo existe) ainda nao foi testada contra um
-    processo real da JUCESC. So chamar processar_sc() dentro de processar()
-    depois de rodar `python consultar_jucesc.py <protocolo real>` e conferir
-    que o historico/status batem com o que aparece no navegador."""
+    Validado em 24/08/2026 contra o protocolo real 265529433 (MELI
+    DEVELOPERS BRASIL LTDA/SC) - extracao de status_bruto/historico e
+    classificacao (tramitacao) confirmadas corretas, ativado em
+    processar()."""
     processos = db.query(Processo).filter(
         Processo.uf == "SC",
         Processo.numero_protocolo.isnot(None),
@@ -580,9 +577,9 @@ def processar():
     processar_rj(db, agora)
     processar_ba(db, agora)
     processar_pe(db, agora)
-    # processar_sc(db, agora)  # NAO ATIVAR ainda - ver docstring de
-    # processar_sc: extracao da pagina de resultado (protocolo encontrado)
-    # ainda nao validada contra um processo real da JUCESC (Parte 3 pendente).
+    processar_sc(db, agora)  # ativado 24/08/2026 - validado com protocolo
+    # real (265529433, MELI DEVELOPERS BRASIL LTDA/SC), extracao de status
+    # e historico confirmada correta.
     processar_empreendedor_digital(db, agora)
     db.close()
     _marcar_execucao_ok()

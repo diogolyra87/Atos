@@ -342,7 +342,7 @@ def _extrair_protocolo_barcode(caminho_pdf):
         return None
 
 
-def extrair_protocolo_ocr(caminho_pdf):
+def extrair_protocolo_ocr(caminho_pdf, texto_ja_extraido=None):
     """Extrai o numero de protocolo de um comprovante (JUCESP ou JUCERJA),
     usando a mesma cadeia de tentativas de extrair_texto_pdf_em_camadas
     (texto direto via pdfplumber/fitz -> OCR via Gemini vision/pytesseract) -
@@ -350,18 +350,29 @@ def extrair_protocolo_ocr(caminho_pdf):
     web salvos em PDF, sem nenhum texto selecionavel. Se nada for
     reconhecido automaticamente, retorna None e o operador preenche
     manualmente (o campo aceita texto livre, sem nenhuma restricao de
-    formato)."""
+    formato).
+
+    texto_ja_extraido (24/08/2026): se o chamador ja extraiu o texto desse
+    mesmo PDF nesse mesmo request (ex: analisar_pasta_multi, que ja roda
+    extrair_texto_pdf_em_camadas pra ler a ata), passa aqui pra evitar
+    reprocessar OCR do zero so pra procurar o protocolo - reaproveita o
+    texto e so cai pra OCR completo de novo se realmente nao tiver nada."""
     # 0) Codigo de barras: deterministico, mais confiavel que qualquer OCR/IA
     num = _extrair_protocolo_barcode(caminho_pdf)
     if num:
         print("protocolo via codigo de barras:", num)
         return num
-    # 1) texto direto + 2) OCR (mesma cadeia usada pra leitura das atas)
-    texto, _leitura_parcial = extrair_texto_pdf_em_camadas(caminho_pdf)
+    # 1) texto ja extraido (se o chamador tiver) ou texto direto + OCR do
+    # zero (mesma cadeia usada pra leitura das atas, custosa - so roda de
+    # novo se ninguem ja tinha feito isso nesse request)
+    if texto_ja_extraido:
+        texto = texto_ja_extraido
+    else:
+        texto, _leitura_parcial = extrair_texto_pdf_em_camadas(caminho_pdf)
     if texto:
         num = _regex_protocolo(texto)
         if num:
-            print("protocolo via texto/OCR em camadas:", num)
+            print("protocolo via texto ja extraido/OCR em camadas:", num)
             return num
     # 3) Gemini com prompt dedicado (pede so o numero do protocolo) - mais
     # preciso que aplicar regex sobre o texto generico quando o layout do
@@ -2359,7 +2370,7 @@ async def analisar_pasta(arquivos: list[UploadFile] = File(...), x_token: str = 
     dados["texto_extraido"] = melhor["texto"]
     if melhor["tipo"]:
         dados["tipo_ato"] = dados.get("tipo_ato") or melhor["tipo"]
-    numero_prot = await asyncio.to_thread(_tentar_extrair_protocolo, melhor["conteudo"], melhor["nome"])
+    numero_prot = await asyncio.to_thread(_tentar_extrair_protocolo, melhor["conteudo"], melhor["nome"], melhor["texto"])
     if numero_prot:
         dados["numero_protocolo"] = numero_prot
     anexos = [{"indice": i["indice"], "nome": i["nome"]} for i in itens if i["indice"] != melhor["indice"]]
@@ -2443,10 +2454,12 @@ def _classificar_lote_ia(itens):
         print("Erro na classificacao por IA do lote:", str(e)[:200])
         return {}
 
-def _tentar_extrair_protocolo(conteudo: bytes, nome: str):
+def _tentar_extrair_protocolo(conteudo: bytes, nome: str, texto_ja_extraido=None):
     """Tenta extrair o numero de protocolo de um arquivo (PDF ou imagem), usando o
     mesmo pipeline robusto (codigo de barras + texto + Gemini + Tesseract) ja usado
-    no upload de protocolo para processo existente. Nunca lanca excecao para fora."""
+    no upload de protocolo para processo existente. Nunca lanca excecao para fora.
+    texto_ja_extraido: repassado pro extrair_protocolo_ocr, evita reprocessar OCR
+    do zero se o chamador ja tiver extraido o texto desse arquivo nesse request."""
     import tempfile
     nm = (nome or "").lower()
     try:
@@ -2456,7 +2469,7 @@ def _tentar_extrair_protocolo(conteudo: bytes, nome: str):
         with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as f:
             f.write(conteudo)
             tmp = f.name
-        numero = extrair_protocolo_ocr(tmp)
+        numero = extrair_protocolo_ocr(tmp, texto_ja_extraido=texto_ja_extraido)
         os.unlink(tmp)
         return numero
     except Exception as e:
@@ -2675,7 +2688,7 @@ async def analisar_pasta_multi(arquivos: list[UploadFile] = File(...), codigo_gr
         leitura_parcial = len((i["texto"] or "").strip()) < 50
         try:
             dados = analisar_ata_ia(i["texto"]) if i["texto"].strip() else dict(_CAMPOS_VAZIOS_ATA)
-            numero_prot = await asyncio.to_thread(_tentar_extrair_protocolo, i["conteudo"], i["nome"])
+            numero_prot = await asyncio.to_thread(_tentar_extrair_protocolo, i["conteudo"], i["nome"], i["texto"])
         except Exception as e:
             print("Falha inesperada ao analisar item do lote (processo", i["processo_pendente_id"], "):", str(e)[:300])
             dados = dict(_CAMPOS_VAZIOS_ATA)
@@ -2702,7 +2715,7 @@ async def analisar_pasta_multi(arquivos: list[UploadFile] = File(...), codigo_gr
         for i in itens:
             if i["indice"] in indices_principais_final:
                 continue
-            numero_prot_anexo = await asyncio.to_thread(_tentar_extrair_protocolo, i["conteudo"], i["nome"])
+            numero_prot_anexo = await asyncio.to_thread(_tentar_extrair_protocolo, i["conteudo"], i["nome"], i["texto"])
             if numero_prot_anexo:
                 principais_out[0]["dados"]["numero_protocolo"] = numero_prot_anexo
                 print("Protocolo extraido de anexo do lote:", numero_prot_anexo, "arquivo:", i["nome"])

@@ -32,6 +32,8 @@ export const STATUS_CONFIG = {
   deferido: { label: "Deferido", bg: "rgba(77,148,255,0.12)", color: "#4d94ff", borda: "rgba(77,148,255,0.3)" },
   aprovado: { label: "Deferido", bg: "rgba(77,148,255,0.12)", color: "#4d94ff", borda: "rgba(77,148,255,0.3)" },
   finalizado: { label: "Finalizado", bg: "rgba(0,255,170,0.12)", color: "#00ffaa", borda: "rgba(0,255,170,0.3)" },
+  pendente_processamento: { label: "Processando", bg: "rgba(154,154,166,0.12)", color: "#9a9aa6", borda: "rgba(154,154,166,0.3)" },
+  falha_processamento: { label: "Falha no processamento", bg: "rgba(255,77,77,0.12)", color: "#ff4d4d", borda: "rgba(255,77,77,0.3)" },
 };
 
 export const JUNTA_POR_UF = {

@@ -340,6 +340,7 @@ function AppPainel({ onSair, sessao }) {
     extras = extras || [];
     const fdA = new FormData();
     arquivos.forEach(a => fdA.append("arquivos", a));
+    fdA.append("codigo_grupo", upGrupo);
     const res = await axios.post(`${API}/processos/analisar-pasta-multi`, fdA);
     const r = res.data || {};
     const principais = r.principais || [];
@@ -395,6 +396,7 @@ function AppPainel({ onSair, sessao }) {
       try {
         const fdR = new FormData();
         raizArquivos.forEach(a => fdR.append("arquivos", a));
+        fdR.append("pre_classificacao", "true");
         const resR = await axios.post(`${API}/processos/analisar-pasta-multi`, fdR);
         const rR = resR.data || {};
         const principaisRaiz = rR.principais || [];
@@ -429,6 +431,9 @@ function AppPainel({ onSair, sessao }) {
     alert(`Concluido: ${totalCriados} processo(s) criado(s) em ${chaves.length} pasta(s). Anexos: ${totalAnexosOk}${totalAnexosErro ? ` (${totalAnexosErro} falharam)` : ""}.${gruposErro ? ` ${gruposErro} pasta(s) com erro.` : ""}`);
   }
   async function checarDup(dados) {
+    if (dados.duplicado_envelope) {
+      return window.confirm("ATENÇÃO: este documento tem o mesmo Envelope DocuSign de um processo já existente (" + (dados.processo_id_existente || "") + ").\n\nQuase certamente é o mesmo ato enviado de novo.\n\nDeseja seguir com a inserção mesmo assim?");
+    }
     try {
       const params = {
         empresa: dados.empresa || "", tipo_ato: dados.tipo_ato || "",
@@ -453,6 +458,7 @@ function AppPainel({ onSair, sessao }) {
       try {
         const fd1 = new FormData();
         fd1.append("arquivo", arq);
+        fd1.append("codigo_grupo", upGrupo);
         const ana = await axios.post(`${API}/processos/analisar`, fd1);
         const dados = ana.data || {};
         dados.codigo_grupo = upGrupo;

@@ -2467,22 +2467,184 @@ def _sa_texto_local(s):
     s = (s or "").lower()
     return "".join(c for c in unicodedata.normalize("NFD", s) if unicodedata.category(c) != "Mn")
 
+_REGEX_ENVELOPE_DOCUSIGN = None
+def _extrair_envelope_docusign(texto):
+    """Parte 3 da correcao do bug de upload silencioso (24/08/2026): extrai o
+    Envelope ID do Docusign do texto (camada 1 ou OCR), usado como chave de
+    deduplicacao - mais confiavel que empresa/tipo/data pra pegar reenvio do
+    MESMO ato (ex: cliente manda o mesmo PDF 2x com nomes diferentes)."""
+    global _REGEX_ENVELOPE_DOCUSIGN
+    if not texto:
+        return None
+    import re
+    if _REGEX_ENVELOPE_DOCUSIGN is None:
+        _REGEX_ENVELOPE_DOCUSIGN = re.compile(
+            r"Envelope ID:?\s*([0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12})",
+            re.IGNORECASE,
+        )
+    m = _REGEX_ENVELOPE_DOCUSIGN.search(texto)
+    return m.group(1).upper() if m else None
+
+
+def _checar_duplicata_envelope(db, envelope_id, excluir_processo_id=None):
+    """Retorna o Processo existente com o mesmo Envelope ID do Docusign no
+    texto ja extraido, se houver (exclui o proprio processo em revisao)."""
+    if not envelope_id:
+        return None
+    q = db.query(Processo).filter(Processo.texto_documento_extraido.like("%" + envelope_id + "%"))
+    if excluir_processo_id:
+        q = q.filter(Processo.id != excluir_processo_id)
+    return q.first()
+
+
+def _resolver_grupo_id_upload(db, usuario_tok, codigo_grupo):
+    """Mesma regra ja usada em criar_processo pra decidir o grupo_id de um
+    upload: admin/operador pode escolher via codigo_grupo, cliente sempre
+    cai no proprio grupo. Extraida aqui pra ser reaproveitada tambem no
+    momento do insert garantido (upload), nao so na confirmacao."""
+    if _tem_acesso_admin(usuario_tok):
+        codigo_grupo = (codigo_grupo or "").strip()
+        if codigo_grupo:
+            grupo = db.query(Grupo).filter(Grupo.codigo == codigo_grupo).first()
+            if not grupo:
+                raise HTTPException(status_code=400, detail="Grupo com codigo '" + codigo_grupo + "' nao encontrado")
+            return grupo.id
+        return None
+    return usuario_tok.grupo_id
+
+
+def _criar_processo_pendente(db, usuario_tok, grupo_id, conteudo: bytes, nome_arquivo: str):
+    """Parte 2.1 da correcao do bug de upload silencioso (24/08/2026): cria o
+    registro do processo IMEDIATAMENTE ao receber o arquivo, com status
+    'pendente_processamento', ANTES de qualquer tentativa de extracao/OCR/IA
+    - garante que o processo nunca fica invisivel, mesmo que o parsing falhe
+    por completo ou a conexao caia antes da confirmacao. Commita de imediato
+    (nao espera o resto do fluxo), pra que a gravacao ja seja duravel aqui."""
+    processo_id = "MN-" + datetime.now().strftime("%Y%m%d%H%M%S") + "-" + str(uuid.uuid4())[:4].upper()
+    ext = os.path.splitext(nome_arquivo or "")[1] or ".pdf"
+    nome_no_disco = processo_id + "_ata" + ext
+    caminho = os.path.join(UPLOADS_DIR, nome_no_disco)
+    with open(caminho, "wb") as f:
+        f.write(conteudo)
+    p = Processo(
+        id=processo_id,
+        empresa="", cnpj="", tipo_ato="",
+        status="pendente_processamento",
+        arquivo_ata=nome_no_disco,
+        arquivo_ata_nome_exibicao=aplicar_nomenclatura_junta(nome_arquivo or ""),
+        grupo_id=grupo_id,
+        leitura_parcial=False,
+    )
+    db.add(p)
+    db.flush()
+    if grupo_id:
+        try:
+            vincular_fluxo_do_dia(db, p, grupo_id)
+        except Exception as e:
+            print("Erro ao vincular fluxo do dia (processo pendente, ignorado):", str(e)[:200])
+    registrar_evento(db, p, "ata_recebida", "Arquivo recebido, processando...", usuario_tok)
+    db.commit()
+    return p
+
+
+def _aplicar_dados_extraidos(db, p, dados: dict):
+    """Depois da extracao/IA (ja protegida contra excecao nas proprias
+    funcoes), atualiza o processo pendente com os dados encontrados e checa
+    duplicidade por Envelope ID do Docusign (Parte 3). Nao bloqueia nem
+    impede a insercao normal se for duplicata - so vincula (processo_origem_id)
+    e alerta por Telegram, deixando a decisao final de prosseguir pro
+    operador (mesmo espirito do checar-duplicidade por empresa/tipo/data ja
+    existente). Retorna o processo original se for duplicata, senao None."""
+    texto = dados.get("texto_extraido") or ""
+    envelope_id = _extrair_envelope_docusign(texto)
+    duplicado_de = _checar_duplicata_envelope(db, envelope_id, excluir_processo_id=p.id) if envelope_id else None
+    p.empresa = (dados.get("empresa") or "").upper()
+    cnpj_norm = normalizar_cnpj(dados.get("cnpj") or "")
+    p.cnpj = formatar_cnpj(cnpj_norm) if (cnpj_norm and validar_cnpj(cnpj_norm)) else (dados.get("cnpj") or "")
+    p.nire = dados.get("nire") or ""
+    p.uf = (dados.get("uf") or "").upper().strip()[:2]
+    p.tipo_sociedade = dados.get("tipo_sociedade") or ""
+    p.tipo_ato = dados.get("tipo_ato") or ""
+    p.identificador_ato = dados.get("identificador_ato") or ""
+    p.data_ata = dados.get("data_ata") or ""
+    p.hora_ata = dados.get("hora_ata") or ""
+    p.leitura_parcial = bool(dados.get("leitura_parcial", False))
+    p.texto_documento_extraido = texto or None
+    if duplicado_de:
+        p.processo_origem_id = duplicado_de.id
+        p.observacoes = ((p.observacoes or "") + "\nPossivel duplicata do processo " + duplicado_de.id + " (mesmo Envelope ID Docusign: " + envelope_id + ").").strip()
+        try:
+            notificar_telegram(
+                "ATOS - Possivel duplicata detectada" + chr(10) +
+                "Processo: " + p.id + chr(10) +
+                "Envelope ID: " + envelope_id + chr(10) +
+                "Ja existe em: " + duplicado_de.id + " (" + (duplicado_de.empresa or "-") + ")"
+            )
+        except Exception as e:
+            print("Erro ao notificar telegram sobre duplicata:", str(e)[:200])
+    db.commit()
+    return duplicado_de
+
+
+def _alertar_falha_processamento(p, motivo: str):
+    """Parte 2.4 (24/08/2026): avisa por Telegram (mesmo canal ja usado no
+    resto do sistema) sempre que um processo cai em 'falha_processamento' -
+    pra nenhuma falha de leitura/parsing passar despercebida. Nunca lanca
+    excecao (chamado de dentro de blocos de except - nao pode gerar outro
+    erro em cima do original)."""
+    try:
+        notificar_telegram(
+            "ATOS - Falha no processamento de upload" + chr(10) +
+            "Processo: " + p.id + chr(10) +
+            "Arquivo: " + (p.arquivo_ata_nome_exibicao or p.arquivo_ata or "-") + chr(10) +
+            "Motivo: " + (motivo or "-")[:300] + chr(10) +
+            "Revisar manualmente no sistema."
+        )
+    except Exception as e:
+        print("Erro ao notificar telegram sobre falha de processamento:", str(e)[:200])
+
+
 @app.post("/processos/analisar-pasta-multi")
-async def analisar_pasta_multi(arquivos: list[UploadFile] = File(...), x_token: str = Header(None), db: Session = Depends(get_db)):
+async def analisar_pasta_multi(arquivos: list[UploadFile] = File(...), codigo_grupo: str = Form(None), pre_classificacao: bool = Form(False), x_token: str = Header(None), db: Session = Depends(get_db)):
     """Detecta TODOS os documentos principais numa pasta/subpasta (nao so o melhor).
     Se houver mais de um principal, cada um vira um processo, e os demais arquivos
-    (anexos) sao compartilhados/replicados entre todos os processos gerados."""
+    (anexos) sao compartilhados/replicados entre todos os processos gerados.
+
+    Parte 2.1/2.2/3 (24/08/2026): cada arquivo recebido ja cria um processo
+    'pendente_processamento' ANTES de qualquer extracao/IA (insert garantido -
+    nunca some, mesmo que o parsing falhe ou a conexao caia no meio). Os que
+    acabam classificados como anexo/ja-registrado/duplicata-origem-destino
+    tem o processo pendente removido no final (nao viram processo de
+    verdade); so os principais finais permanecem, ja com os dados extraidos
+    e a checagem de duplicidade por Envelope ID Docusign aplicada.
+
+    pre_classificacao=True: usado so pelo passo de reclassificacao dos
+    arquivos soltos na raiz de um upload de pasta com subpastas (o resultado
+    e descartado - os arquivos sao reagrupados e reenviados de verdade pra
+    essa mesma rota logo em seguida) - nao cria processo nenhum, pra nao
+    duplicar o insert garantido do envio real que vem depois."""
     if not x_token:
         raise HTTPException(status_code=401, detail="Token necessario")
     usuario = validar_token(x_token, db)
     if not usuario:
         raise HTTPException(status_code=401, detail="Token invalido ou sessao expirada")
+    grupo_id = _resolver_grupo_id_upload(db, usuario, codigo_grupo)
+
     itens = []
     for idx, arq in enumerate(arquivos):
         conteudo = await arq.read()
-        texto = await asyncio.to_thread(_extrair_texto_bytes, conteudo, arq.filename or "")
+        nome_arq = arq.filename or ("arquivo_" + str(idx))
+        pendente_id = None
+        if not pre_classificacao:
+            pendente_proc = _criar_processo_pendente(db, usuario, grupo_id, conteudo, nome_arq)
+            pendente_id = pendente_proc.id
+        try:
+            texto = await asyncio.to_thread(_extrair_texto_bytes, conteudo, nome_arq)
+        except Exception as e:
+            print("Falha inesperada na extracao de texto (processo", pendente_id, "):", str(e)[:300])
+            texto = ""
         ja_reg_flag = _ja_registrada(_sa_texto_local(texto[:4000]))
-        itens.append({"indice": idx, "nome": arq.filename or ("arquivo_" + str(idx)), "texto": texto, "ja_reg": ja_reg_flag, "conteudo": conteudo})
+        itens.append({"indice": idx, "nome": nome_arq, "texto": texto, "ja_reg": ja_reg_flag, "conteudo": conteudo, "processo_pendente_id": pendente_id})
     if not itens:
         raise HTTPException(status_code=400, detail="Nenhum arquivo recebido.")
 
@@ -2511,13 +2673,18 @@ async def analisar_pasta_multi(arquivos: list[UploadFile] = File(...), x_token: 
         # (<50 caracteres) nunca bloqueia - so marca leitura_parcial=True pra
         # criar_processo sinalizar revisao manual do operador.
         leitura_parcial = len((i["texto"] or "").strip()) < 50
-        dados = analisar_ata_ia(i["texto"]) if i["texto"].strip() else dict(_CAMPOS_VAZIOS_ATA)
+        try:
+            dados = analisar_ata_ia(i["texto"]) if i["texto"].strip() else dict(_CAMPOS_VAZIOS_ATA)
+            numero_prot = await asyncio.to_thread(_tentar_extrair_protocolo, i["conteudo"], i["nome"])
+        except Exception as e:
+            print("Falha inesperada ao analisar item do lote (processo", i["processo_pendente_id"], "):", str(e)[:300])
+            dados = dict(_CAMPOS_VAZIOS_ATA)
+            numero_prot = None
         dados["leitura_parcial"] = leitura_parcial
         dados["texto_extraido"] = i["texto"]
-        numero_prot = await asyncio.to_thread(_tentar_extrair_protocolo, i["conteudo"], i["nome"])
         if numero_prot:
             dados["numero_protocolo"] = numero_prot
-        principais_out.append({"indice": i["indice"], "nome": i["nome"], "tipo_sugerido": dados.get("tipo_ato"), "dados": dados, "score": 0})
+        principais_out.append({"indice": i["indice"], "nome": i["nome"], "tipo_sugerido": dados.get("tipo_ato"), "dados": dados, "score": 0, "processo_pendente_id": i["processo_pendente_id"]})
 
     for _pp in principais_out:
         _dd = _pp.get("dados") or {}
@@ -2540,6 +2707,55 @@ async def analisar_pasta_multi(arquivos: list[UploadFile] = File(...), x_token: 
                 principais_out[0]["dados"]["numero_protocolo"] = numero_prot_anexo
                 print("Protocolo extraido de anexo do lote:", numero_prot_anexo, "arquivo:", i["nome"])
                 break
+
+    if not pre_classificacao:
+        # Processos pendentes dos itens que NAO sobreviveram como principal
+        # final (viraram anexo, ja estavam registrados, ou foram descartados
+        # por _filtrar_origem_destino) nunca vao ser confirmados - removidos
+        # aqui pra nao poluir o sistema com processos vazios. O arquivo em si
+        # continua disponivel como anexo do processo principal (fluxo normal
+        # do frontend).
+        indices_principais_finais = {p["indice"] for p in principais_out}
+        for i in itens:
+            if i["indice"] in indices_principais_finais:
+                continue
+            try:
+                orfao = db.query(Processo).filter(Processo.id == i["processo_pendente_id"]).first()
+                if orfao and orfao.status == "pendente_processamento":
+                    if orfao.arquivo_ata:
+                        try:
+                            os.remove(os.path.join(UPLOADS_DIR, orfao.arquivo_ata))
+                        except Exception:
+                            pass
+                    db.delete(orfao)
+                    db.commit()
+            except Exception as e:
+                print("Erro ao limpar processo pendente nao-principal", i["processo_pendente_id"], ":", str(e)[:200])
+                db.rollback()
+
+        # Principais finais: aplica os dados extraidos + checagem de
+        # duplicidade por Envelope ID Docusign (Parte 3) em cada processo
+        # pendente que sobreviveu.
+        for pp in principais_out:
+            p_pendente = db.query(Processo).filter(Processo.id == pp["processo_pendente_id"]).first()
+            if not p_pendente:
+                continue
+            try:
+                duplicado_de = _aplicar_dados_extraidos(db, p_pendente, pp["dados"])
+            except Exception as e:
+                print("Erro ao aplicar dados extraidos (processo", p_pendente.id, "):", str(e)[:300])
+                duplicado_de = None
+                try:
+                    p_pendente.status = "falha_processamento"
+                    p_pendente.observacoes = ((p_pendente.observacoes or "") + "\nFalha ao aplicar dados extraidos: " + str(e)[:500]).strip()
+                    db.commit()
+                    _alertar_falha_processamento(p_pendente, str(e))
+                except Exception:
+                    db.rollback()
+            pp["dados"]["processo_id"] = p_pendente.id
+            if duplicado_de:
+                pp["dados"]["duplicado_envelope"] = True
+                pp["dados"]["processo_id_existente"] = duplicado_de.id
 
     return {
         "principais": principais_out,
@@ -2575,7 +2791,11 @@ def _norm(s):
     return " ".join(s.split())
 
 @app.post("/processos/analisar")
-async def analisar_documento(arquivo: UploadFile = File(...), x_token: str = Header(None), db: Session = Depends(get_db)):
+async def analisar_documento(arquivo: UploadFile = File(...), codigo_grupo: str = Form(None), x_token: str = Header(None), db: Session = Depends(get_db)):
+    """Parte 2.1/2.2/3 (24/08/2026): cria o processo pendente ANTES de
+    qualquer extracao/IA (insert garantido), e so depois tenta ler o
+    documento - qualquer falha inesperada marca o processo como
+    'falha_processamento' em vez de derrubar a resposta com um 500."""
     if not x_token:
         raise HTTPException(status_code=401, detail="Token necessario")
     usuario = validar_token(x_token, db)
@@ -2584,11 +2804,32 @@ async def analisar_documento(arquivo: UploadFile = File(...), x_token: str = Hea
 
     conteudo = await arquivo.read()
     nome = arquivo.filename or ""
-    texto = await asyncio.to_thread(_extrair_texto_bytes, conteudo, nome)
+    grupo_id = _resolver_grupo_id_upload(db, usuario, codigo_grupo)
+    p = _criar_processo_pendente(db, usuario, grupo_id, conteudo, nome)
 
-    dados = analisar_ata_ia(texto) if texto.strip() else dict(_CAMPOS_VAZIOS_ATA)
-    dados["leitura_parcial"] = len((texto or "").strip()) < 50
-    dados["texto_extraido"] = texto
+    try:
+        texto = await asyncio.to_thread(_extrair_texto_bytes, conteudo, nome)
+        dados = analisar_ata_ia(texto) if texto.strip() else dict(_CAMPOS_VAZIOS_ATA)
+        dados["leitura_parcial"] = len((texto or "").strip()) < 50
+        dados["texto_extraido"] = texto
+        duplicado_de = _aplicar_dados_extraidos(db, p, dados)
+        if duplicado_de:
+            dados["duplicado_envelope"] = True
+            dados["processo_id_existente"] = duplicado_de.id
+    except Exception as e:
+        print("Falha inesperada ao processar upload (processo", p.id, "):", str(e)[:300])
+        try:
+            p.status = "falha_processamento"
+            p.observacoes = ((p.observacoes or "") + "\nFalha inesperada no processamento: " + str(e)[:500]).strip()
+            db.commit()
+            _alertar_falha_processamento(p, str(e))
+        except Exception:
+            db.rollback()
+        dados = dict(_CAMPOS_VAZIOS_ATA)
+        dados["leitura_parcial"] = True
+        dados["texto_extraido"] = ""
+
+    dados["processo_id"] = p.id
     return dados
 
 @app.post("/processos")
@@ -2599,7 +2840,6 @@ async def criar_processo(
     db: Session = Depends(get_db)
 ):
     info = json.loads(dados)
-    processo_id = f"MN-{datetime.now().strftime('%Y%m%d%H%M%S')}-{str(uuid.uuid4())[:4].upper()}"
 
     if not x_token:
         raise HTTPException(status_code=401, detail="Token necessario")
@@ -2621,54 +2861,56 @@ async def criar_processo(
         faltando.append("cnpj (digito verificador invalido)")
     cnpj_final = formatar_cnpj(cnpj_norm) if cnpj_norm else ""
 
-    grupo_id = None
-    if _tem_acesso_admin(usuario_tok):
-        codigo_grupo = info.get("codigo_grupo", "").strip()
-        if codigo_grupo:
-            grupo = db.query(Grupo).filter(Grupo.codigo == codigo_grupo).first()
-            if not grupo:
-                raise HTTPException(status_code=400, detail=f"Grupo com codigo '{codigo_grupo}' nao encontrado")
-            grupo_id = grupo.id
-    else:
-        grupo_id = usuario_tok.grupo_id
+    grupo_id = _resolver_grupo_id_upload(db, usuario_tok, info.get("codigo_grupo"))
 
-    arquivo_ata = None
-    arquivo_ata_nome_exibicao = None
+    # Parte 2.1 (24/08/2026): se ja existe um processo pendente (criado no
+    # upload/analise por _criar_processo_pendente), reaproveita esse mesmo
+    # registro em vez de criar outro - e o que garante que confirmar so
+    # "completa" um processo que ja existe e ja e visivel desde o upload,
+    # ao inves de criar um novo do zero (que e o que causava o sumico
+    # quando essa segunda etapa nunca era chamada ou falhava). Se o
+    # processo_id nao vier ou nao existir mais, cai no comportamento
+    # antigo (cria do zero) - mantém compatibilidade com qualquer chamador
+    # que ainda nao mande processo_id.
+    processo_id_pendente = (info.get("processo_id") or "").strip()
+    p = db.query(Processo).filter(Processo.id == processo_id_pendente).first() if processo_id_pendente else None
+    if not p:
+        processo_id = f"MN-{datetime.now().strftime('%Y%m%d%H%M%S')}-{str(uuid.uuid4())[:4].upper()}"
+        p = Processo(id=processo_id, empresa="", cnpj="", tipo_ato="")
+        db.add(p)
+    processo_id = p.id
+
     if arquivo:
         ext = os.path.splitext(arquivo.filename)[1]
         nome_arquivo = f"{processo_id}_ata{ext}"
         caminho = os.path.join(UPLOADS_DIR, nome_arquivo)
         with open(caminho, "wb") as f:
             f.write(await arquivo.read())
-        arquivo_ata = nome_arquivo
-        arquivo_ata_nome_exibicao = aplicar_nomenclatura_junta(arquivo.filename)
+        p.arquivo_ata = nome_arquivo
+        p.arquivo_ata_nome_exibicao = aplicar_nomenclatura_junta(arquivo.filename)
 
-    p = Processo(
-        id=processo_id,
-        empresa=(info.get("empresa", "") or "").upper(),
-        cnpj=cnpj_final,
-        nire=info.get("nire", ""),
-        uf=(info.get("uf") or "").upper().strip()[:2],
-        tipo_sociedade=info.get("tipo_sociedade", ""),
-        tipo_ato=info.get("tipo_ato", ""),
-        identificador_ato=info.get("identificador_ato", ""),
-        data_ata=info.get("data_ata", ""),
-        hora_ata=info.get("hora_ata", ""),
-        numero_protocolo=info.get("numero_protocolo", ""),
-        email_cliente=info.get("email_cliente", ""),
-        eventos=json.dumps(info.get("eventos", []), ensure_ascii=False),
-        checklist=json.dumps(info.get("checklist", []), ensure_ascii=False),
-        requer_cpl=info.get("requer_cpl", False),
-        observacoes=info.get("observacoes", ""),
-        status="aberto",
-        arquivo_ata=arquivo_ata,
-        arquivo_ata_nome_exibicao=arquivo_ata_nome_exibicao,
-        grupo_id=grupo_id,
-        uf_destino_transferencia=(info.get("uf_destino_transferencia") or "").upper().strip()[:2] or None,
-        leitura_parcial=bool(info.get("leitura_parcial", False)),
-        texto_documento_extraido=info.get("texto_extraido") or None,
-    )
-    db.add(p)
+    p.empresa = (info.get("empresa", "") or "").upper()
+    p.cnpj = cnpj_final
+    p.nire = info.get("nire", "")
+    p.uf = (info.get("uf") or "").upper().strip()[:2]
+    p.tipo_sociedade = info.get("tipo_sociedade", "")
+    p.tipo_ato = info.get("tipo_ato", "")
+    p.identificador_ato = info.get("identificador_ato", "")
+    p.data_ata = info.get("data_ata", "")
+    p.hora_ata = info.get("hora_ata", "")
+    p.numero_protocolo = info.get("numero_protocolo", "")
+    p.email_cliente = info.get("email_cliente", "")
+    p.eventos = json.dumps(info.get("eventos", []), ensure_ascii=False)
+    p.checklist = json.dumps(info.get("checklist", []), ensure_ascii=False)
+    p.requer_cpl = info.get("requer_cpl", False)
+    p.observacoes = info.get("observacoes", "")
+    p.status = "aberto"
+    p.grupo_id = grupo_id
+    p.uf_destino_transferencia = (info.get("uf_destino_transferencia") or "").upper().strip()[:2] or None
+    p.leitura_parcial = bool(info.get("leitura_parcial", False))
+    if info.get("texto_extraido"):
+        p.texto_documento_extraido = info.get("texto_extraido")
+
     db.flush()
     vincular_fluxo_do_dia(db, p, grupo_id)
     registrar_evento(db, p, "ata_enviada", "Ata enviada", usuario_tok)

@@ -14,6 +14,7 @@ from jucesp_infosimples import baixar_documento as baixar_documento_infosimples_
 from consultar_jucerja import consultar_jucerja, classificar_status_rj, baixar_documento_jucerja
 from consultar_juceb import consultar_juceb, classificar_status_ba, baixar_documento_juceb
 from consultar_jucepe import consultar_jucepe, classificar_status_pe, baixar_documento_jucepe
+from consultar_jucesc import consultar_jucesc, classificar_status_sc
 from empreendedor_digital_scraper import consultar_empreendedor_digital
 from bot import enviar as enviar_telegram, ADMIN_CHAT_ID
 import json as _json
@@ -426,6 +427,46 @@ def processar_pe(db, agora):
                 print("   [PE] erro ao baixar documento automaticamente:", e)
 
 
+def processar_sc(db, agora):
+    """Consulta publica da JUCESC (sem login/certificado). Escopo desse
+    modulo (24/08/2026) e so acompanhamento de status - ao contrario de
+    RJ/BA/PE, NAO baixa documento automaticamente (fora do pedido original).
+
+    ATENCAO - NAO CHAMADA AINDA em processar(): consultar_jucesc.py so foi
+    validado manualmente contra o caminho de "protocolo nao encontrado"
+    (confirmado real, ver docstring do modulo); a extracao da pagina de
+    RESULTADO (quando o protocolo existe) ainda nao foi testada contra um
+    processo real da JUCESC. So chamar processar_sc() dentro de processar()
+    depois de rodar `python consultar_jucesc.py <protocolo real>` e conferir
+    que o historico/status batem com o que aparece no navegador."""
+    processos = db.query(Processo).filter(
+        Processo.uf == "SC",
+        Processo.numero_protocolo.isnot(None),
+        Processo.numero_protocolo != "",
+    ).all()
+    pendentes = [p for p in processos if (p.status or "").lower() != "finalizado"]
+    print("[SC] " + str(len(pendentes)) + " processo(s) com protocolo.\n")
+    for p in pendentes:
+        print("-> [SC] " + str(p.empresa) + " | prot " + str(p.numero_protocolo) + " | status: " + (p.status or ""))
+        try:
+            res = consultar_jucesc(p.numero_protocolo, headless=True)
+        except Exception as e:
+            print("   ERRO consulta JUCESC (mantem):", e)
+            continue
+        if res.get("erro"):
+            print("   JUCESC erro (mantem status):", res["erro"])
+            continue
+        print("   JUCESC:", res)
+        p.status_jucesp = res.get("status_bruto")
+        # classificacao "indeferido" nao tem branch propria em
+        # aplicar_classificacao() - cai no else (tramitacao), mesmo
+        # comportamento seguro ja usado pra BA/RJ/PE hoje. Se a JUCESC
+        # mandar indeferimento com frequencia relevante, decidir depois se
+        # merece fluxo proprio (avaliar com texto real, nao especular agora).
+        aplicar_classificacao(db, p, res.get("status_classificado", "tramitacao"), agora)
+        print()
+
+
 def _carregar_estados_empreendedor_digital():
     """Le automacao/estados_empreendedor_digital.json (estados ativos na
     plataforma publica compartilhada 'Empreendedor Digital' - MG/DF/CE/MS/
@@ -539,6 +580,9 @@ def processar():
     processar_rj(db, agora)
     processar_ba(db, agora)
     processar_pe(db, agora)
+    # processar_sc(db, agora)  # NAO ATIVAR ainda - ver docstring de
+    # processar_sc: extracao da pagina de resultado (protocolo encontrado)
+    # ainda nao validada contra um processo real da JUCESC (Parte 3 pendente).
     processar_empreendedor_digital(db, agora)
     db.close()
     _marcar_execucao_ok()

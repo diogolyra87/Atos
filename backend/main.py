@@ -901,6 +901,22 @@ JUCERJA_USUARIO = os.getenv("JUCERJA_USUARIO")
 JUCERJA_SENHA = os.getenv("JUCERJA_SENHA")
 
 
+def _nome_taxa_jucerja(p):
+    """Nome de exibicao do PDF da Guia Bancaria JUCERJA no anexo do e-mail
+    (pedido por Diogo, 24/08/2026): 'TAXA JUCERJA - {EMPRESA} - {TIPO_ATO}
+    {DATA}' (ex: 'TAXA JUCERJA - NEOENERGIA S.A. - AGE 20.05.2026'). Data no
+    formato DD.MM.AAAA (barra nao pode aparecer em nome de arquivo) -
+    trocado a partir do DD/MM/AAAA salvo em data_ata. So' afeta o nome de
+    exibicao do anexo, nunca o arquivo fisico em disco (que continua
+    {processo_id}_guia_bancaria.pdf, estavel pra idempotencia)."""
+    empresa = (p.empresa or p.id or "").strip()
+    tipo = (p.tipo_ato or "").strip()
+    data = (p.data_ata or "").strip().replace("/", ".")
+    ato = " ".join(parte for parte in (tipo, data) if parte)
+    nome = "TAXA JUCERJA - " + empresa + (" - " + ato if ato else "")
+    return nome.strip() + ".pdf"
+
+
 def notificar_taxa_jucerja(db, p, sucesso, motivo_falha=None, caminho_pdf=None):
     """Notifica Diogo (admin) + operadores sobre a emissao automatica da Guia
     Bancaria (taxa) na JUCERJA pra um processo uf='RJ' - sucesso (com o PDF
@@ -919,7 +935,7 @@ def notificar_taxa_jucerja(db, p, sucesso, motivo_falha=None, caminho_pdf=None):
                 "Segue a taxa do processo " + str(p.id) + " (" + (p.empresa or "-") + ") para pagamento.\n\n"
                 "Emitida automaticamente na JUCERJA."
             )
-            nome_anexo = os.path.basename(caminho_pdf) if caminho_pdf else None
+            nome_anexo = _nome_taxa_jucerja(p) if caminho_pdf else None
         else:
             assunto = "[Atos] ATENÇÃO - Falha ao emitir Guia Bancária JUCERJA - " + (p.empresa or p.id)
             corpo = (

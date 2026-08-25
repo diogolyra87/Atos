@@ -115,15 +115,21 @@ JUCEB (BA)
                                                      primeiro)
 
 JUCEPE (PE)
-  Consulta de status         → EXISTE MAS DESLIGADO  JUCEPE_LOGIN/JUCEPE_SENHA não
-                                                     configuradas no .env - código pula
-                                                     com aviso claro (bug de credencial
-                                                     cruzada com JUCEB corrigido hoje).
-                                                     0 processos PE pendentes no momento,
-                                                     então nem há o que testar agora.
-  Download de documento      → QUEBRADO             Mesma causa (sem credenciais) +
-                                                     único arquivo recente (17/08) era um
-                                                     dos corrompidos reparados nesta sessão
+  Consulta de status         → OK (verificado)      RESOLVIDO 25/08/2026: credenciais reais
+                                                     cadastradas no .env (JUCEPE_LOGIN/
+                                                     JUCEPE_SENHA). Testado ao vivo contra
+                                                     protocolo real (268857849, CELPE) -
+                                                     login OK, dados corretos extraídos
+                                                     ("ATA DE REUNIAO DO CONSELHO DE
+                                                     ADMINISTRACAO ... FINALIZADO",
+                                                     classificação "deferido" correta).
+  Download de documento      → DESCONHECIDO         Credenciais agora corretas e login
+                                                     confirmado, mas ainda sem uma execução
+                                                     de download pós-fix (0 processos PE
+                                                     pendentes de deferimento no momento -
+                                                     os 2 existentes já estão finalizados).
+                                                     Único arquivo recente (17/08) era um
+                                                     dos corrompidos reparados nesta sessão.
   Aviso de exigência         → DESCONHECIDO         Sem processos pendentes pra gerar
                                                      evidência fresca
   Emissão de guia/taxa       → NÃO EXISTE
@@ -172,9 +178,10 @@ Empreendedor Digital (plataforma compartilhada - MG/DF/CE/MS/MT/AP e outras)
    que resolveram - só vai ter evidência na próxima vez que um processo BA/PE for
    pra "deferido"/"finalizado" e a automação tentar baixar de novo.
 
-3. **JUCEPE sem credenciais reais configuradas.** `JUCEPE_LOGIN`/`JUCEPE_SENHA`
-   vazias no `.env` - toda a automação de PE (consulta e download) fica parada até
-   alguém cadastrar as credenciais reais da JUCEPE.
+3. ~~JUCEPE sem credenciais reais configuradas.~~ **RESOLVIDO 25/08/2026** -
+   credenciais reais cadastradas no `.env`, login e consulta confirmados ao vivo
+   contra um protocolo real. Falta só uma execução de download bem-sucedida pós-fix
+   (sem processo PE pendente de deferimento agora pra gerar essa evidência).
 
 4. **Guia bancária JUCERJA: só uma execução supervisionada bem-sucedida até agora.**
    Funciona, mas é literalmente a primeira vez - vale rodar mais algumas vezes

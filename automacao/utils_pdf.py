@@ -19,16 +19,30 @@ def validar_pdf(caminho):
         if tamanho < 1024:
             return False, "arquivo muito pequeno (" + str(tamanho) + " bytes, minimo 1024)"
 
+        JANELA_FIM = 8192
         with open(caminho, "rb") as f:
             inicio = f.read(5)
-            f.seek(-min(1024, tamanho), os.SEEK_END)
+            f.seek(-min(JANELA_FIM, tamanho), os.SEEK_END)
             fim = f.read()
 
         if inicio != b"%PDF-":
             return False, "assinatura invalida no inicio do arquivo (esperado %PDF-, encontrado " + repr(inicio) + ")"
 
-        if b"%%EOF" not in fim:
-            return False, "marcador %%EOF nao encontrado no final do arquivo (download possivelmente truncado)"
+        # ENDURECIDO 24/08/2026 (auditoria retroativa - Tarefa A): antes so'
+        # checava se "%%EOF" aparecia EM QUALQUER LUGAR dos ultimos 1024
+        # bytes, o que passaria um PDF com lixo concatenado depois do EOF
+        # real se o lixo fosse pequeno o suficiente pra caber na mesma
+        # janela. Agora exige que o ULTIMO %%EOF seja o fim de verdade do
+        # arquivo (só' espaco em branco pode vir depois) - pega o caso
+        # descoberto na JUCEB/JUCEPE (pagina HTML "Autenticacao de
+        # Documentos" colada depois do %%EOF, bug do lado do servidor
+        # deles) mesmo quando o lixo for pequeno.
+        idx = fim.rfind(b"%%EOF")
+        if idx == -1:
+            return False, "marcador %%EOF nao encontrado nos ultimos " + str(len(fim)) + " bytes do arquivo (download possivelmente truncado)"
+        resto = fim[idx + len(b"%%EOF"):]
+        if resto.strip(b"\r\n\t \x00"):
+            return False, "conteudo residual depois do %%EOF (" + str(len(resto)) + " bytes) - provavel lixo concatenado (ex: pagina HTML do servidor de origem, ja visto na JUCEB/JUCEPE)"
 
         try:
             doc = fitz.open(caminho)

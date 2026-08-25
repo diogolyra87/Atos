@@ -2456,32 +2456,70 @@ def extrair_texto_pdf_em_camadas(caminho_pdf):
 
 
 def _extrair_texto_bytes(conteudo: bytes, nome: str) -> str:
-    import tempfile
+    """Tarefa B / Corte 1 (24/08/2026): antes tinha um unico except generico
+    envolvendo as 4 etapas (conversao de imagem, extracao de PDF, parsing de
+    docx, decode de texto puro) que engolia qualquer excecao inesperada em
+    silencio (texto = "", sem log nenhum) - se algo escapasse da extracao em
+    camadas (que ja loga por conta propria em extrair_texto_pdf_em_camadas/
+    _camada1/_camada2), nao sobrava rastro nenhum do que aconteceu. Agora
+    cada etapa tem seu proprio try/except, logando motivo + stack trace real
+    (a extracao em camadas do PDF em si ja e' resiliente e nunca deveria
+    lancar - isso aqui e' rede de seguranca pra falha estrutural inesperada,
+    tipo erro de permissao/disco no tempfile ou biblioteca faltando)."""
+    import tempfile, traceback
     nm = (nome or "").lower()
     texto = ""
-    try:
-        if nm.endswith((".jpg", ".jpeg", ".png")):
+
+    if nm.endswith((".jpg", ".jpeg", ".png")):
+        try:
             import img2pdf
             conteudo = img2pdf.convert(conteudo)
             nm = "convertida.pdf"
-        if nm.endswith(".pdf"):
+        except Exception:
+            print("   [extracao] falha ao converter imagem (" + repr(nome) + ") para PDF:\n" + traceback.format_exc())
+            return ""
+
+    if nm.endswith(".pdf"):
+        tmp = None
+        try:
             with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as f:
                 f.write(conteudo); tmp = f.name
             texto, _leitura_parcial = extrair_texto_pdf_em_camadas(tmp)
             print("DEBUG_EXTRACAO nome=", repr(nome), "| texto_len=", len(texto.strip()),
                   "| leitura_parcial=", _leitura_parcial, "| trecho=", repr(texto.strip()[:150]))
-            os.unlink(tmp)
-        elif nm.endswith(".docx"):
+        except Exception:
+            print("   [extracao] falha inesperada na extracao de PDF (" + repr(nome) + "), fora das camadas normais:\n" + traceback.format_exc())
+            texto = ""
+        finally:
+            if tmp:
+                try:
+                    os.unlink(tmp)
+                except Exception:
+                    pass
+    elif nm.endswith(".docx"):
+        tmp = None
+        try:
             import docx as docx_lib
             with tempfile.NamedTemporaryFile(delete=False, suffix=".docx") as f:
                 f.write(conteudo); tmp = f.name
             doc = docx_lib.Document(tmp)
             texto = "\n".join([p.text for p in doc.paragraphs if p.text.strip()])
-            os.unlink(tmp)
-        else:
+        except Exception:
+            print("   [extracao] falha ao ler docx (" + repr(nome) + "):\n" + traceback.format_exc())
+            texto = ""
+        finally:
+            if tmp:
+                try:
+                    os.unlink(tmp)
+                except Exception:
+                    pass
+    else:
+        try:
             texto = conteudo.decode("utf-8", errors="ignore")
-    except Exception:
-        texto = ""
+        except Exception:
+            print("   [extracao] falha ao decodificar arquivo de texto puro (" + repr(nome) + "):\n" + traceback.format_exc())
+            texto = ""
+
     return texto
 
 def _ja_registrada(texto_l: str) -> bool:

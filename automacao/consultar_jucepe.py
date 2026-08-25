@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 import unicodedata
 from playwright.sync_api import sync_playwright
+from utils_pdf import validar_pdf, quarentena, sanear_pdf
 
 URL_LOGIN = "https://redesim.jucepe.pe.gov.br/requerimentouniversal/NovoLogin.aspx"
 
@@ -153,6 +154,19 @@ def baixar_documento_jucepe(protocolo, login, senha, destino_path, headless=True
                             b_el.click()
                         download = dl_info.value
                         download.save_as(destino_path)
+                        # SANEAMENTO 24/08/2026: JUCEPE (como JUCEB) as vezes
+                        # deixa HTML da propria pagina grudado depois do
+                        # %%EOF (bug do lado do servidor deles) - apara isso
+                        # antes de validar.
+                        sanear_pdf(destino_path)
+                        # VALIDACAO 24/08/2026: mesmo caso ja visto na guia
+                        # bancaria JUCERJA - nao confia no download sem
+                        # checar se e' mesmo um PDF valido.
+                        valido, motivo_invalido = validar_pdf(destino_path)
+                        if not valido:
+                            quarentena(destino_path)
+                            print("Documento JUCEPE baixado mas invalido:", motivo_invalido)
+                            continue
                         return True
                     except Exception:
                         continue

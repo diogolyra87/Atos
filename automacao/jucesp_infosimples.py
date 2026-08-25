@@ -31,18 +31,29 @@ Campo do PDF confirmado: data[0]["site_receipt"] (URL terminada em .pdf,
 baixado e validado - comeca com a assinatura %PDF-). NAO e' "ficha_emitida"
 (esse campo e' booleano, so indica que a ficha foi emitida) nem "arquivo"/
 "pdf" como o codigo assumia antes de confirmar - mantidos como fallback por
-seguranca, mas "site_receipt" e' o campo real. Os outros 3 servicos (completa,
-simplifica, download-dc) ainda nao tiveram uma consulta 200 real - assumindo
-o mesmo campo "site_receipt" por ser um padrao generico da Infosimples (visto
-tambem no header de respostas de erro de outros servicos), mas isso e' uma
-extrapolacao, nao confirmacao direta pra esses 3.
+seguranca, mas "site_receipt" e' o campo real.
+
+CONFIRMADO PONTA A PONTA em 30/07/2026 (2a rodada): "junta-comercial/sp/
+download-dc" SO funciona com o NUMERO DE REGISTRO da JUCESP (ex:
+"300.504/26-3"), NAO com o numero de protocolo - usar protocolo la retorna
+code 620 "consulta nao retornou dados". O numero de registro pode ser
+descoberto automaticamente, sem intervencao manual, via
+"junta-comercial/sp/lista-dcs" (tambem confirmado com consulta 200 real):
+dado um NIRE, retorna todo o historico de atos arquivados, cada um com seu
+proprio protocolo, registro, e o campo "digitalizacao" ("DISPONIVEL" ou "NAO
+DISPONIVEL") indicando se ja da pra baixar. A funcao descobrir_registro()
+abaixo faz essa consulta e acha o registro certo casando pelo protocolo
+conhecido - ver uso em processar_sp() no atualizar_status.py.
 """
+import re
 import requests
+from utils_pdf import validar_pdf, quarentena
 
 BASE_URL = "https://api.infosimples.com/api/v2/consultas"
 
 ENDPOINT_FICHA_SIMPLIFICADA = "junta-comercial/sp/ficha"
 ENDPOINT_FICHA_COMPLETA = "junta-comercial/sp/completa"
+ENDPOINT_LISTA_DOCUMENTOS = "junta-comercial/sp/lista-dcs"
 ENDPOINT_DOWNLOAD_DOCUMENTO = "junta-comercial/sp/download-dc"
 ENDPOINT_CERTIDAO_SIMPLIFICADA = "junta-comercial/sp/simplifica"
 
@@ -73,6 +84,14 @@ def _baixar_arquivo(url, destino_path):
         r.raise_for_status()
         with open(destino_path, "wb") as f:
             f.write(r.content)
+        # VALIDACAO 24/08/2026: mesmo caso ja visto na guia bancaria JUCERJA
+        # - a Infosimples e' um provedor pago (menor risco), mas ainda assim
+        # o link retornado pode apontar pra uma pagina de erro/expirada.
+        valido, motivo_invalido = validar_pdf(destino_path)
+        if not valido:
+            quarentena(destino_path)
+            print("   [SP-Infosimples] arquivo baixado mas invalido:", motivo_invalido)
+            return False
         return True
     except Exception as e:
         print("   [SP-Infosimples] erro ao baixar arquivo do link retornado:", str(e)[:150])
@@ -133,6 +152,40 @@ def baixar_certidao_simplificada(nire, token, cpf, senha_nfp, destino_path):
     return _baixar_arquivo(url_pdf, destino_path)
 
 
+def descobrir_registro(nire, protocolo, token, cpf, senha_nfp):
+    """Consulta o historico de atos arquivados na JUCESP (por NIRE) via
+    Infosimples e acha o numero de registro correspondente a um protocolo
+    conhecido, se ja estiver disponivel pra download.
+
+    Necessario porque download-dc exige o numero de registro (ex:
+    "300.504/26-3"), que e' diferente do numero de protocolo e nao tem
+    relacao previsivel entre os dois - so descobrindo via essa consulta.
+
+    Retorna o numero de registro (str) se achado e disponivel, ou None se o
+    protocolo nao aparecer na lista ou ainda nao estiver disponivel
+    ("digitalizacao" != "DISPONIVEL")."""
+    params = {"token": token, "nire": nire, "login_cpf": cpf, "login_senha": senha_nfp}
+    print("   [SP-Infosimples] descobrindo numero de registro - NIRE " + str(nire) + " protocolo " + str(protocolo))
+    resultado = _chamar(ENDPOINT_LISTA_DOCUMENTOS, params)
+    if resultado.get("erro"):
+        print("   [SP-Infosimples] erro ao listar documentos:", resultado["erro"])
+        return None
+    dados = resultado["dados"]
+    protocolo_limpo = re.sub(r"\D", "", protocolo or "")
+    for item in (dados.get("resultados") or []):
+        prot_item = re.sub(r"\D", "", item.get("protocolo") or "")
+        if prot_item and prot_item == protocolo_limpo:
+            registro = (item.get("registro") or "").strip()
+            disponivel = (item.get("digitalizacao") or "").strip().upper() == "DISPONÍVEL"
+            if registro and disponivel:
+                print("   [SP-Infosimples] registro encontrado e disponivel:", registro)
+                return registro
+            print("   [SP-Infosimples] protocolo encontrado, mas ainda nao disponivel (registro=" + repr(registro) + ", digitalizacao=" + repr(item.get("digitalizacao")) + ")")
+            return None
+    print("   [SP-Infosimples] protocolo nao encontrado na lista de documentos desse NIRE.")
+    return None
+
+
 def baixar_documento(nire, numero_registro, token, cpf, senha_nfp, destino_path):
     """Baixa o Documento Digitalizado de um ato ja registrado na JUCESP (por
     NIRE + numero de registro) via Infosimples e salva em destino_path.
@@ -150,7 +203,10 @@ def baixar_documento(nire, numero_registro, token, cpf, senha_nfp, destino_path)
         print("   [SP-Infosimples] erro download documento:", resultado["erro"])
         return False
     dados = resultado["dados"]
-    url_pdf = dados.get("site_receipt") or dados.get("digitalizacao") or dados.get("arquivo") or dados.get("pdf")
+    # "digitalizacao" NAO e' o link do PDF - e' so um status ("DISPONIVEL"/
+    # "NAO DISPONIVEL"), confirmado em teste real. O link de verdade e'
+    # sempre "site_receipt".
+    url_pdf = dados.get("site_receipt") or dados.get("arquivo") or dados.get("pdf")
     if not url_pdf:
         print("   [SP-Infosimples] resposta sem link de PDF reconhecido, campos recebidos:", list(dados.keys()))
         return False

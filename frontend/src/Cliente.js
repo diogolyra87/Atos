@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+﻿import { useState, useEffect } from "react";
 import { useSearchParams } from "react-router-dom";
 import axios from "axios";
 import { STATUS_CONFIG, formatarDataExtenso, FluxoDoDiaCardEscuro, AtividadeRecenteEscura, BotaoIatos, IatosChat, subtituloProcesso, SidebarAtos, IconeProcessos, IconeRelatorios, DonutStatusCard, TelaLogin, TelaCriarAcesso, PainelDownloadStatus, FONTE_CORPO, FONTE_TITULO, useBreakpoint } from "./components/Compartilhados";
@@ -242,7 +242,7 @@ function DetalheProcessoCliente({ p, sessao, onVoltar }) {
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M19 12H5" /><path d="M12 19l-7-7 7-7" /></svg>
           Voltar
         </button>
-        <BotaoIatos processo={p} onAbrir={() => setIatosAberto(true)} />
+        {sessao?.plano !== "free" && <BotaoIatos processo={p} onAbrir={() => setIatosAberto(true)} />}
       </div>
       {iatosAberto && <IatosChat processo={p} token={sessao.token} onFechar={() => setIatosAberto(false)} />}
 
@@ -655,7 +655,7 @@ export function Painel({ sessao, onSair }) {
                       style={{ flex: 1, background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.09)", color: "#d4d4d8", borderRadius: 8, padding: "9px 12px", fontSize: 12, cursor: "pointer", fontFamily: FONTE_CORPO }}>
                       Ver processo
                     </button>
-                    <BotaoIatos processo={p} onAbrir={setIatosAberto} />
+                    {sessao?.plano !== "free" && <BotaoIatos processo={p} onAbrir={setIatosAberto} />}
                   </div>
                 </div>
               ) : (
@@ -680,7 +680,7 @@ export function Painel({ sessao, onSair }) {
                       style={{ background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.09)", color: "#d4d4d8", borderRadius: 8, padding: "9px 16px", fontSize: 12, cursor: "pointer", fontFamily: FONTE_CORPO }}>
                       Ver processo
                     </button>
-                    <BotaoIatos processo={p} onAbrir={setIatosAberto} />
+                    {sessao?.plano !== "free" && <BotaoIatos processo={p} onAbrir={setIatosAberto} />}
                   </div>
                 </div>
               ))}
@@ -871,7 +871,7 @@ export function Painel({ sessao, onSair }) {
                 </div>
               )}
               <div style={{ marginTop: 16, marginBottom: 8 }}>
-                <BotaoIatos processo={docsAbertos} onAbrir={setIatosAberto} />
+                {sessao?.plano !== "free" && <BotaoIatos processo={docsAbertos} onAbrir={setIatosAberto} />}
               </div>
               <div style={s.modalBtns}>
                 <button style={s.btnFechar} onClick={() => setDocsAbertos(null)}>Fechar</button>

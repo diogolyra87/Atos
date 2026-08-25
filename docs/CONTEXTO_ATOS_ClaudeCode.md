@@ -103,3 +103,75 @@ Objetivo: replicar o padrão de automação existente para **duas Juntas novas**
 
 ## 6. O QUE FOI CONSTRUÍDO RECENTEMENTE (contexto, não precisa mexer)
 Anexos (UI + backend), detecção automática de documento principal vs anexo (regras DREI), avisos "Documento Sem Valor Societário" e "Possível Duplicidade de Atos", banner de pendências, aprendizado por regras acumuladas, chat por processo (isolado por grupo, permanente, com polling 5s), notificação Telegram ao ADM quando cliente escreve, bot Telegram (comandos `/consulta` + responder cliente por reply), e monitor de SLA (protocolo 6h / exigência 12h / deferido 24h, alertas por e-mail + Telegram). Tudo já versionado. NÃO precisa mexer nisso — a tarefa é só a automação das Juntas novas.
+
+---
+
+## 7. CHECKLIST DE DEPLOY (rodar SEMPRE, nesta ordem, antes de considerar um deploy concluído)
+
+Criado depois do incidente de 13/08/2026 (ver histórico de incidentes / memória) — um deploy que
+alterou `database.py` derrubou login e listagem de processos em produção por ~5min, porque duas
+migrações pendentes (não relacionadas à mudança do dia) foram commitadas sem rodar, e o "health
+check" pós-restart só testou o endpoint raiz, que não prova que uma rota autenticada funciona.
+
+### Antes de commitar
+
+1. **Nunca `git add <arquivo>` cego quando a intenção é "só a feature X".** Rodar `git diff <arquivo>`
+   antes e conferir se não tem OUTRA mudança pendente não relacionada misturada no mesmo arquivo
+   (comum quando há trabalho de uma feature anterior ainda não commitado). Se tiver, isolar por
+   conteúdo (edição cirúrgica ou `git add -p`), não por arquivo inteiro.
+2. **Se a mudança tocou `backend/database.py`** (nova coluna, nova tabela, novo campo em model
+   existente): checar se existe um `aplica_migracao_*.py` correspondente em `backend/` (convenção do
+   projeto — gitignorado, `aplica_*.py`). Se não existir, criar um, seguindo o padrão dos scripts já
+   existentes (idempotente: checa `PRAGMA table_info` antes de `ALTER TABLE`; usa
+   `Base.metadata.create_all()` pra tabela nova).
+
+### Antes do restart (depois do `git pull` no servidor)
+
+3. **Listar TODOS os `aplica_migracao_*.py` em `backend/` no servidor e confirmar quais já rodaram
+   e quais não** — não assumir que só a migração da mudança do dia importa. Uma mudança de meses
+   atrás pode ter ficado pendente de propósito (sem urgência) e ainda quebrar quando outro deploy
+   mexe no mesmo arquivo. Rodar todas as pendentes, uma de cada vez, conferindo a saída.
+4. **Não confiar só na saída impressa do script de migração.** Depois de rodar, checar
+   `PRAGMA table_info(<tabela>)` direto no `sqlite3` pra confirmar a coluna/tabela existe de fato —
+   já aconteceu do script imprimir "OK, criada" sem ter criado nada (dependia de uma classe do
+   modelo que o `database.py` importado aindas não tinha).
+5. **Auditoria programática final, tabela por tabela**, comparando o `Base.metadata` inteiro do
+   SQLAlchemy contra o schema real do banco (evita erro de comparar colunas a olho):
+   ```python
+   # rodar no servidor, dentro de backend/, com o venv ativo
+   import sqlite3
+   from database import Base
+   con = sqlite3.connect('mane.db')
+   cur = con.cursor()
+   for table in Base.metadata.sorted_tables:
+       cols_modelo = set(c.name for c in table.columns)
+       cur.execute(f"PRAGMA table_info({table.name})")
+       cols_banco = set(row[1] for row in cur.fetchall())
+       faltando = cols_modelo - cols_banco
+       if faltando:
+           print(f'FALTANDO em {table.name}: {sorted(faltando)}')
+   ```
+   Só seguir pro restart se não imprimir nada.
+
+### Depois do restart
+
+6. **`smoke_check.py` (hook `post-merge`) só pega import quebrado, NÃO pega schema desatualizado**
+   (o import funciona normalmente; só a query real em runtime quebra). Não é suficiente sozinho.
+7. **Testar com uma requisição autenticada de verdade**, não só `curl` no endpoint raiz (`GET /`,
+   que não toca nenhuma tabela de negócio e sempre vai retornar 200 mesmo com o resto quebrado).
+   Reaproveitar um token de sessão já existente no banco (não precisa senha de ninguém):
+   ```bash
+   # pegar um token real
+   sqlite3 /root/atos/backend/mane.db "SELECT token FROM usuarios WHERE token IS NOT NULL LIMIT 1;"
+   # testar pelo menos um endpoint que toque as tabelas alteradas no deploy
+   curl -s -o /dev/null -w '%{http_code}\n' -H 'x-token: <token>' http://localhost:8000/processos
+   ```
+8. **Checar `journalctl -u atos-backend --since <hora do restart>`** por qualquer traceback, não só
+   "Application startup complete" (isso só prova que o processo iniciou, não que uma rota funciona).
+
+### Se algo quebrar de verdade (incidente real)
+
+9. **Medir o impacto real no `nginx access.log`** (`/var/log/nginx/access.log`), filtrando por IPs
+   de cliente (não `127.0.0.1`) na janela do erro, em vez de estimar a duração ou assumir que
+   "ninguém deve ter notado". Documentar no histórico de incidentes com hora exata de início/fim
+   e se algum request de cliente real bateu em erro.

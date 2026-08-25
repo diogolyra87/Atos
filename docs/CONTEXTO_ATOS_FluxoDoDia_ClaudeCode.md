@@ -480,6 +480,21 @@ e correções feitas na mesma sessão, sem downtime:
   tarefa. Produção agora tem o `Compartilhados.js` unificado (bug do "Finalizados" corrigido
   lá também) e o CSS responsivo, além da correção do nginx já mencionada acima.
 
+- **Correção de significado: agrupamento de `ListaProcessosAgrupada` mudou de "data da ata"
+  pra "data de entrada no sistema" (commit `222cd7b`, deployado 2026-07-28).** O Diogo
+  reportou que o cabeçalho do grupo mostrava a data da ata (`p.data_ata`), quando deveria
+  mostrar quando o processo entrou no sistema. Corrigido pra `p.criado_em.slice(0,10)` —
+  campo já ISO (`AAAA-MM-DD...`), não precisa de parser como o `data_ata` (`DD/MM/AAAA`)
+  precisava. Confirmado 0 registros com `criado_em` nulo em local e produção; grupo
+  "sem-data" mantido como rede de segurança mas renomeado pra "Data inválida" (não significa
+  mais falha de extração de IA, já que `criado_em` é timestamp de sistema, sempre
+  preenchido). Label do cabeçalho também mudou pra "Processos abertos em {data}", deixando
+  explícito que não é mais a data do documento — a data da ata continua aparecendo
+  normalmente dentro do detalhe do processo (`DetalheProcesso`), intocado. Verificado com
+  dado real: os processos locais tinham `data_ata` e `criado_em` bem diferentes (abril vs
+  junho), confirmando visualmente a mudança antes do deploy. **Deployado e confirmado em
+  produção pelo Diogo** (login real, console sem erro, cabeçalho correto).
+
 - **Bug pré-existente encontrado, FORA de escopo, não corrigido**: a tela de login (admin e
   cliente) usa `fontFamily: "AtosBrand"` pro logo, mas o `@font-face` correspondente nunca
   foi commitado (está preso nas mudanças não commitadas da *outra tarefa*, a mesma de

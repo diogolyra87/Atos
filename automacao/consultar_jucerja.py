@@ -1,7 +1,8 @@
-﻿# -*- coding: utf-8 -*-
+# -*- coding: utf-8 -*-
 import unicodedata
 import re
 from playwright.sync_api import sync_playwright
+from utils_pdf import validar_pdf, quarentena
 
 def _formatar_protocolo_jucerja(protocolo):
     """Normaliza o numero de protocolo para o formato YYYY/NNNNNNNN-N exigido
@@ -222,7 +223,16 @@ def baixar_documento_jucerja(protocolo, usuario, senha, destino_path, headless=T
                 )
                 if resultado.returncode != 0:
                     return False
-                return os.path.exists(destino_path)
+                # VALIDACAO 24/08/2026: mesmo caso ja visto na guia bancaria
+                # JUCERJA - so' checar existencia do arquivo nao garante que
+                # o openssl extraiu um PDF de verdade (pode ter gerado um
+                # arquivo vazio/corrompido mesmo com returncode 0).
+                valido, motivo_invalido = validar_pdf(destino_path)
+                if not valido:
+                    quarentena(destino_path)
+                    print("Documento JUCERJA extraido do .p7s mas invalido:", motivo_invalido)
+                    return False
+                return True
         except Exception as e:
             print("Erro ao baixar documento JUCERJA:", str(e)[:150])
             return False

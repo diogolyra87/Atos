@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 import unicodedata
 from playwright.sync_api import sync_playwright
+from utils_pdf import validar_pdf, quarentena, sanear_pdf
 
 URL_LOGIN = "https://regin.juceb.ba.gov.br/RequerimentoUniversal/Principal.aspx"
 
@@ -150,6 +151,20 @@ def baixar_documento_juceb(protocolo, login, senha, destino_path, headless=True)
                             b_el.click()
                         download = dl_info.value
                         download.save_as(destino_path)
+                        # SANEAMENTO 24/08/2026: JUCEB deixa HTML da propria
+                        # pagina grudado depois do %%EOF em alguns downloads
+                        # (bug do lado do servidor deles - ver auditoria
+                        # retroativa de 24/08/2026, 3 dos 4 casos achados
+                        # eram BA) - apara isso antes de validar.
+                        sanear_pdf(destino_path)
+                        # VALIDACAO 24/08/2026: mesmo caso ja visto na guia
+                        # bancaria JUCERJA - nao confia no download sem
+                        # checar se e' mesmo um PDF valido.
+                        valido, motivo_invalido = validar_pdf(destino_path)
+                        if not valido:
+                            quarentena(destino_path)
+                            print("Documento JUCEB baixado mas invalido:", motivo_invalido)
+                            continue
                         return True
                     except Exception:
                         continue

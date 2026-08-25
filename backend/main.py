@@ -530,8 +530,162 @@ def _email_finalizado(p):
 UFS_EMAIL_AUTOMATICO_SUSPENSO = set()
 
 
-def _registrar_log_email(db, p, destinatario, tipo, sucesso, erro=None):
-    db.add(LogEmail(id=str(uuid.uuid4()), processo_id=p.id, destinatario=destinatario, tipo=tipo, sucesso=sucesso, erro=erro))
+def _registrar_log_email(db, p, destinatario, tipo, sucesso, erro=None, destinatario_tipo="cliente"):
+    db.add(LogEmail(id=str(uuid.uuid4()), processo_id=p.id, destinatario=destinatario, tipo=tipo, sucesso=sucesso, erro=erro, destinatario_tipo=destinatario_tipo))
+
+
+# Rotulo curto -> assunto legivel, usado no e-mail de notificacao aos
+# operadores (notificar_operadores, abaixo). So texto simples - e-mail
+# operacional interno, nao precisa do html/estilo usado pro cliente.
+_EVENTOS_OPERADOR_LABEL = {
+    "processo_criado": "Novo processo inserido",
+    "processo_editado": "Processo editado",
+    "processo_excluido": "Processo excluido",
+    "upload_documento": "Documento anexado",
+    "exigencia_registrada": "Exigencia registrada",
+    "exigencia_cumprida": "Exigencia cumprida",
+    "exigencia_aguardando_cliente": "Exigencia aguardando cliente",
+    "tipo_confirmado": "Tipo de ato confirmado",
+    "anexo_adicionado": "Anexo adicionado ao processo",
+    "mensagem_cliente": "Nova mensagem do cliente no processo",
+    "certidao_simplificada_emitida": "Certidao simplificada emitida",
+    "status_atualizado_automatico": "Status atualizado automaticamente (consulta a Junta)",
+}
+
+
+def notificar_operadores(db, evento, processo_id, detalhes, usuario=None):
+    """Notifica TODOS os operadores (papel='operador', com e-mail cadastrado)
+    por e-mail a cada insercao/atualizacao de processo no sistema. Roda em
+    PARALELO ao fluxo de notificacao de cliente (notificar_cliente_processo)
+    - nao reaproveita aquela funcao nem sua logica de supressao por UF, e
+    NUNCA suprime nada: todo operador ativo recebe sempre. Query propria
+    (nao usa emails_admin() de proposito, pra nao acoplar com a lista do
+    alerta automatico de status em atualizar_status.py, e pra nao incluir
+    o e-mail fixo do admin por padrao).
+
+    Nunca deve quebrar o fluxo principal - qualquer erro (query, envio,
+    commit) fica so' registrado/impresso, nunca propaga.
+
+    evento: chave curta (ver _EVENTOS_OPERADOR_LABEL) que vira o "tipo" no
+    log_emails e o assunto do e-mail.
+    processo_id: string (id do Processo - "MN-...").
+    detalhes: dict livre com o contexto (empresa, campo, valor_anterior,
+    valor_novo, info) - incorporado ao corpo do e-mail.
+    usuario: quem fez a acao (None = automacao/sistema, ex: consulta as
+    Juntas em atualizar_status.py).
+
+    Retorna True se pelo menos um operador recebeu com sucesso."""
+    try:
+        operadores = db.query(Usuario).filter(
+            Usuario.papel == "operador",
+            Usuario.email.isnot(None),
+            Usuario.email != "",
+        ).all()
+        if not operadores:
+            return False
+        quem = nome_usuario(usuario) if usuario else "Sistema (automação)"
+        label = _EVENTOS_OPERADOR_LABEL.get(evento, "Atualização de processo")
+        empresa = (detalhes or {}).get("empresa") or ""
+        assunto = "[Atos] " + label + (" - " + empresa if empresa else "")
+        linhas = [label + ".", "", "Processo: " + str(processo_id), "Empresa: " + (empresa or "-")]
+        det = detalhes or {}
+        if det.get("campo"):
+            linhas.append("Campo: " + str(det["campo"]))
+        if "valor_anterior" in det or "valor_novo" in det:
+            linhas.append("Valor anterior: " + str(det.get("valor_anterior", "-")))
+            linhas.append("Valor novo: " + str(det.get("valor_novo", "-")))
+        if det.get("info"):
+            linhas.append("Detalhe: " + str(det["info"]))
+        linhas.append("Feito por: " + quem)
+        linhas.append("Quando: " + datetime.now().strftime("%d/%m/%Y %H:%M:%S"))
+        corpo = "\n".join(linhas)
+        algum_sucesso = False
+        for op in operadores:
+            ok = enviar_email(op.email, assunto, corpo)
+            db.add(LogEmail(
+                id=str(uuid.uuid4()), processo_id=str(processo_id), destinatario=op.email,
+                tipo=evento, sucesso=ok, erro=None if ok else "falha no envio",
+                destinatario_tipo="operador",
+            ))
+            algum_sucesso = algum_sucesso or ok
+        db.commit()
+        return algum_sucesso
+    except Exception as e:
+        print("Erro em notificar_operadores:", e)
+        return False
+
+
+def _nome_taxa_jucerja(p):
+    """Nome de exibicao do PDF da Guia Bancaria JUCERJA no anexo do e-mail
+    (pedido por Diogo, 24/08/2026): 'TAXA JUCERJA - {EMPRESA} - {TIPO_ATO}
+    {DATA}' (ex: 'TAXA JUCERJA - NEOENERGIA S.A. - AGE 20.05.2026'). Data no
+    formato DD.MM.AAAA (barra nao pode aparecer em nome de arquivo) -
+    trocado a partir do DD/MM/AAAA salvo em data_ata. So' afeta o nome de
+    exibicao do anexo, nunca o arquivo fisico em disco (que continua
+    {processo_id}_guia_bancaria.pdf, estavel pra idempotencia)."""
+    empresa = (p.empresa or p.id or "").strip()
+    tipo = (p.tipo_ato or "").strip()
+    data = (p.data_ata or "").strip().replace("/", ".")
+    ato = " ".join(parte for parte in (tipo, data) if parte)
+    nome = "TAXA JUCERJA - " + empresa + (" - " + ato if ato else "")
+    return nome.strip() + ".pdf"
+
+
+def notificar_taxa_jucerja(db, p, sucesso, motivo_falha=None, caminho_pdf=None):
+    """Notifica Diogo (admin) + operadores sobre a emissao automatica da Guia
+    Bancaria (taxa) na JUCERJA pra um processo uf='RJ' - sucesso (com o PDF
+    anexado) ou falha (com o motivo, pra emissao manual). Usa emails_admin()
+    de proposito (mesma lista de destinatarios nos dois casos - Diogo +
+    operadores com e-mail) - diferente de notificar_operadores(), que e' so'
+    operador por decisao explicita da feature anterior. So' o
+    destinatario_tipo no log_emails diferencia sucesso de falha nas consultas
+    de auditoria depois. Nunca deve quebrar o fluxo principal."""
+    try:
+        destinatarios = emails_admin(db)
+        if not destinatarios:
+            return False
+        if sucesso:
+            assunto = "[Atos] Guia Bancária JUCERJA - " + (p.empresa or p.id)
+            corpo = (
+                "Segue a taxa do processo " + str(p.id) + " (" + (p.empresa or "-") + ") para pagamento.\n\n"
+                "Emitida automaticamente na JUCERJA."
+            )
+            nome_anexo = _nome_taxa_jucerja(p) if caminho_pdf else None
+        else:
+            assunto = "[Atos] ATENÇÃO - Falha ao emitir Guia Bancária JUCERJA - " + (p.empresa or p.id)
+            corpo = (
+                "Não foi possível emitir automaticamente a Guia Bancária do processo " + str(p.id) +
+                " (" + (p.empresa or "-") + ") na JUCERJA.\n\n"
+                "Motivo: " + (motivo_falha or "não informado") + "\n\n"
+                "É necessário emitir manualmente."
+            )
+            caminho_pdf = None
+            nome_anexo = None
+        algum_sucesso = False
+        for dest in destinatarios:
+            if sucesso and caminho_pdf:
+                ok = enviar_email_anexo(dest, assunto, corpo, caminho_anexo=caminho_pdf, nome_anexo=nome_anexo)
+            else:
+                ok = enviar_email(dest, assunto, corpo)
+            if not sucesso:
+                # log da notificacao de FALHA da automacao: erro sempre
+                # guarda o motivo da falha em si (mesmo que o e-mail avisando
+                # disso tenha sido enviado com sucesso) - so cai pro fallback
+                # "falha no envio" se nao houver motivo e o envio tambem falhou.
+                erro_log = motivo_falha or (None if ok else "falha no envio")
+            else:
+                erro_log = None if ok else "falha no envio"
+            db.add(LogEmail(
+                id=str(uuid.uuid4()), processo_id=p.id, destinatario=dest,
+                tipo="guia_bancaria_jucerja", sucesso=ok, erro=erro_log,
+                destinatario_tipo="taxa_jucerja" if sucesso else "taxa_jucerja_falha",
+            ))
+            algum_sucesso = algum_sucesso or ok
+        db.commit()
+        return algum_sucesso
+    except Exception as e:
+        print("Erro em notificar_taxa_jucerja:", e)
+        return False
 
 
 def notificar_cliente_processo(db, p, tipo, assunto, corpo, corpo_html=None, anexo_caminho=None, anexo_nome=None, destinatarios=None):
@@ -901,75 +1055,7 @@ JUCERJA_USUARIO = os.getenv("JUCERJA_USUARIO")
 JUCERJA_SENHA = os.getenv("JUCERJA_SENHA")
 
 
-def _nome_taxa_jucerja(p):
-    """Nome de exibicao do PDF da Guia Bancaria JUCERJA no anexo do e-mail
-    (pedido por Diogo, 24/08/2026): 'TAXA JUCERJA - {EMPRESA} - {TIPO_ATO}
-    {DATA}' (ex: 'TAXA JUCERJA - NEOENERGIA S.A. - AGE 20.05.2026'). Data no
-    formato DD.MM.AAAA (barra nao pode aparecer em nome de arquivo) -
-    trocado a partir do DD/MM/AAAA salvo em data_ata. So' afeta o nome de
-    exibicao do anexo, nunca o arquivo fisico em disco (que continua
-    {processo_id}_guia_bancaria.pdf, estavel pra idempotencia)."""
-    empresa = (p.empresa or p.id or "").strip()
-    tipo = (p.tipo_ato or "").strip()
-    data = (p.data_ata or "").strip().replace("/", ".")
-    ato = " ".join(parte for parte in (tipo, data) if parte)
-    nome = "TAXA JUCERJA - " + empresa + (" - " + ato if ato else "")
-    return nome.strip() + ".pdf"
-
-
-def notificar_taxa_jucerja(db, p, sucesso, motivo_falha=None, caminho_pdf=None):
-    """Notifica Diogo (admin) + operadores sobre a emissao automatica da Guia
-    Bancaria (taxa) na JUCERJA pra um processo uf='RJ' - sucesso (com o PDF
-    anexado) ou falha (com o motivo, pra emissao manual). Usa emails_admin()
-    de proposito (mesma lista de destinatarios nos dois casos - Diogo +
-    operadores com e-mail). So' o destinatario_tipo no log_emails diferencia
-    sucesso de falha nas consultas de auditoria depois. Nunca deve quebrar o
-    fluxo principal."""
-    try:
-        destinatarios = emails_admin(db)
-        if not destinatarios:
-            return False
-        if sucesso:
-            assunto = "[Atos] Guia Bancária JUCERJA - " + (p.empresa or p.id)
-            corpo = (
-                "Segue a taxa do processo " + str(p.id) + " (" + (p.empresa or "-") + ") para pagamento.\n\n"
-                "Emitida automaticamente na JUCERJA."
-            )
-            nome_anexo = _nome_taxa_jucerja(p) if caminho_pdf else None
-        else:
-            assunto = "[Atos] ATENÇÃO - Falha ao emitir Guia Bancária JUCERJA - " + (p.empresa or p.id)
-            corpo = (
-                "Não foi possível emitir automaticamente a Guia Bancária do processo " + str(p.id) +
-                " (" + (p.empresa or "-") + ") na JUCERJA.\n\n"
-                "Motivo: " + (motivo_falha or "não informado") + "\n\n"
-                "É necessário emitir manualmente."
-            )
-            caminho_pdf = None
-            nome_anexo = None
-        algum_sucesso = False
-        for dest in destinatarios:
-            if sucesso and caminho_pdf:
-                ok = enviar_email_anexo(dest, assunto, corpo, caminho_anexo=caminho_pdf, nome_anexo=nome_anexo)
-            else:
-                ok = enviar_email(dest, assunto, corpo)
-            if not sucesso:
-                erro_log = motivo_falha or (None if ok else "falha no envio")
-            else:
-                erro_log = None if ok else "falha no envio"
-            db.add(LogEmail(
-                id=str(uuid.uuid4()), processo_id=p.id, destinatario=dest,
-                tipo="guia_bancaria_jucerja", sucesso=ok, erro=erro_log,
-                destinatario_tipo="taxa_jucerja" if sucesso else "taxa_jucerja_falha",
-            ))
-            algum_sucesso = algum_sucesso or ok
-        db.commit()
-        return algum_sucesso
-    except Exception as e:
-        print("Erro em notificar_taxa_jucerja:", e)
-        return False
-
-
-def processar_guia_bancaria_jucerja(db, processo_id, headless=True):
+def processar_guia_bancaria_jucerja(db, processo_id, headless=True, debug_dir=None):
     """Orquestra a emissao automatica da Guia Bancaria JUCERJA pra um
     processo: checa idempotencia, chama a automacao Playwright
     (emitir_guia_jucerja.emitir_guia_bancaria), salva o PDF em UPLOADS_DIR,
@@ -977,14 +1063,6 @@ def processar_guia_bancaria_jucerja(db, processo_id, headless=True):
     notificar_taxa_jucerja. Nunca levanta excecao nem trava quem chamou -
     ETAPA 2A: ainda NAO ligada a nenhum gatilho automatico, so' chamada
     manualmente (supervisionada) ate a Etapa 2b ser aprovada separadamente.
-
-    IMPORTANTE (auditoria 24/08/2026, deploy inicial): os selectors de
-    emitir_guia_bancaria alem da selecao de Ato/Evento (botao Adicionar,
-    busca por CNPJ, tipo de Protocolo, Gerar Boleto, Imprimir Guia Bancaria)
-    ainda NAO foram confirmados contra o site real da JUCERJA - ver docstring
-    de automacao/emitir_guia_jucerja.py. A primeira chamada deve ser
-    supervisionada (Diogo acompanhando, headless=False) contra um processo
-    real pendente de guia - nunca em execucao autonoma antes disso.
 
     Retorna o dict de emitir_guia_bancaria (sucesso/motivo_falha/caminho_pdf)."""
     try:
@@ -999,9 +1077,25 @@ def processar_guia_bancaria_jucerja(db, processo_id, headless=True):
         if not JUCERJA_USUARIO or not JUCERJA_SENHA:
             resultado = {"sucesso": False, "motivo_falha": "JUCERJA_USUARIO/JUCERJA_SENHA não configuradas no .env", "caminho_pdf": None}
         else:
+            # RETRY 24/08/2026: falhas de download/PDF invalido as vezes sao
+            # transitorias (rede, timing) - tenta ate 3x (1 inicial + 2
+            # retentativas) antes de desistir. So' a tentativa final falha
+            # gera alerta de falha definitiva; falhas intermediarias so ficam
+            # no audit log (evita spam de e-mail por retry).
             nome_arquivo = f"{processo_id}_guia_bancaria.pdf"
             destino = os.path.join(UPLOADS_DIR, nome_arquivo)
-            resultado = emitir_guia_bancaria(p, JUCERJA_USUARIO, JUCERJA_SENHA, destino, headless=headless)
+            max_tentativas = 3
+            resultado = None
+            for tentativa in range(1, max_tentativas + 1):
+                resultado = emitir_guia_bancaria(p, JUCERJA_USUARIO, JUCERJA_SENHA, destino, headless=headless, debug_dir=debug_dir)
+                if resultado.get("sucesso"):
+                    break
+                registrar_auditoria(
+                    db, None, "guia_bancaria_tentativa_falhou", processo_id,
+                    f"tentativa={tentativa}/{max_tentativas} motivo=" + str(resultado.get("motivo_falha")),
+                )
+                if tentativa < max_tentativas:
+                    print(f"   [GB] tentativa {tentativa}/{max_tentativas} falhou, tentando de novo:", resultado.get("motivo_falha"))
 
         if resultado.get("sucesso"):
             p.arquivo_guia_bancaria = os.path.basename(resultado["caminho_pdf"])
@@ -1015,7 +1109,6 @@ def processar_guia_bancaria_jucerja(db, processo_id, headless=True):
     except Exception as e:
         print("Erro em processar_guia_bancaria_jucerja:", e)
         return {"sucesso": False, "motivo_falha": str(e)[:300], "caminho_pdf": None}
-
 
 CONHECIMENTO_FILE = r"D:\Mane\dados\conhecimento_registro.json"
 def carregar_conhecimento():
@@ -1270,12 +1363,18 @@ def esqueci_senha(dados: dict, request: Request, db: Session = Depends(get_db)):
 
 # ===== ANEXOS DO PROCESSO =====
 def notificar_telegram(texto: str):
-    """Envia um aviso ao ADM via Telegram. Retorna (chat_id, message_id) ou None."""
+    """Envia um aviso ao ADM via Telegram. Retorna (chat_id, message_id) ou None.
+    Nunca levanta excecao nem trava quem chamou - mas toda falha (erro de rede
+    ou resposta da API com ok=False, ex: token invalido) fica registrada via
+    print, pra nao repetir o que aconteceu ate 19/08/2026: TELEGRAM_TOKEN
+    invalido (401 da API) falhando 100% em silencio, sem nenhum rastro em
+    log, escondendo que avisos de mensagem de cliente nunca chegavam."""
     try:
         import os, requests
         token = os.getenv("TELEGRAM_TOKEN")
         chat_id = os.getenv("TELEGRAM_CHAT_ID")
         if not token or not chat_id:
+            print("Erro notificar_telegram: TELEGRAM_TOKEN/TELEGRAM_CHAT_ID nao configurados")
             return None
         r = requests.post(
             f"https://api.telegram.org/bot{token}/sendMessage",
@@ -1285,8 +1384,9 @@ def notificar_telegram(texto: str):
         j = r.json()
         if j.get("ok"):
             return (str(chat_id), j["result"]["message_id"])
-    except Exception:
-        pass
+        print("Erro notificar_telegram: API retornou ok=False -", r.status_code, j)
+    except Exception as e:
+        print("Erro notificar_telegram:", str(e)[:150])
     return None
 
 
@@ -1355,6 +1455,7 @@ async def enviar_mensagem(processo_id: str, dados: str = Form(...), request: Req
             _cid, _mid = _res
             db.add(TelegramVinculo(id=str(uuid.uuid4()), telegram_message_id=_mid, chat_id=_cid, processo_id=processo_id))
             db.commit()
+        notificar_operadores(db, "mensagem_cliente", processo_id, {"empresa": _empresa, "info": _preview}, usuario)
     return {"mensagem": "enviada", "id": msg.id}
 
 @app.get("/processos/{processo_id}/mensagens")
@@ -1758,6 +1859,7 @@ async def enviar_anexo(processo_id: str, arquivo: UploadFile = File(...), descri
     db.commit()
     _ip = obter_ip(request)
     registrar_auditoria(db, usuario, "anexo_upload", processo_id, "arquivo=" + (arquivo.filename or ""), _ip)
+    notificar_operadores(db, "anexo_adicionado", processo_id, {"empresa": p.empresa, "info": arquivo.filename or nome_arquivo}, usuario)
     return {"mensagem": "Anexo enviado", "id": anexo_id, "nome_original": arquivo.filename}
 
 @app.get("/processos/{processo_id}/anexos")
@@ -1909,6 +2011,7 @@ def emitir_certidao_simplificada(processo_id: str, request: Request = None, x_to
     db.add(novo)
     db.commit()
     registrar_auditoria(db, usuario, "certidao_simplificada_emitida", processo_id, "nire=" + str(p.nire), _ip)
+    notificar_operadores(db, "certidao_simplificada_emitida", processo_id, {"empresa": p.empresa}, usuario)
     return {
         "mensagem": "Certidao Simplificada emitida e anexada ao processo",
         "anexo_id": anexo_id,
@@ -2182,6 +2285,7 @@ def _claude_texto_documento(caminho_pdf):
     except Exception as e:
         print("Claude texto documento falhou:", str(e)[:200])
         return None
+
 
 def _tesseract_texto_documento(caminho_pdf):
     import subprocess, os, glob, tempfile
@@ -2961,6 +3065,7 @@ async def confirmar_tipo(processo_id: str, dados: str = Form(...), request: Requ
     db.commit()
     _ip = obter_ip(request)
     registrar_auditoria(db, usuario, "confirmar_tipo", processo_id, "tipo=" + (novo_tipo or p.tipo_ato or ""), _ip)
+    notificar_operadores(db, "tipo_confirmado", processo_id, {"empresa": p.empresa, "valor_novo": p.tipo_ato}, usuario)
     return {"mensagem": "Tipo confirmado", "id": processo_id, "tipo_ato": p.tipo_ato}
 
 def _norm(s):
@@ -3107,6 +3212,7 @@ async def criar_processo(
             enviar_email(em, "Processo inserido no Atos - " + (p.empresa or ""), corpo, corpo_html)
     except Exception as e:
         print("Erro ao notificar abertura:", e)
+    notificar_operadores(db, "processo_criado", processo_id, {"empresa": p.empresa}, usuario_tok)
     if faltando:
         try:
             p.confirmacao_pendente = True
@@ -3179,6 +3285,7 @@ def _criar_processo_transferencia(db, p_origem):
             print("Erro ao anexar ata de origem no processo de transferencia:", e)
     p_origem.transferencia_criada = True
     db.commit()
+    notificar_operadores(db, "processo_criado", novo_id, {"empresa": novo.empresa, "info": "Criado automaticamente por transferencia de sede, origem " + p_origem.id})
     try:
         notificar_telegram(f"ATOS - Transferencia de sede\nProcesso de destino criado: {novo_id}\nEmpresa: {p_origem.empresa}\nDestino: {uf_destino}\nAguardando protocolo.")
     except Exception:
@@ -3234,6 +3341,7 @@ def atualizar_processo(processo_id: str, dados: dict, request: Request = None, x
     if dados.get("tipo_ato") and dados["tipo_ato"] not in TIPOS_ATO_VALIDOS:
         raise HTTPException(status_code=400, detail="Tipo de ato inválido: " + str(dados["tipo_ato"]) + ". Valores aceitos: " + ", ".join(TIPOS_ATO_VALIDOS))
     _ip = obter_ip(request)
+    _campos_alterados = []
     for campo, valor in dados.items():
         if hasattr(p, campo):
             if campo == "empresa" and valor:
@@ -3249,6 +3357,7 @@ def atualizar_processo(processo_id: str, dados: dict, request: Request = None, x
                     "editar_campo_sensivel" if protocolo_sensivel else "editar_campo",
                     processo_id, f"{campo}: '{valor_anterior}' -> '{valor}'", _ip,
                 )
+                _campos_alterados.append(f"{campo}: '{valor_anterior}' -> '{valor}'")
     # Reinserir/atualizar protocolo cumpre a exigencia ativa
     protocolo_editado = "numero_protocolo" in dados or "arquivo_protocolo" in dados
     if protocolo_editado and getattr(p, "exigencia_ativa", False):
@@ -3261,6 +3370,8 @@ def atualizar_processo(processo_id: str, dados: dict, request: Request = None, x
     db.commit()
     if "status" in dados:
         notificar_tramitacao_cliente(db, p, status_antes_patch)
+    if _campos_alterados:
+        notificar_operadores(db, "processo_editado", processo_id, {"empresa": p.empresa, "info": "; ".join(_campos_alterados)}, usuario)
     return {"mensagem": "Atualizado com sucesso"}
 
 @app.post("/processos/{processo_id}/upload/{tipo}")
@@ -3347,6 +3458,7 @@ async def upload_arquivo(
                 notificar_tramitacao_cliente(db, p, status_antes_up)
         except Exception as e:
             print("Erro ao notificar upload:", e)
+        notificar_operadores(db, "upload_documento", processo_id, {"empresa": p.empresa, "campo": tipo, "info": nome_arquivo}, usuario)
 
     return {"mensagem": f"Arquivo {tipo} salvo", "arquivo": nome_arquivo, "numero_protocolo": (p.numero_protocolo or "")}
 
@@ -3383,6 +3495,7 @@ async def registrar_exigencia(
     registrar_evento(db, p, "exigencia_registrada", "Exigência registrada" + (f": {texto}" if texto else ""), usuario)
     db.commit()
     notificar_exigencia_cliente(db, p, origem="manual")
+    notificar_operadores(db, "exigencia_registrada", processo_id, {"empresa": p.empresa, "info": texto or None}, usuario)
     return {"mensagem": "Exigencia registrada", "status": p.status}
 
 
@@ -3403,6 +3516,7 @@ def exigencia_cumprida(processo_id: str, x_token: str = Header(None), db: Sessio
     p.atualizado_em = datetime.now()
     registrar_evento(db, p, "exigencia_cumprida", "Exigência marcada como cumprida", usuario)
     db.commit()
+    notificar_operadores(db, "exigencia_cumprida", processo_id, {"empresa": p.empresa}, usuario)
     return {"mensagem": "Exigencia marcada como cumprida", "status": p.status}
 
 @app.delete("/processos/{processo_id}")
@@ -3417,8 +3531,10 @@ def excluir_processo(processo_id: str, request: Request = None, x_token: str = H
         raise HTTPException(status_code=404, detail="Processo nao encontrado")
     _ip = obter_ip(request)
     registrar_auditoria(db, usuario, "excluir", processo_id, "empresa=" + str(p.empresa) + " cnpj=" + str(p.cnpj), _ip)
+    _empresa_excluida = p.empresa
     db.delete(p)
     db.commit()
+    notificar_operadores(db, "processo_excluido", processo_id, {"empresa": _empresa_excluida}, usuario)
     return {"mensagem": "Processo excluido"}
 
 @app.post("/processos/{processo_id}/exigencia/aguardando-cliente")
@@ -3433,6 +3549,7 @@ def exigencia_aguardando_cliente(processo_id: str, x_token: str = Header(None), 
     p.aguardando_cliente = True
     p.atualizado_em = datetime.now()
     db.commit()
+    notificar_operadores(db, "exigencia_aguardando_cliente", processo_id, {"empresa": p.empresa}, usuario)
     return {"mensagem": "Marcado como aguardando cliente", "aguardando_cliente": True}
 
 

@@ -1,4 +1,4 @@
-# -*- coding: utf-8 -*-
+﻿# -*- coding: utf-8 -*-
 import sys, os, re
 from datetime import datetime, timedelta
 from dotenv import load_dotenv
@@ -7,7 +7,7 @@ sys.path.insert(0, "/root/atos/backend")
 sys.path.insert(0, "/root/atos/automacao")
 from database import SessionLocal, Processo, Grupo, EmailGrupo
 sys.path.insert(0, "/root/atos/backend")
-from main import corpo_status_cliente, enviar_email, emails_do_grupo, UPLOADS_DIR, recalcular_status, emails_admin, notificar_exigencia_cliente, _email_status_html, _empresa_linha, _email_finalizado, notificar_cliente_processo, UFS_EMAIL_AUTOMATICO_SUSPENSO
+from main import corpo_status_cliente, enviar_email, emails_do_grupo, UPLOADS_DIR, recalcular_status, emails_admin, notificar_exigencia_cliente, _email_status_html, _empresa_linha, _email_finalizado, notificar_cliente_processo, UFS_EMAIL_AUTOMATICO_SUSPENSO, notificar_operadores
 from nomenclatura import aplicar_nomenclatura_junta
 from consultar_jucesp import consultar
 from jucesp_infosimples import baixar_documento as baixar_documento_infosimples_sp
@@ -29,12 +29,12 @@ JUCERJA_USUARIO = os.getenv("JUCERJA_USUARIO")
 JUCERJA_SENHA = os.getenv("JUCERJA_SENHA")
 JUCEB_LOGIN = os.getenv("JUCEB_LOGIN")
 JUCEB_SENHA = os.getenv("JUCEB_SENHA")
-# Auditoria 24/08/2026: processar_pe() usava JUCEB_LOGIN/JUCEB_SENHA (Bahia)
-# pra logar no portal da JUCEPE (Pernambuco) - dominios completamente
-# diferentes (regin.juceb.ba.gov.br vs redesim.jucepe.pe.gov.br), nunca
-# funcionaria de verdade. JUCEPE_LOGIN/JUCEPE_SENHA ainda NAO existem no
-# .env - processar_pe() agora pula com aviso claro ate serem cadastradas,
-# em vez de tentar logar com credenciais erradas.
+# BUG CORRIGIDO 24/08/2026 (auditoria): processar_pe() usava JUCEB_LOGIN/
+# JUCEB_SENHA (credenciais da JUCEB-Bahia) pra autenticar na JUCEPE-
+# Pernambuco, um portal completamente diferente - a consulta/download de
+# PE sempre falhava (credencial errada). JUCEPE_LOGIN/JUCEPE_SENHA ainda
+# NAO estao configuradas no .env - processar_pe() pula com aviso claro
+# ate serem cadastradas, em vez de tentar com credenciais erradas.
 JUCEPE_LOGIN = os.getenv("JUCEPE_LOGIN")
 JUCEPE_SENHA = os.getenv("JUCEPE_SENHA")
 
@@ -85,6 +85,7 @@ def aplicar_classificacao(db, p, classificacao, agora):
             db.commit()
             enviar_email_admin_todos(db, "[Atos] Exigencia - " + str(p.empresa), corpo_admin(p, "Exigencia"))
             notificar_exigencia_cliente(db, p, origem="autonoma")
+            notificar_operadores(db, "status_atualizado_automatico", p.id, {"empresa": p.empresa, "valor_anterior": status_atual, "valor_novo": "exigencia"})
             print("   -> mudou para EXIGENCIA + alertou admin" + " e cliente")
         else:
             if precisa_alertar(p, agora):
@@ -117,6 +118,7 @@ def aplicar_classificacao(db, p, classificacao, agora):
                 if notificar_cliente_processo(db, p, "deferido", "Atualizacao do seu processo - " + str(p.empresa), _corpo_deferido, _corpo_html_deferido):
                     p.avisado_deferido = True
                     db.commit()
+            notificar_operadores(db, "status_atualizado_automatico", p.id, {"empresa": p.empresa, "valor_anterior": status_atual, "valor_novo": "deferido"})
             print("   -> mudou para DEFERIDO + alertou admin" + (" (cliente suspenso - " + (p.uf or "") + ")" if (p.uf or "").upper() in UFS_EMAIL_AUTOMATICO_SUSPENSO else " e cliente"))
         else:
             if precisa_alertar(p, agora):
@@ -131,7 +133,10 @@ def aplicar_classificacao(db, p, classificacao, agora):
     else:
         if status_atual not in ("tramitacao", "exigencia", "deferido"):
             p.status = "tramitacao"
-        db.commit()
+            db.commit()
+            notificar_operadores(db, "status_atualizado_automatico", p.id, {"empresa": p.empresa, "valor_anterior": status_atual, "valor_novo": "tramitacao"})
+        else:
+            db.commit()
         print("   -> tramitacao (mantido)")
 
 
@@ -393,7 +398,7 @@ def processar_pe(db, agora):
     if not pendentes:
         return
     if not JUCEPE_LOGIN or not JUCEPE_SENHA:
-        print("   [PE] JUCEPE_LOGIN/JUCEPE_SENHA ausentes no .env - pulando PE (ver auditoria 24/08/2026: nao usar JUCEB_LOGIN/JUCEB_SENHA aqui, sao credenciais de outro portal).")
+        print("   [PE] JUCEPE_LOGIN/JUCEPE_SENHA ausentes no .env - pulando PE.")
         return
     for p in pendentes:
         print("-> [PE] " + str(p.empresa) + " | prot " + str(p.numero_protocolo) + " | status: " + (p.status or ""))

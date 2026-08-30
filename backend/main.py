@@ -10,6 +10,7 @@ from datetime import datetime, timedelta, date
 from openai import OpenAI
 import json, os, uuid, shutil, bcrypt, secrets
 import asyncio
+import threading
 
 from dotenv import load_dotenv
 import os
@@ -599,6 +600,10 @@ def notificar_operadores(db, evento, processo_id, detalhes, usuario=None):
         linhas.append("Feito por: " + quem)
         linhas.append("Quando: " + datetime.now().strftime("%d/%m/%Y %H:%M:%S"))
         corpo = "\n".join(linhas)
+        try:
+            notificar_telegram(assunto + "\n\n" + corpo)
+        except Exception as e:
+            print("Erro ao notificar telegram (notificar_operadores):", str(e)[:200])
         algum_sucesso = False
         for op in operadores:
             ok = enviar_email(op.email, assunto, corpo)
@@ -685,6 +690,58 @@ def notificar_taxa_jucerja(db, p, sucesso, motivo_falha=None, caminho_pdf=None):
         return algum_sucesso
     except Exception as e:
         print("Erro em notificar_taxa_jucerja:", e)
+        return False
+
+
+
+
+def notificar_falha_sessao_jucesc(db):
+    """Alerta Diogo + operadores que a sessao persistida da JUCESC
+    (jucesc_session.json, login gov.br supervisionado) expirou ou nao
+    existe - baixar_documento_jucesc() nunca tenta adivinhar credencial,
+    so' reporta o motivo pra este alerta decidir o que fazer. SEMPRE por
+    e-mail (nunca so' Telegram - se o Telegram estiver quebrado, um
+    alerta so' por Telegram nunca chegaria, mesmo problema ja visto e
+    documentado em notificar_telegram()). Deduplicado por arquivo de
+    controle (so' reenvia depois de 24h) pra nao spammar a cada rodada
+    do polling automatico enquanto a sessao continuar expirada - mesmo
+    padrao de contencao de spam ja usado no retry da guia bancaria
+    JUCERJA. Nunca deve quebrar o fluxo principal."""
+    try:
+        import time
+        arquivo_controle = "/root/atos/backend/jucesc_sessao_expirada_alertado.flag"
+        if os.path.exists(arquivo_controle):
+            idade_horas = (time.time() - os.path.getmtime(arquivo_controle)) / 3600
+            if idade_horas < 24:
+                return False
+        destinatarios = emails_admin(db)
+        if not destinatarios:
+            return False
+        assunto = "[Atos] ATENCAO - Sessao da JUCESC expirada (login gov.br)"
+        corpo = (
+            "A sessao persistida usada pra baixar documentos deferidos na JUCESC "
+            "expirou (ou nunca foi criada).\n\n"
+            "E necessario refazer o login supervisionado:\n"
+            "1. Rodar 'python setup_sessao_jucesc.py' no PC do Diogo (login gov.br "
+            "manual, com 2FA).\n"
+            "2. Subir o arquivo jucesc_session.json gerado pro servidor "
+            "(/root/atos/automacao/jucesc_session.json).\n\n"
+            "Ate isso ser feito, downloads automaticos de processos deferidos na "
+            "JUCESC vao continuar falhando (sem tentar adivinhar a senha)."
+        )
+        algum_sucesso = False
+        for dest in destinatarios:
+            ok = enviar_email(dest, assunto, corpo)
+            algum_sucesso = algum_sucesso or ok
+        try:
+            notificar_telegram(assunto + "\n\n" + corpo)
+        except Exception as e:
+            print("Erro ao notificar telegram (falha sessao JUCESC):", str(e)[:200])
+        with open(arquivo_controle, "w", encoding="utf-8") as f:
+            f.write(datetime.now().strftime("%d/%m/%Y %H:%M:%S"))
+        return algum_sucesso
+    except Exception as e:
+        print("Erro em notificar_falha_sessao_jucesc:", e)
         return False
 
 
@@ -1110,6 +1167,26 @@ def processar_guia_bancaria_jucerja(db, processo_id, headless=True, debug_dir=No
         print("Erro em processar_guia_bancaria_jucerja:", e)
         return {"sucesso": False, "motivo_falha": str(e)[:300], "caminho_pdf": None}
 
+
+def processar_guia_bancaria_jucerja_thread(db, processo_id, headless=True, debug_dir=None):
+    """Roda processar_guia_bancaria_jucerja numa thread separada. O Playwright
+    Sync API usado dentro dela nao pode rodar na mesma thread de um event loop
+    asyncio ja em execucao (ex: dentro de uma rota async do FastAPI como
+    POST /processos) - levanta 'Playwright Sync API inside the asyncio loop'
+    e falha em silencio (sem nem notificar_taxa_jucerja rodar, pois o erro
+    acontece antes, dentro do proprio emitir_guia_bancaria). threading.Thread
+    + join() bloqueia o chamador ate terminar (mantem o comportamento sincrono
+    esperado nos dois pontos de chamada - POST /processos, async; e
+    _criar_processo_transferencia, sync - sem precisar duplicar logica nem
+    tornar _criar_processo_transferencia async)."""
+    resultado_container = {}
+    def _alvo():
+        resultado_container["resultado"] = processar_guia_bancaria_jucerja(db, processo_id, headless=headless, debug_dir=debug_dir)
+    t = threading.Thread(target=_alvo)
+    t.start()
+    t.join()
+    return resultado_container.get("resultado")
+
 CONHECIMENTO_FILE = r"D:\Mane\dados\conhecimento_registro.json"
 def carregar_conhecimento():
     if os.path.exists(CONHECIMENTO_FILE):
@@ -1363,16 +1440,30 @@ def esqueci_senha(dados: dict, request: Request, db: Session = Depends(get_db)):
 
 # ===== ANEXOS DO PROCESSO =====
 def notificar_telegram(texto: str):
-    """Envia um aviso ao ADM via Telegram. Retorna (chat_id, message_id) ou None.
-    Nunca levanta excecao nem trava quem chamou - mas toda falha (erro de rede
-    ou resposta da API com ok=False, ex: token invalido) fica registrada via
-    print, pra nao repetir o que aconteceu ate 19/08/2026: TELEGRAM_TOKEN
-    invalido (401 da API) falhando 100% em silencio, sem nenhum rastro em
-    log, escondendo que avisos de mensagem de cliente nunca chegavam."""
+    """Envia um aviso de atualizacao do sistema para o GRUPO do Telegram
+    (TELEGRAM_GRUPO_CHAT_ID, com fallback pro chat pessoal TELEGRAM_CHAT_ID
+    se o grupo nao estiver configurado) - decisao de 20/08/2026, porque o
+    grupo e' o canal que Diogo e os operadores realmente acompanham (leitura,
+    sem interacao). RESTAURADO 27/08/2026: essa rota pro grupo tinha sido
+    perdida sem querer em 25/08 (efeito colateral de um fix de logging nao
+    relacionado), fazendo os avisos irem 100% em silencio so' pro chat
+    pessoal - achado porque Diogo relatou que as mensagens tinham parado de
+    chegar no grupo.
+
+    Nao usar para fluxos que dependem de resposta/interacao do admin (botoes,
+    reply) - esses continuam indo pro chat pessoal via
+    notificar_telegram_com_botoes.
+
+    Retorna (chat_id, message_id) ou None. Nunca levanta excecao nem trava
+    quem chamou - mas toda falha (erro de rede ou resposta da API com
+    ok=False, ex: token invalido) fica registrada via print, pra nao repetir
+    o que aconteceu ate 19/08/2026: TELEGRAM_TOKEN invalido (401 da API)
+    falhando 100% em silencio, sem nenhum rastro em log, escondendo que
+    avisos de mensagem de cliente nunca chegavam."""
     try:
         import os, requests
         token = os.getenv("TELEGRAM_TOKEN")
-        chat_id = os.getenv("TELEGRAM_CHAT_ID")
+        chat_id = os.getenv("TELEGRAM_GRUPO_CHAT_ID") or os.getenv("TELEGRAM_CHAT_ID")
         if not token or not chat_id:
             print("Erro notificar_telegram: TELEGRAM_TOKEN/TELEGRAM_CHAT_ID nao configurados")
             return None
@@ -1383,6 +1474,14 @@ def notificar_telegram(texto: str):
         )
         j = r.json()
         if j.get("ok"):
+            # 27/08/2026: registra quando foi o ultimo envio bem-sucedido,
+            # consultavel pelo monitor de saude (monitor_telegram_saude.py)
+            # sem precisar garimpar journalctl.
+            try:
+                with open("/root/atos/backend/telegram_ultimo_envio.txt", "w", encoding="utf-8") as _f:
+                    _f.write(datetime.now().strftime("%d/%m/%Y %H:%M:%S"))
+            except Exception:
+                pass
             return (str(chat_id), j["result"]["message_id"])
         print("Erro notificar_telegram: API retornou ok=False -", r.status_code, j)
     except Exception as e:
@@ -3237,6 +3336,11 @@ async def criar_processo(
     vincular_fluxo_do_dia(db, p, grupo_id)
     registrar_evento(db, p, "ata_enviada", "Ata enviada", usuario_tok)
     db.commit()
+    if (p.uf or "").upper() == "RJ":
+        try:
+            processar_guia_bancaria_jucerja_thread(db, p.id)
+        except Exception as e:
+            print("Erro ao emitir guia bancaria JUCERJA automaticamente:", e)
     try:
         corpo = "Processo Inserido no Atos:\n\n" + corpo_status_cliente(p, "Aberto", "")
         try:
@@ -3323,6 +3427,11 @@ def _criar_processo_transferencia(db, p_origem):
             print("Erro ao anexar ata de origem no processo de transferencia:", e)
     p_origem.transferencia_criada = True
     db.commit()
+    if (novo.uf or "").upper() == "RJ":
+        try:
+            processar_guia_bancaria_jucerja_thread(db, novo_id)
+        except Exception as e:
+            print("Erro ao emitir guia bancaria JUCERJA automaticamente (transferencia):", e)
     notificar_operadores(db, "processo_criado", novo_id, {"empresa": novo.empresa, "info": "Criado automaticamente por transferencia de sede, origem " + p_origem.id})
     try:
         notificar_telegram(f"ATOS - Transferencia de sede\nProcesso de destino criado: {novo_id}\nEmpresa: {p_origem.empresa}\nDestino: {uf_destino}\nAguardando protocolo.")

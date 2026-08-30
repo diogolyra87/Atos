@@ -7,14 +7,14 @@ sys.path.insert(0, "/root/atos/backend")
 sys.path.insert(0, "/root/atos/automacao")
 from database import SessionLocal, Processo, Grupo, EmailGrupo
 sys.path.insert(0, "/root/atos/backend")
-from main import corpo_status_cliente, enviar_email, emails_do_grupo, UPLOADS_DIR, recalcular_status, emails_admin, notificar_exigencia_cliente, _email_status_html, _empresa_linha, _email_finalizado, notificar_cliente_processo, UFS_EMAIL_AUTOMATICO_SUSPENSO, notificar_operadores
+from main import corpo_status_cliente, enviar_email, emails_do_grupo, UPLOADS_DIR, recalcular_status, emails_admin, notificar_exigencia_cliente, _email_status_html, _empresa_linha, _email_finalizado, notificar_cliente_processo, UFS_EMAIL_AUTOMATICO_SUSPENSO, notificar_operadores, notificar_falha_sessao_jucesc
 from nomenclatura import aplicar_nomenclatura_junta
 from consultar_jucesp import consultar
 from jucesp_infosimples import baixar_documento as baixar_documento_infosimples_sp
 from consultar_jucerja import consultar_jucerja, classificar_status_rj, baixar_documento_jucerja
 from consultar_juceb import consultar_juceb, classificar_status_ba, baixar_documento_juceb
 from consultar_jucepe import consultar_jucepe, classificar_status_pe, baixar_documento_jucepe
-from consultar_jucesc import consultar_jucesc, classificar_status_sc
+from consultar_jucesc import consultar_jucesc, classificar_status_sc, baixar_documento_jucesc
 from empreendedor_digital_scraper import consultar_empreendedor_digital
 from bot import enviar as enviar_telegram, ADMIN_CHAT_ID
 import json as _json
@@ -475,6 +475,70 @@ def processar_sc(db, agora):
         # merece fluxo proprio (avaliar com texto real, nao especular agora).
         aplicar_classificacao(db, p, res.get("status_classificado", "tramitacao"), agora)
         print()
+
+
+def processar_download_deferido_sc(db, processo_id, headless=True):
+    """ETAPA MANUAL/SUPERVISIONADA (29/08/2026, mesmo padrao usado antes pra
+    guia bancaria JUCERJA na etapa 2A): baixa o documento de um processo SC
+    especifico quando DEFERIDO na JUCESC, usando a sessao gov.br persistida.
+    NAO e' chamada automaticamente por processar_sc() nem por processar() -
+    precisa ser chamada manualmente (script/console) ate os seletores serem
+    validados contra a pagina real (ver baixar_documento_jucesc em
+    consultar_jucesc.py) e o teste end-to-end descrito no pedido original
+    passar. So' depois disso decidir, com o Diogo, se entra no polling
+    automatico.
+
+    Retorna o dict de baixar_documento_jucesc (sucesso/motivo_falha/
+    caminho_pdf). Se motivo_falha == 'sessao_expirada', dispara
+    notificar_falha_sessao_jucesc() (e-mail + Telegram) automaticamente."""
+    p = db.query(Processo).filter(Processo.id == processo_id, Processo.uf == "SC").first()
+    if not p:
+        return {"sucesso": False, "caminho_pdf": None, "motivo_falha": "processo nao encontrado ou nao e SC"}
+    if not p.numero_protocolo:
+        return {"sucesso": False, "caminho_pdf": None, "motivo_falha": "processo sem numero_protocolo"}
+    if p.arquivo_registro:
+        print("   [SC] documento ja registrado antes para", processo_id, "- ignorando (idempotencia)")
+        return {"sucesso": True, "caminho_pdf": None, "motivo_falha": None, "ja_existia": True}
+
+    nome_arquivo = aplicar_nomenclatura_junta(p.id + "_registro_auto.pdf")
+    caminho = os.path.join(UPLOADS_DIR, nome_arquivo)
+
+    max_tentativas = 3
+    resultado = None
+    for tentativa in range(1, max_tentativas + 1):
+        resultado = baixar_documento_jucesc(p.numero_protocolo, caminho, headless=headless)
+        if resultado.get("sucesso"):
+            break
+        if resultado.get("motivo_falha") == "sessao_expirada":
+            print("   [SC] sessao gov.br expirada - alertando, sem retentar (nao adianta).")
+            notificar_falha_sessao_jucesc(db)
+            break
+        if resultado.get("motivo_falha", "").startswith("processo nao deferido no REGIN"):
+            print("   [SC] processo ainda nao deferido no REGIN, sem retentar nesta chamada:", resultado.get("motivo_falha"))
+            break
+        print(f"   [SC] tentativa {tentativa}/{max_tentativas} falhou:", resultado.get("motivo_falha"))
+
+    # Persiste o numero de requerimento sempre que descoberto, mesmo em
+    # falha - util pra proximas tentativas e pra conferencia manual, e o
+    # REGIN pode exigir ele (nao o protocolo) pro download em si.
+    if resultado.get("numero_requerimento") and not p.numero_requerimento:
+        p.numero_requerimento = resultado["numero_requerimento"]
+        db.commit()
+
+    if resultado.get("sucesso"):
+        p.arquivo_registro = nome_arquivo
+        p.status = recalcular_status(p)
+        db.commit()
+        print("   [SC] documento baixado e processo atualizado para:", p.status)
+        if p.status == "finalizado":
+            try:
+                corpo, corpo_html = _email_finalizado(p)
+                notificar_cliente_processo(db, p, "registro", "Processo Finalizado - " + (p.empresa or ""), corpo, corpo_html,
+                                            anexo_caminho=caminho, anexo_nome=nome_arquivo)
+                print("   [SC] e-mail de finalizacao enviado.")
+            except Exception as e:
+                print("   [SC] erro ao enviar e-mail de finalizacao:", e)
+    return resultado
 
 
 def _carregar_estados_empreendedor_digital():

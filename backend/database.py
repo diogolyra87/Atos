@@ -224,6 +224,13 @@ class Processo(Base):
     data_recebimento = Column(DateTime, default=datetime.now)
     status = Column(String, default="recebido")
     numero_protocolo = Column(String)
+    # Numero de "Requerimento" da JUCESC (REGIN) - distinto do
+    # numero_protocolo (ex: requerimento 81600003602818 vs protocolo
+    # 265529433 pro mesmo processo, confirmado em 29/08/2026). O REGIN
+    # (ReimpressaoDocs.aspx) busca/baixa por requerimento, nao por
+    # protocolo - descoberto e persistido por baixar_documento_jucesc()
+    # na primeira vez que localiza o processo no REGIN autenticado.
+    numero_requerimento = Column(String, nullable=True)
     data_protocolo = Column(String)
     data_registro = Column(String)
     # Numero de registro da JUCESP (ex: "300.504/26-3") - preenchido quando o
@@ -304,16 +311,11 @@ class Processo(Base):
 
 
 class LogEmail(Base):
-    """Log persistente de toda tentativa de e-mail relacionada a processo -
-    tanto ao cliente (registro/protocolo/deferido/exigencia, via
-    notificar_cliente_processo) quanto aos operadores (qualquer
-    insercao/atualizacao, via notificar_operadores) em main.py. Antes desta
-    tabela a unica evidencia era print() no journalctl, que expira em 7
-    dias - insuficiente pra auditar reclamacao que chega semanas depois.
-
-    destinatario_tipo diferencia os dois fluxos ("cliente" | "operador").
-    Nulo em linhas gravadas antes desse campo existir (todas eram cliente,
-    unico fluxo que existia)."""
+    """Log persistente de toda tentativa de e-mail ao cliente relacionada a
+    processo (registro/protocolo/deferido/exigencia), disparada via
+    notificar_cliente_processo em main.py. Antes desta tabela a unica
+    evidencia era print() no journalctl, que expira em 7 dias - insuficiente
+    pra auditar reclamacao de cliente que chega semanas depois."""
     __tablename__ = "log_emails"
     id = Column(String, primary_key=True)
     processo_id = Column(String, nullable=False)
@@ -322,6 +324,9 @@ class LogEmail(Base):
     sucesso = Column(Boolean, nullable=True)
     erro = Column(Text, nullable=True)
     criado_em = Column(DateTime, default=datetime.now)
+    # Usado por notificar_taxa_jucerja (guia bancaria JUCERJA) pra
+    # diferenciar o tipo de notificacao no mesmo log. Nulo em linhas
+    # gravadas antes desse campo existir.
     destinatario_tipo = Column(String, nullable=True)
 
 

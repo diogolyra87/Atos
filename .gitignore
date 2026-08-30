@@ -88,3 +88,19 @@ fix_*.ps1
 backend/disparar_convite.py
 planilhar_egp.py
 trocar_api.py
+
+# Sessao persistida de login gov.br (JUCESC) - cookies de sessao
+# autenticada, tratar como segredo. NUNCA commitar (repo e publico).
+jucesc_session.json
+automacao/jucesc_session.json
+*_session.json
+
+# Perfil Chrome dedicado do setup_sessao_jucesc.py (Degrau 2) - contem
+# cookies de sessao, mesmo tratamento do jucesc_session.json.
+automacao/.chrome_profile_jucesc/
+.chrome_profile_jucesc/
+
+# Export intermediario de cookies (Degrau 3, converter_cookies_jucesc.py) -
+# mesmo tratamento de segredo dos outros arquivos de sessao acima.
+cookies_jucesc_export.json
+automacao/cookies_jucesc_export.json

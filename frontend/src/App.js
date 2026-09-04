@@ -246,8 +246,22 @@ function AppPainel({ onSair, sessao }) {
 
   const ufsDisponiveis = [...new Set(processos.map(p => p.uf).filter(Boolean))].sort();
   const atosDisponiveis = [...new Set(processos.map(p => abreviarAto(p.identificador_ato, "").split(" ")[0]).filter(Boolean))].sort();
+  // Nome do grupo (cliente) por grupo_id, pra busca por texto tambem achar
+  // pelo nome do cliente/holding, nao so' pela razao social da empresa do
+  // processo - um grupo pode ter varias empresas/subsidiarias com nomes
+  // bem diferentes do nome do cliente (ex: PROFARMA tem 8 razoes sociais
+  // distintas, so' 2 contem "PROFARMA" no nome; buscar "profarma" escondia
+  // os outros 6 processos do mesmo cliente sem nenhum erro - achado no
+  // incidente de 01/09/2026, processo MN-20260825145626-E8DC/Drogaria
+  // Cipriano Santa Rosa).
+  const nomeGrupoPorId = Object.fromEntries(grupos.map(g => [g.id, (g.nome || "").toLowerCase()]));
   const processosFiltrados = processos.filter(p => {
-    if (fBusca && !(p.empresa || "").toLowerCase().includes(fBusca.toLowerCase())) return false;
+    if (fBusca) {
+      const termo = fBusca.toLowerCase();
+      const casaEmpresa = (p.empresa || "").toLowerCase().includes(termo);
+      const casaGrupo = (nomeGrupoPorId[p.grupo_id] || "").includes(termo);
+      if (!casaEmpresa && !casaGrupo) return false;
+    }
     if (fUf && p.uf !== fUf) return false;
     if (fStatus) {
       const sin = { aberto: ["aberto","recebido"], deferido: ["deferido","aprovado"] };
@@ -439,6 +453,7 @@ function AppPainel({ onSair, sessao }) {
         empresa: dados.empresa || "", tipo_ato: dados.tipo_ato || "",
         data_ata: dados.data_ata || "", hora_ata: dados.hora_ata || "",
         identificador_ato: dados.identificador_ato || "",
+        excluir_processo_id: dados.processo_id || "",
       };
       const r = await axios.get(`${API}/processos/checar-duplicidade`, { params });
       if (r.data && r.data.duplicado) {

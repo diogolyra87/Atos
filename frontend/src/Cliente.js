@@ -354,8 +354,20 @@ export function Painel({ sessao, onSair }) {
   const [gruposFechados, setGruposFechados] = useState({});
   const ufsDisponiveis = [...new Set(processos.map(p => p.uf).filter(Boolean))].sort();
   const atosDisponiveis = [...new Set(processos.map(p => abreviarAto(p.identificador_ato, "").split(" ")[0]).filter(Boolean))].sort();
+  // Mesmo fix do App.js (incidente 01/09/2026): um cliente pode ter varias
+  // empresas/subsidiarias com nomes diferentes do nome do proprio grupo
+  // (ex: PROFARMA com 8 razoes sociais distintas) - buscar pelo nome do
+  // cliente (sessao.grupo) tambem, nao so' pela razao social de cada
+  // processo, senao a maioria dos processos do proprio cliente fica
+  // invisivel pra busca dele mesmo.
+  const nomeGrupoSessao = (sessao.grupo || "").toLowerCase();
   const processosFiltrados = processos.filter(p => {
-    if (fBusca && !(p.empresa || "").toLowerCase().includes(fBusca.toLowerCase())) return false;
+    if (fBusca) {
+      const termo = fBusca.toLowerCase();
+      const casaEmpresa = (p.empresa || "").toLowerCase().includes(termo);
+      const casaGrupo = nomeGrupoSessao.includes(termo);
+      if (!casaEmpresa && !casaGrupo) return false;
+    }
     if (fUf && p.uf !== fUf) return false;
     if (fStatus) {
       const sin = { aberto: ["aberto","recebido"], deferido: ["deferido","aprovado"] };
@@ -542,6 +554,7 @@ export function Painel({ sessao, onSair }) {
         empresa: dados.empresa || "", tipo_ato: dados.tipo_ato || "",
         data_ata: dados.data_ata || "", hora_ata: dados.hora_ata || "",
         identificador_ato: dados.identificador_ato || "",
+        excluir_processo_id: dados.processo_id || "",
       };
       const r = await axios.get(`${API}/processos/checar-duplicidade`, { params, headers: { "x-token": sessao.token } });
       if (r.data && r.data.duplicado) {

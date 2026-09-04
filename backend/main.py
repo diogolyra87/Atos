@@ -2191,7 +2191,7 @@ async def listar_pendentes(x_token: str = Header(None), db: Session = Depends(ge
     return [{"id": p.id, "empresa": p.empresa, "tipo_ato": p.tipo_ato, "tipo_ato_sugerido": p.tipo_ato_sugerido, "identificador_ato": p.identificador_ato, "data_ata": p.data_ata} for p in ps]
 
 @app.get("/processos/checar-duplicidade")
-async def checar_duplicidade(empresa: str = "", tipo_ato: str = "", data_ata: str = "", hora_ata: str = "", identificador_ato: str = "", x_token: str = Header(None), db: Session = Depends(get_db)):
+async def checar_duplicidade(empresa: str = "", tipo_ato: str = "", data_ata: str = "", hora_ata: str = "", identificador_ato: str = "", excluir_processo_id: str = "", x_token: str = Header(None), db: Session = Depends(get_db)):
     if not x_token:
         raise HTTPException(status_code=401, detail="Token necessario")
     usuario = validar_token(x_token, db)
@@ -2200,6 +2200,13 @@ async def checar_duplicidade(empresa: str = "", tipo_ato: str = "", data_ata: st
     q = db.query(Processo)
     if not _tem_acesso_admin(usuario):
         q = q.filter(Processo.grupo_id == usuario.grupo_id)
+    if excluir_processo_id:
+        # O proprio processo pendente recem-criado (por /processos/analisar
+        # ou /processos/analisar-pasta-multi) ja esta gravado no banco com
+        # os mesmos dados que estamos checando aqui - sem excluir o id dele,
+        # a busca sempre acha a si mesma e retorna falso positivo pra
+        # QUALQUER insercao (bug real, corrigido 04/09/2026).
+        q = q.filter(Processo.id != excluir_processo_id)
     alvo = (_norm(empresa), _norm(tipo_ato), _norm(data_ata), _norm(hora_ata), _norm(identificador_ato))
     for p in q.all():
         atual = (_norm(p.empresa), _norm(p.tipo_ato), _norm(p.data_ata), _norm(p.hora_ata), _norm(p.identificador_ato))

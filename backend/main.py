@@ -1168,24 +1168,30 @@ def processar_guia_bancaria_jucerja(db, processo_id, headless=True, debug_dir=No
         return {"sucesso": False, "motivo_falha": str(e)[:300], "caminho_pdf": None}
 
 
-def processar_guia_bancaria_jucerja_thread(db, processo_id, headless=True, debug_dir=None):
-    """Roda processar_guia_bancaria_jucerja numa thread separada. O Playwright
-    Sync API usado dentro dela nao pode rodar na mesma thread de um event loop
-    asyncio ja em execucao (ex: dentro de uma rota async do FastAPI como
-    POST /processos) - levanta 'Playwright Sync API inside the asyncio loop'
-    e falha em silencio (sem nem notificar_taxa_jucerja rodar, pois o erro
-    acontece antes, dentro do proprio emitir_guia_bancaria). threading.Thread
-    + join() bloqueia o chamador ate terminar (mantem o comportamento sincrono
-    esperado nos dois pontos de chamada - POST /processos, async; e
-    _criar_processo_transferencia, sync - sem precisar duplicar logica nem
-    tornar _criar_processo_transferencia async)."""
-    resultado_container = {}
+def processar_guia_bancaria_jucerja_thread(processo_id, headless=True, debug_dir=None):
+    """Dispara processar_guia_bancaria_jucerja numa thread separada, SEM
+    esperar o resultado (fire-and-forget). O Playwright Sync API usado dentro
+    dela nao pode rodar na mesma thread de um event loop asyncio ja em
+    execucao (ex: dentro de uma rota async do FastAPI como POST /processos) -
+    levanta 'Playwright Sync API inside the asyncio loop' - e isso e' evitado
+    so' por rodar numa thread separada, independente de dar join() nela ou
+    nao. Ate 08/09/2026 este helper dava t.join() (bloqueava o chamador ate
+    terminar): investigacao de lentidao (~2min pra confirmar insercao de ato)
+    achou que sao ate 3 tentativas reais de Playwright contra o site da
+    JUCERJA (login, preencher, gerar boleto) rodando SINCRONO dentro de
+    POST /processos so' pra emitir a guia bancaria - o usuario nao precisa
+    esperar isso pra ver "processo criado". Sem join(), a funcao nao pode mais
+    reaproveitar a sessao do banco do chamador (SQLAlchemy Session nao e'
+    thread-safe pra uso concorrente, e a sessao do request fecha assim que a
+    resposta HTTP e' enviada) - cria a sua propria via SessionLocal()."""
     def _alvo():
-        resultado_container["resultado"] = processar_guia_bancaria_jucerja(db, processo_id, headless=headless, debug_dir=debug_dir)
-    t = threading.Thread(target=_alvo)
-    t.start()
-    t.join()
-    return resultado_container.get("resultado")
+        from database import SessionLocal
+        db_thread = SessionLocal()
+        try:
+            processar_guia_bancaria_jucerja(db_thread, processo_id, headless=headless, debug_dir=debug_dir)
+        finally:
+            db_thread.close()
+    threading.Thread(target=_alvo, daemon=True).start()
 
 CONHECIMENTO_FILE = r"D:\Mane\dados\conhecimento_registro.json"
 def carregar_conhecimento():
@@ -3380,47 +3386,99 @@ async def criar_processo(
     db.flush()
     vincular_fluxo_do_dia(db, p, grupo_id)
     registrar_evento(db, p, "ata_enviada", "Ata enviada", usuario_tok)
+    if faltando or p.leitura_parcial:
+        # Flag fica sincrona (grava e commita antes da resposta) porque afeta
+        # o que o operador ve na tela assim que "processo criado" volta - so
+        # o ENVIO dos e-mails de aviso (lento, SMTP sincrono) e' que vai pra
+        # background junto com o resto (ver comentario abaixo).
+        p.confirmacao_pendente = True
     db.commit()
-    if (p.uf or "").upper() == "RJ":
-        try:
-            processar_guia_bancaria_jucerja_thread(db, p.id)
-        except Exception as e:
-            print("Erro ao emitir guia bancaria JUCERJA automaticamente:", e)
-    try:
-        corpo = "Processo Inserido no Atos:\n\n" + corpo_status_cliente(p, "Aberto", "")
-        try:
-            _recebido_txt = p.data_recebimento.strftime("%d/%m/%Y, %H:%M")
-        except Exception:
-            _recebido_txt = datetime.now().strftime("%d/%m/%Y, %H:%M")
-        corpo_html = _email_status_html("aberto", "Aberto", "Seu processo foi recebido", _empresa_linha(p),
-                                         nota_tipo="recebido", nota_texto=_recebido_txt,
-                                         botao={"label": "Acessar o sistema", "href": BASE_URL_SISTEMA})
-        for em in emails_do_grupo(db, grupo_id):
-            enviar_email(em, "Processo inserido no Atos - " + (p.empresa or ""), corpo, corpo_html)
-    except Exception as e:
-        print("Erro ao notificar abertura:", e)
-    notificar_operadores(db, "processo_criado", processo_id, {"empresa": p.empresa}, usuario_tok)
-    if faltando:
-        try:
-            p.confirmacao_pendente = True
-            db.commit()
-            _assunto_incompleto = "[Atos] ATENCAO - Processo inserido com campos incompletos - " + (p.empresa or processo_id)
-            _corpo_incompleto = "O processo " + processo_id + " (" + (p.empresa or "sem nome") + ") foi inserido no sistema, mas a extracao automatica nao conseguiu identificar: " + ", ".join(faltando) + ".\n\nRevise manualmente e complete os dados faltantes o quanto antes."
-            for _e in emails_admin(db):
-                enviar_email(_e, _assunto_incompleto, _corpo_incompleto)
-        except Exception as e:
-            print("Erro ao notificar campos incompletos:", e)
-    if p.leitura_parcial:
-        try:
-            p.confirmacao_pendente = True
-            db.commit()
-            _assunto_leitura = "[Atos] ATENCAO - Leitura parcial de PDF - " + (p.empresa or processo_id)
-            _corpo_leitura = "O processo " + processo_id + " (" + (p.empresa or "sem nome") + ") foi inserido no sistema, mas a leitura do PDF (texto direto + OCR) nao conseguiu extrair conteudo suficiente.\n\nO processo entrou normalmente no sistema, mas revise manualmente o documento e complete/corrija os dados o quanto antes."
-            for _e in emails_admin(db):
-                enviar_email(_e, _assunto_leitura, _corpo_leitura)
-        except Exception as e:
-            print("Erro ao notificar leitura parcial:", e)
+
+    # Investigacao de lentidao (08/09/2026): confirmar a insercao de um ato
+    # estava levando ~2min entre o clique e o processo aparecer. Causa real
+    # (nao indice de banco - tabelas tem dezenas/centenas de linhas, EXPLAIN
+    # QUERY PLAN nao mostrou nada que explicasse minutos de atraso): tudo
+    # abaixo rodava SINCRONO dentro deste mesmo request async - guia
+    # bancaria JUCERJA via Playwright real (ate 3 tentativas, cada uma pode
+    # levar dezenas de segundos), e-mail "processo inserido" pro grupo (SMTP
+    # sincrono), notificar_operadores (Telegram sincrono + SMTP sincrono POR
+    # OPERADOR) e os avisos de campo faltando/leitura parcial pro admin
+    # (mais SMTP). Nada disso precisa terminar antes do usuario ver "processo
+    # criado com sucesso" - e' tudo enriquecimento, nao dado que falta pra
+    # considerar o ato inserido. Movido pra uma thread em background (sessao
+    # propria do banco - ver _pos_criacao_processo_thread e
+    # processar_guia_bancaria_jucerja_thread, que ja seguia o mesmo padrao
+    # mas ainda dava join() e por isso bloqueava do mesmo jeito).
+    threading.Thread(
+        target=_pos_criacao_processo_thread,
+        args=(processo_id, faltando, bool(p.leitura_parcial), usuario_tok.id),
+        daemon=True,
+    ).start()
+
     return {"id": processo_id, "mensagem": "Processo criado com sucesso"}
+
+
+def _pos_criacao_processo_thread(processo_id, faltando, leitura_parcial, usuario_id):
+    """Roda em background (thread separada, sessao propria do banco - mesmo
+    padrao de processar_guia_bancaria_jucerja_thread) todo o enriquecimento
+    pos-criacao de processo que NAO precisa bloquear a resposta de
+    POST /processos: guia bancaria JUCERJA automatica (RJ), e-mail "processo
+    inserido" pro grupo, notificar_operadores (Telegram + e-mail por
+    operador) e os avisos de campo faltando/leitura parcial pro admin. Ver
+    comentario em criar_processo (08/09/2026) pra contexto completo da
+    investigacao de lentidao que motivou essa mudanca. Nunca propaga
+    excecao pro caller - e' chamado fire-and-forget, sem ninguem pra
+    capturar mesmo."""
+    from database import SessionLocal
+    db = SessionLocal()
+    try:
+        p = db.query(Processo).filter(Processo.id == processo_id).first()
+        if not p:
+            return
+        usuario_tok = db.query(Usuario).filter(Usuario.id == usuario_id).first() if usuario_id else None
+        grupo_id = p.grupo_id
+
+        if (p.uf or "").upper() == "RJ":
+            try:
+                processar_guia_bancaria_jucerja(db, p.id)
+            except Exception as e:
+                print("Erro ao emitir guia bancaria JUCERJA automaticamente:", e)
+
+        try:
+            corpo = "Processo Inserido no Atos:\n\n" + corpo_status_cliente(p, "Aberto", "")
+            try:
+                _recebido_txt = p.data_recebimento.strftime("%d/%m/%Y, %H:%M")
+            except Exception:
+                _recebido_txt = datetime.now().strftime("%d/%m/%Y, %H:%M")
+            corpo_html = _email_status_html("aberto", "Aberto", "Seu processo foi recebido", _empresa_linha(p),
+                                             nota_tipo="recebido", nota_texto=_recebido_txt,
+                                             botao={"label": "Acessar o sistema", "href": BASE_URL_SISTEMA})
+            for em in emails_do_grupo(db, grupo_id):
+                enviar_email(em, "Processo inserido no Atos - " + (p.empresa or ""), corpo, corpo_html)
+        except Exception as e:
+            print("Erro ao notificar abertura:", e)
+
+        notificar_operadores(db, "processo_criado", processo_id, {"empresa": p.empresa}, usuario_tok)
+
+        if faltando:
+            try:
+                _assunto_incompleto = "[Atos] ATENCAO - Processo inserido com campos incompletos - " + (p.empresa or processo_id)
+                _corpo_incompleto = "O processo " + processo_id + " (" + (p.empresa or "sem nome") + ") foi inserido no sistema, mas a extracao automatica nao conseguiu identificar: " + ", ".join(faltando) + ".\n\nRevise manualmente e complete os dados faltantes o quanto antes."
+                for _e in emails_admin(db):
+                    enviar_email(_e, _assunto_incompleto, _corpo_incompleto)
+            except Exception as e:
+                print("Erro ao notificar campos incompletos:", e)
+        if leitura_parcial:
+            try:
+                _assunto_leitura = "[Atos] ATENCAO - Leitura parcial de PDF - " + (p.empresa or processo_id)
+                _corpo_leitura = "O processo " + processo_id + " (" + (p.empresa or "sem nome") + ") foi inserido no sistema, mas a leitura do PDF (texto direto + OCR) nao conseguiu extrair conteudo suficiente.\n\nO processo entrou normalmente no sistema, mas revise manualmente o documento e complete/corrija os dados o quanto antes."
+                for _e in emails_admin(db):
+                    enviar_email(_e, _assunto_leitura, _corpo_leitura)
+            except Exception as e:
+                print("Erro ao notificar leitura parcial:", e)
+    finally:
+        db.close()
+
 
 def _criar_processo_transferencia(db, p_origem):
     """Cria automaticamente o processo de destino apos a origem ser finalizada,
@@ -3474,7 +3532,7 @@ def _criar_processo_transferencia(db, p_origem):
     db.commit()
     if (novo.uf or "").upper() == "RJ":
         try:
-            processar_guia_bancaria_jucerja_thread(db, novo_id)
+            processar_guia_bancaria_jucerja_thread(novo_id)
         except Exception as e:
             print("Erro ao emitir guia bancaria JUCERJA automaticamente (transferencia):", e)
     notificar_operadores(db, "processo_criado", novo_id, {"empresa": novo.empresa, "info": "Criado automaticamente por transferencia de sede, origem " + p_origem.id})

@@ -1258,11 +1258,19 @@ Retorne APENAS um JSON válido com esta estrutura exata:
 }}"""
 
     try:
+        # timeout explicito (08/09/2026): essa era a unica chamada de IA no
+        # arquivo sem timeout proprio - Claude usa with_options(timeout=60.0)
+        # (linha ~2374), Gemini usa urllib com timeout=40/60 (varios pontos).
+        # Sem isso, o SDK da OpenAI cai no timeout default (bem mais longo) e,
+        # se a API do DeepSeek ficar lenta/degradada, o upload de ata fica
+        # "travado lendo" sem nunca cair no except abaixo (que devolveria
+        # campos vazios e liberaria o processo pra revisao manual).
         resposta = client.chat.completions.create(
             model="deepseek-chat",
             messages=[{"role": "user", "content": prompt}],
             max_tokens=1500,
-            temperature=0.1
+            temperature=0.1,
+            timeout=60.0,
         )
         texto = resposta.choices[0].message.content
         texto_limpo = texto.replace("```json", "").replace("```", "").strip()

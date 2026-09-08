@@ -2426,6 +2426,28 @@ def _texto_parece_valido(texto: str) -> bool:
         return False
     return True
 
+def _texto_tem_cid_excessivo(texto: str, limite: float = 0.15) -> bool:
+    """Segunda linha de defesa contra fonte subsetada sem tabela ToUnicode,
+    complementar a _texto_parece_valido. Essa ultima checa o texto AGREGADO
+    de todas as paginas por palavras comuns em portugues - um documento com
+    uma pagina de capa/manifesto legivel na frente e o corpo inteiro em
+    cid-soup (comum em atas de AGOE com folha de rosto anexada) passa nessa
+    checagem por acaso (a palavra comum da capa "salva" o documento inteiro)
+    e a camada 2 (OCR) nunca roda, mesmo sendo o unico jeito de ler o corpo
+    real. Aqui mede-se direto a fracao de caracteres do texto que vem de
+    tokens "(cid:N)" (codigo de glifo, nao caractere real) - concentracao
+    alta (>15% por padrao) invalida o documento inteiro, independente de
+    palavras comuns encontradas em outro trecho."""
+    import re
+    if not texto:
+        return False
+    cid_tokens = re.findall(r"\(cid:\d+\)", texto)
+    if not cid_tokens:
+        return False
+    cid_chars = sum(len(t) for t in cid_tokens)
+    return (cid_chars / max(len(texto), 1)) > limite
+
+
 def _texto_printable_valido(texto, minimo=100):
     """Criterio simples pra camada 1 (pdfplumber): conta caracteres printaveis
     ASCII/Latin (letras, digitos, pontuacao, acentos comuns em portugues).
@@ -2467,7 +2489,13 @@ def _camada1_pdfplumber(caminho_pdf):
     # (parenteses, letras, digitos - tudo ASCII) mas nao e texto de verdade -
     # sem essa checagem extra, esse lixo era aceito como camada 1 valida e a
     # camada 2 (OCR) nunca rodava, mesmo sendo o unico jeito de ler o PDF.
-    if _texto_printable_valido(texto, minimo=100) and _texto_parece_valido(texto):
+    # _texto_tem_cid_excessivo roda ANTES: pega o caso (visto numa ata de
+    # AGOE real, 08/09/2026) de uma capa/manifesto legivel na frente de um
+    # corpo inteiro em cid-soup, onde a palavra comum da capa faria
+    # _texto_parece_valido passar por acaso mesmo com o documento inutilizavel.
+    if _texto_tem_cid_excessivo(texto):
+        print("   [PDF-camada1] texto extraido invalido (codigos (cid:N) detectados - fonte sem mapeamento Unicode) - forcando OCR")
+    elif _texto_printable_valido(texto, minimo=100) and _texto_parece_valido(texto):
         print("   [PDF-camada1] pdfplumber OK,", len(texto.strip()), "caracteres")
         return texto
 
@@ -2478,7 +2506,9 @@ def _camada1_pdfplumber(caminho_pdf):
         for page in doc:
             texto_fitz += page.get_text()
         doc.close()
-        if _texto_printable_valido(texto_fitz, minimo=100) and _texto_parece_valido(texto_fitz):
+        if _texto_tem_cid_excessivo(texto_fitz):
+            print("   [PDF-camada1] fitz (2a tentativa): texto extraido invalido (codigos (cid:N) detectados) - forcando OCR")
+        elif _texto_printable_valido(texto_fitz, minimo=100) and _texto_parece_valido(texto_fitz):
             print("   [PDF-camada1] fitz (2a tentativa) OK,", len(texto_fitz.strip()), "caracteres")
             return texto_fitz
     except Exception as e:

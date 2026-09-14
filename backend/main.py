@@ -1223,13 +1223,45 @@ _CAMPOS_VAZIOS_ATA = {
 }
 
 
+def _chamar_gemini_analise_ata(prompt: str) -> dict:
+    """Fallback de analisar_ata_ia (14/09/2026) - mesmo prompt/schema mandado
+    pro DeepSeek, so que pro Gemini (gemini-flash-latest), reaproveitando
+    GEMINI_KEY ja usada no resto do projeto (_classificar_lote_ia,
+    _gemini_texto_documento). Timeout de 30s - deixa uma folga real pro
+    Gemini responder (nao e' pra falhar rapido igual o DeepSeek, e' o
+    ultimo recurso antes de marcar revisao manual). Lanca excecao pra
+    quem chama tratar - nao tem try/except proprio, igual os outros
+    helpers privados de chamada de IA no arquivo."""
+    import urllib.request
+    if not GEMINI_KEY:
+        raise RuntimeError("GEMINI_KEY nao configurada")
+    url = "https://generativelanguage.googleapis.com/v1beta/models/gemini-flash-latest:generateContent?key=" + GEMINI_KEY
+    body = {
+        "contents": [{"parts": [{"text": prompt}]}],
+        "generationConfig": {"temperature": 0.1, "maxOutputTokens": 1500},
+    }
+    req = urllib.request.Request(url, data=json.dumps(body).encode(), headers={"Content-Type": "application/json"})
+    resp = urllib.request.urlopen(req, timeout=30)
+    data = json.loads(resp.read().decode())
+    texto = data["candidates"][0]["content"]["parts"][0]["text"].strip()
+    texto_limpo = texto.replace("```json", "").replace("```", "").strip()
+    return json.loads(texto_limpo)
+
+
 def analisar_ata_ia(texto_ata: str) -> dict:
     """PRIORIDADE MAXIMA: esta funcao NUNCA pode lancar excecao nem bloquear a
     criacao do processo. Se a IA falhar (erro de rede/API) ou devolver algo
     que nao seja JSON valido (texto de origem ruim/incompleto costuma causar
     isso), devolve os campos vazios em vez de propagar o erro - quem chama
     (criar_processo) ja trata campo vazio marcando o processo pra revisao
-    manual, sem nunca bloquear a insercao."""
+    manual, sem nunca bloquear a insercao.
+
+    Fallback DeepSeek -> Gemini (14/09/2026): a DeepSeek andou ficando
+    intermitentemente fora do ar (conexao aceita, nunca devolve resposta -
+    ver incidente do mesmo dia). Tenta DeepSeek primeiro (timeout curto,
+    falha rapido); se der qualquer excecao (timeout, erro de rede, JSON
+    invalido), tenta o MESMO prompt no Gemini antes de desistir. So cai nos
+    campos vazios (revisao manual) se as duas falharem."""
     conhecimento = json.dumps(CONHECIMENTO, ensure_ascii=False)[:3000]
     prompt = f"""Analise esta ata/documento e extraia as informações no formato JSON exato abaixo.
 
@@ -1306,9 +1338,15 @@ Retorne APENAS um JSON válido com esta estrutura exata:
         texto = resposta.choices[0].message.content
         texto_limpo = texto.replace("```json", "").replace("```", "").strip()
         dados = json.loads(texto_limpo)
-    except Exception as e:
-        print("analisar_ata_ia falhou (IA indisponivel ou resposta invalida) - devolvendo campos vazios pra nao bloquear:", str(e)[:200])
-        return dict(_CAMPOS_VAZIOS_ATA)
+        print("   [analisar_ata_ia] sucesso via DeepSeek")
+    except Exception as e_deepseek:
+        print("   [analisar_ata_ia] DeepSeek falhou (", str(e_deepseek)[:150], ") - tentando fallback Gemini")
+        try:
+            dados = _chamar_gemini_analise_ata(prompt)
+            print("   [analisar_ata_ia] sucesso via Gemini (fallback)")
+        except Exception as e_gemini:
+            print("analisar_ata_ia falhou (DeepSeek e Gemini fallback indisponiveis ou resposta invalida) - devolvendo campos vazios pra nao bloquear. DeepSeek:", str(e_deepseek)[:150], "| Gemini:", str(e_gemini)[:150])
+            return dict(_CAMPOS_VAZIOS_ATA)
 
     # Fallback: se a UF nao foi identificada pelo endereco da ata, infere pelo prefixo do NIRE
     # 333/332 = RJ | 353/352 = SP | 292/293 = BA | 262/263 = PE

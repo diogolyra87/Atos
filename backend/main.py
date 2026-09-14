@@ -1193,11 +1193,19 @@ def processar_guia_bancaria_jucerja_thread(processo_id, headless=True, debug_dir
             db_thread.close()
     threading.Thread(target=_alvo, daemon=True).start()
 
-CONHECIMENTO_FILE = r"D:\Mane\dados\conhecimento_registro.json"
+# Bug encontrado em 14/09/2026: caminho hardcoded pro ambiente de dev do
+# Windows nunca resolvia no servidor de producao Linux (os.path.exists
+# sempre False) - CONHECIMENTO ficava {} em producao, silenciosamente,
+# desde sempre. A base tem justamente as definicoes de RCA/ARD/ARS que
+# faltavam pra IA nao confundir esses tres tipos de ata (ver reforco no
+# prompt de analisar_ata_ia abaixo). Caminho relativo ao arquivo funciona
+# nos dois ambientes (backend/main.py -> ../dados/conhecimento_registro.json).
+CONHECIMENTO_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "dados", "conhecimento_registro.json")
 def carregar_conhecimento():
     if os.path.exists(CONHECIMENTO_FILE):
         with open(CONHECIMENTO_FILE, "r", encoding="utf-8") as f:
             return json.load(f)
+    print("   [conhecimento] AVISO: CONHECIMENTO_FILE nao encontrado em", repr(CONHECIMENTO_FILE), "- analisar_ata_ia vai rodar sem a base de conhecimento.")
     return {}
 
 CONHECIMENTO = carregar_conhecimento()
@@ -1239,6 +1247,12 @@ CASO ESPECIFICO - ATOS DE CONSORCIO (Ato de Empresa Lider, Ato de Consorciada, e
 
 Exemplo de acerto (few-shot): um documento chamado "Ato da Empresa Lider do Consorcio sobre a Baixa do CNPJ" comeca dizendo "A 3R PETROLEUM OFFSHORE S.A., CNPJ 02.857.854/0001-14, na qualidade de Empresa Lider do CONSORCIO POT-M-475, CNPJ 20.045.684/0001-55, NIRE 33.5.0003193-0 ('Consorcio'), RESOLVE: autorizar a baixa do CNPJ do Consorcio...". Mesmo a 3R Petroleum aparecendo primeiro e assinando o documento, a resposta CORRETA e: empresa="CONSORCIO POT-M-475", cnpj="20.045.684/0001-55", nire="33.5.0003193-0" - NAO os dados da 3R Petroleum, que e so a representante/empresa lider, nao a titular do ato.
 
+REGRA IMPORTANTE PARA NAO CONFUNDIR RCA / ARD / ARS (erro recorrente, confirmado em casos reais - CORRIJA usando o TITULO/CABECALHO do proprio documento, que quase sempre declara literalmente qual orgao se reuniu):
+- "RCA" = Reuniao do Conselho de Administracao. Titulo tipico: "ATA DA REUNIAO ORDINARIA/EXTRAORDINARIA DO CONSELHO DE ADMINISTRACAO DA [empresa]". SO existe em sociedades que TEM Conselho de Administracao (tipicamente S.A. de capital aberto/autorizado) - uma LTDA praticamente nunca tem RCA.
+- "ARD" = Ata de Reuniao de Diretoria. Titulo tipico: "ATA DE REUNIAO DA DIRETORIA" ou "ATA DE REUNIAO DE DIRETORIA". Reuniao dos DIRETORES (orgao de gestao executiva), NAO do Conselho de Administracao - nao confundir os dois so porque ambos soam "orgao colegiado da empresa". Comum tanto em LTDA quanto S.A.
+- "ARS" = Ata de Reuniao/Assembleia de Socios, incluindo "Ata de Resolucao de Socia(o)" (socio unico ou minoritario resolvendo sozinho). Titulo tipico: "ATA DE ASSEMBLEIA DE SOCIOS", "ATA DE REUNIAO DE SOCIOS", "ATA DE RESOLUCAO DE SOCIA", "ATA DE RESOLUCAO DE SOCIOS". E o orgao maximo da sociedade (os proprios socios/quotistas deliberando), tipico de LTDA.
+Ao decidir tipo_ato, leia o titulo/cabecalho do documento primeiro - ele quase sempre nomeia o orgao ("CONSELHO DE ADMINISTRACAO" = RCA, "DIRETORIA" = ARD, "SOCIOS"/"SOCIA" = ARS) e essa palavra literal vale mais que qualquer inferencia pelo conteudo do texto.
+
 IMPORTANTE - O TEXTO ACIMA PODE ESTAR INCOMPLETO, COM RUIDO DE OCR OU PARCIALMENTE ILEGIVEL (documento escaneado de baixa qualidade). Mesmo assim:
 - Faca sempre o seu MELHOR ESFORCO pra extrair o que for possivel identificar com confianca.
 - NUNCA se recuse a responder e NUNCA retorne uma mensagem de erro em vez do JSON - mesmo que o documento esteja quase todo ilegivel, responda com a estrutura JSON completa.
@@ -1252,8 +1266,8 @@ Retorne APENAS um JSON válido com esta estrutura exata:
   "uf": "sigla de 2 letras do estado da sede, ex RJ ou SP",
   "uf_destino_transferencia": "APENAS se a ata tratar de TRANSFERENCIA DE SEDE para outro Estado (mudanca de endereco da sede social de um Estado para outro, nao mudanca de endereco dentro do mesmo Estado): informe a sigla de 2 letras do Estado de DESTINO. Caso contrario deixe vazio.",
   "tipo_sociedade": "SA ou LTDA",
-  "tipo_ato": "AGO, AGE, AGOE, RCA, ALTERACAO_CONTRATUAL, ARS etc",
-  "identificador_ato": "ex: RCA 25/05/2026, 39ª Alteração Contratual, AGE 10/05/2026",
+  "tipo_ato": "AGO, AGE, AGOE, RCA (Conselho de Administração), ARD (Reunião de Diretoria), ARS (Reunião/Assembleia de Sócios ou Resolução de Sócia), ALTERACAO_CONTRATUAL etc",
+  "identificador_ato": "ex: RCA 25/05/2026, ARD 26/08/2026, ARS 11/09/2026, 39ª Alteração Contratual, AGE 10/05/2026",
   "data_ata": "DD/MM/AAAA",
   "hora_ata": "HH:MM ou vazio",
   "email_cliente": "",
@@ -2324,7 +2338,7 @@ def eventos_recentes(codigo_grupo: str = None, limit: int = 10, x_token: str = H
 TIPOS_PRINCIPAIS = {
     "Contrato Social": ["contrato social"],
     "Alteracao Contratual": ["alteracao do contrato social", "alteracao contratual", "alteração do contrato social", "alteração contratual", "alteracao e consolidacao do contrato social", "alteração e consolidação do contrato social", "alteracao e consolidacao de contrato social", "alteração e consolidação de contrato social", "consolidacao do contrato social", "consolidação do contrato social"],
-    "Ata de Reuniao/Assembleia de Socios": ["ata de reuniao de socios", "ata de assembleia de socios", "reuniao de socios", "ata de reunião de sócios", "ata de assembleia de sócios", "reunião de sócios"],
+    "Ata de Reuniao/Assembleia de Socios": ["ata de reuniao de socios", "ata de assembleia de socios", "reuniao de socios", "ata de reunião de sócios", "ata de assembleia de sócios", "reunião de sócios", "ata de resolucao de socia", "ata de resolução de sócia", "resolucao de socia", "resolução de sócia", "resolucao de socio", "resolução de sócio"],
     "Distrato/Dissolucao/Liquidacao": ["distrato", "dissolucao", "liquidacao", "dissolução", "liquidação"],
     "Estatuto Social": ["estatuto social"],
     "Ata de Assembleia Geral de Constituicao": ["assembleia geral de constituicao", "assembleia geral de constituição"],

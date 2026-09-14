@@ -1285,12 +1285,23 @@ Retorne APENAS um JSON válido com esta estrutura exata:
         # se a API do DeepSeek ficar lenta/degradada, o upload de ata fica
         # "travado lendo" sem nunca cair no except abaixo (que devolveria
         # campos vazios e liberaria o processo pra revisao manual).
-        resposta = client.chat.completions.create(
+        #
+        # Reduzido de timeout=60.0 pra with_options(timeout=20.0, max_retries=0)
+        # em 14/09/2026: confirmado via curl direto no endpoint (fora do SDK)
+        # que, durante uma degradacao real da API da DeepSeek, a conexao fica
+        # "black-holed" (aceita a conexao, nunca devolve resposta nem erro) -
+        # o timeout=60.0 passado so pro create() nao limitava as retries
+        # default do client (2), entao cada tentativa podia levar os 60s
+        # inteiros e o total real passava de 3 minutos antes de cair no
+        # except. with_options fixa timeout E desliga retry pra essa chamada
+        # especifica (as outras chamadas do mesmo client, se houver, mantem o
+        # default) - pior caso agora e ~20s, perto do tempo normal (~15-16s)
+        # antes dessa mudanca, em vez de minutos.
+        resposta = client.with_options(timeout=20.0, max_retries=0).chat.completions.create(
             model="deepseek-chat",
             messages=[{"role": "user", "content": prompt}],
             max_tokens=1500,
             temperature=0.1,
-            timeout=60.0,
         )
         texto = resposta.choices[0].message.content
         texto_limpo = texto.replace("```json", "").replace("```", "").strip()

@@ -2824,7 +2824,7 @@ async def analisar_pasta(arquivos: list[UploadFile] = File(...), x_token: str = 
     bateram_principal = [i for i in itens if i["tipo"] is not None and i["score"] > 0]
     empatados_topo = [i for i in ordenados if i["score"] == maior]
     pendente = (len(bateram_principal) != 1) or (maior <= 0) or (len(empatados_topo) > 1)
-    dados = analisar_ata_ia(melhor["texto"]) if melhor["texto"].strip() else {}
+    dados = (await asyncio.to_thread(analisar_ata_ia, melhor["texto"])) if melhor["texto"].strip() else {}
     dados["texto_extraido"] = melhor["texto"]
     if melhor["tipo"]:
         dados["tipo_ato"] = dados.get("tipo_ato") or melhor["tipo"]
@@ -3145,7 +3145,7 @@ async def analisar_pasta_multi(arquivos: list[UploadFile] = File(...), codigo_gr
         # criar_processo sinalizar revisao manual do operador.
         leitura_parcial = len((i["texto"] or "").strip()) < 50
         try:
-            dados = analisar_ata_ia(i["texto"]) if i["texto"].strip() else dict(_CAMPOS_VAZIOS_ATA)
+            dados = (await asyncio.to_thread(analisar_ata_ia, i["texto"])) if i["texto"].strip() else dict(_CAMPOS_VAZIOS_ATA)
             numero_prot = await asyncio.to_thread(_tentar_extrair_protocolo, i["conteudo"], i["nome"], i["texto"])
         except Exception as e:
             print("Falha inesperada ao analisar item do lote (processo", i["processo_pendente_id"], "):", str(e)[:300])
@@ -3281,7 +3281,7 @@ async def analisar_documento(arquivo: UploadFile = File(...), codigo_grupo: str 
 
     try:
         texto = await asyncio.to_thread(_extrair_texto_bytes, conteudo, nome)
-        dados = analisar_ata_ia(texto) if texto.strip() else dict(_CAMPOS_VAZIOS_ATA)
+        dados = (await asyncio.to_thread(analisar_ata_ia, texto)) if texto.strip() else dict(_CAMPOS_VAZIOS_ATA)
         dados["leitura_parcial"] = len((texto or "").strip()) < 50
         dados["texto_extraido"] = texto
         duplicado_de = _aplicar_dados_extraidos(db, p, dados)

@@ -1223,6 +1223,52 @@ _CAMPOS_VAZIOS_ATA = {
 }
 
 
+def _alertar_fallback_ia(sucesso: bool, erro_deepseek: str, erro_gemini: str = None, trecho_documento: str = ""):
+    """Avisa por Telegram + e-mail (mesmos canais/destinatarios ja usados
+    pros outros alertas administrativos, ver notificar_telegram/
+    emails_admin) sempre que analisar_ata_ia precisar do fallback Gemini -
+    Diogo pediu visibilidade disso em 14/09/2026 pra acompanhar quando a
+    DeepSeek anda instavel, sem precisar garimpar journalctl. Dois niveis:
+    sucesso=True (Gemini cobriu a falha, processo saiu normal - aviso
+    informativo) ou sucesso=False (as duas falharam, processo ficou com
+    campos vazios - aviso mais urgente, pede revisao manual). Nunca lanca
+    excecao (chamado de dentro do fluxo de analise, nao pode gerar outro
+    erro em cima do original nem bloquear a criacao do processo)."""
+    if sucesso:
+        titulo = "ATOS - Fallback DeepSeek -> Gemini acionado (ata processada normalmente)"
+        corpo = (
+            titulo + chr(10) +
+            "A classificacao de uma ata falhou na DeepSeek e foi coberta automaticamente pelo Gemini." + chr(10) +
+            "Motivo da falha na DeepSeek: " + (erro_deepseek or "-")[:200] + chr(10) +
+            ("Trecho do documento: " + trecho_documento[:200] + chr(10) if trecho_documento else "") +
+            "Processo criado normalmente, nenhuma acao necessaria - aviso so pra acompanhar a estabilidade da DeepSeek."
+        )
+    else:
+        titulo = "ATOS - ALERTA: DeepSeek e Gemini falharam na classificacao de uma ata"
+        corpo = (
+            titulo + chr(10) +
+            "DeepSeek: " + (erro_deepseek or "-")[:200] + chr(10) +
+            "Gemini (fallback): " + (erro_gemini or "-")[:200] + chr(10) +
+            ("Trecho do documento: " + trecho_documento[:200] + chr(10) if trecho_documento else "") +
+            "Processo foi criado com os campos de classificacao vazios - REVISAO MANUAL NECESSARIA."
+        )
+    try:
+        notificar_telegram(corpo)
+    except Exception as e:
+        print("Erro ao notificar telegram sobre fallback de IA:", str(e)[:150])
+    try:
+        from database import SessionLocal
+        db_alerta = SessionLocal()
+        try:
+            destinatarios = emails_admin(db_alerta)
+        finally:
+            db_alerta.close()
+        for dest in destinatarios:
+            enviar_email(dest, titulo, corpo)
+    except Exception as e:
+        print("Erro ao notificar email sobre fallback de IA:", str(e)[:150])
+
+
 def _chamar_gemini_analise_ata(prompt: str) -> dict:
     """Fallback de analisar_ata_ia (14/09/2026) - mesmo prompt/schema mandado
     pro DeepSeek, so que pro Gemini (gemini-flash-latest), reaproveitando
@@ -1344,8 +1390,10 @@ Retorne APENAS um JSON válido com esta estrutura exata:
         try:
             dados = _chamar_gemini_analise_ata(prompt)
             print("   [analisar_ata_ia] sucesso via Gemini (fallback)")
+            _alertar_fallback_ia(sucesso=True, erro_deepseek=str(e_deepseek), trecho_documento=texto_ata[:200])
         except Exception as e_gemini:
             print("analisar_ata_ia falhou (DeepSeek e Gemini fallback indisponiveis ou resposta invalida) - devolvendo campos vazios pra nao bloquear. DeepSeek:", str(e_deepseek)[:150], "| Gemini:", str(e_gemini)[:150])
+            _alertar_fallback_ia(sucesso=False, erro_deepseek=str(e_deepseek), erro_gemini=str(e_gemini), trecho_documento=texto_ata[:200])
             return dict(_CAMPOS_VAZIOS_ATA)
 
     # Fallback: se a UF nao foi identificada pelo endereco da ata, infere pelo prefixo do NIRE

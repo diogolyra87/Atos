@@ -241,9 +241,10 @@ def baixar_documento_jucerja(protocolo, usuario, senha, destino_path, headless=T
 
 
 if __name__ == "__main__":
-    USUARIO = "certificado@realpublicidade.com.br"
-    SENHA = "Real2544"
+    import os
+    from dotenv import load_dotenv
+    load_dotenv("/root/atos/.env")
     PROTOCOLO = "2026/00692268-3"
     print("Consultando JUCERJA...")
-    r = consultar_jucerja(PROTOCOLO, USUARIO, SENHA, headless=False)
+    r = consultar_jucerja(PROTOCOLO, os.getenv("JUCERJA_USUARIO"), os.getenv("JUCERJA_SENHA"), headless=False)
     print("\nRESULTADO:", r)

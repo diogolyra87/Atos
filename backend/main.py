@@ -57,6 +57,40 @@ def _checar_rate_esqueci_senha(ip):
 def _registrar_falha_esqueci_senha(ip):
     _registrar_falha(_esqueci_senha_tentativas, ip)
 
+# Rate limiter do /login/verificar (codigo 2FA): por CONTA (login), nao por
+# IP - o que importa e' limitar quantas tentativas de codigo uma mesma conta
+# recebe, independente de quantos IPs um atacante usar. Bloqueio cresce a
+# cada novo estouro de tentativas (15min -> 30min -> 1h -> 2h -> 4h) mas tem
+# teto - nunca vira bloqueio permanente (evitar DoS contra o proprio dono da
+# conta so' de alguem errar o codigo de proposito).
+_2FA_MAX = 5           # tentativas
+_2FA_JANELA = 600      # segundos (10 min)
+_2FA_BLOQUEIO_BASE = 900    # segundos (15 min no primeiro estouro)
+_2FA_BLOQUEIO_TETO = 14400  # segundos (4h - teto do bloqueio escalonado)
+_login_verificar_tentativas = {}
+def _checar_rate_2fa(login):
+    agora = _time.time()
+    reg = _login_verificar_tentativas.get(login)
+    if reg and reg.get("bloqueado_ate", 0) > agora:
+        return False
+    if not reg or (agora - reg.get("inicio", 0)) > _2FA_JANELA:
+        nivel = reg.get("nivel_bloqueio", 0) if reg else 0
+        _login_verificar_tentativas[login] = {"inicio": agora, "falhas": 0, "bloqueado_ate": 0, "nivel_bloqueio": nivel}
+    return True
+def _registrar_falha_2fa(login):
+    agora = _time.time()
+    reg = _login_verificar_tentativas.get(login) or {"inicio": agora, "falhas": 0, "bloqueado_ate": 0, "nivel_bloqueio": 0}
+    reg["falhas"] = reg.get("falhas", 0) + 1
+    if reg["falhas"] >= _2FA_MAX:
+        nivel = reg.get("nivel_bloqueio", 0) + 1
+        reg["bloqueado_ate"] = agora + min(_2FA_BLOQUEIO_BASE * (2 ** (nivel - 1)), _2FA_BLOQUEIO_TETO)
+        reg["nivel_bloqueio"] = nivel
+        reg["falhas"] = 0
+    _login_verificar_tentativas[login] = reg
+def _limpar_falhas_2fa(login):
+    if login in _login_verificar_tentativas:
+        del _login_verificar_tentativas[login]
+
 import smtplib
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
@@ -1503,8 +1537,11 @@ def login_verificar(dados: dict, request: Request, db: Session = Depends(get_db)
     codigo = (dados.get("codigo") or "").strip()
     if not login or not codigo:
         raise HTTPException(status_code=400, detail="login e codigo sao obrigatorios")
+    if not _checar_rate_2fa(login):
+        raise HTTPException(status_code=429, detail="Muitas tentativas de codigo. Tente novamente mais tarde ou faca login novamente para receber um codigo novo.")
     usuario = db.query(Usuario).filter(Usuario.login == login).first()
     if not usuario:
+        _registrar_falha_2fa(login)
         raise HTTPException(status_code=401, detail="usuario invalido")
     reg = db.query(Codigo2FA).filter(
         Codigo2FA.login == login,
@@ -1512,9 +1549,12 @@ def login_verificar(dados: dict, request: Request, db: Session = Depends(get_db)
         Codigo2FA.usado == False,
     ).order_by(Codigo2FA.criado_em.desc()).first()
     if not reg:
+        _registrar_falha_2fa(login)
         raise HTTPException(status_code=401, detail="codigo invalido")
     if reg.expira_em < datetime.now():
+        _registrar_falha_2fa(login)
         raise HTTPException(status_code=401, detail="codigo expirado, faca login novamente")
+    _limpar_falhas_2fa(login)
     reg.usado = True
     token = str(uuid.uuid4())
     usuario.token = token
@@ -3457,6 +3497,8 @@ async def criar_processo(
     # que ainda nao mande processo_id.
     processo_id_pendente = (info.get("processo_id") or "").strip()
     p = db.query(Processo).filter(Processo.id == processo_id_pendente).first() if processo_id_pendente else None
+    if p and not _tem_acesso_admin(usuario_tok) and p.grupo_id != usuario_tok.grupo_id:
+        raise HTTPException(status_code=403, detail="Sem permissao para este processo")
     if not p:
         processo_id = f"MN-{datetime.now().strftime('%Y%m%d%H%M%S')}-{str(uuid.uuid4())[:4].upper()}"
         p = Processo(id=processo_id, empresa="", cnpj="", tipo_ato="")

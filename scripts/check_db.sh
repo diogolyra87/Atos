@@ -22,7 +22,8 @@ ULTIMO_ENC=$(ls -t "$BKP_DIR"/mane-*.db.gz.enc 2>/dev/null | head -1)
 ULTIMO_GZ=$(ls -t "$BKP_DIR"/mane-*.db.gz 2>/dev/null | head -1)
 STATUS="SEM BACKUP - intervencao manual"
 if [ -n "$ULTIMO_ENC" ] && [ -n "$CRYPT_KEY" ]; then
-    openssl enc -d -aes-256-cbc -pbkdf2 -in "$ULTIMO_ENC" -pass pass:"$CRYPT_KEY" 2>/dev/null | gunzip -c > "$DB" 2>/dev/null
+    # -pass stdin: chave fora da linha de comando (ver comentario em backup_db.sh)
+    printf '%s\n' "$CRYPT_KEY" | openssl enc -d -aes-256-cbc -pbkdf2 -in "$ULTIMO_ENC" -pass stdin 2>/dev/null | gunzip -c > "$DB" 2>/dev/null
     if [ -s "$DB" ]; then
         if [ "$DB" = "$DB_PRODUCAO" ]; then systemctl restart atos-backend; fi
         STATUS="RESTAURADO de $ULTIMO_ENC (cifrado)"

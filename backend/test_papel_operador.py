@@ -25,7 +25,7 @@ TEST_ENGINE = create_engine(
 TestingSessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=TEST_ENGINE)
 Base.metadata.create_all(bind=TEST_ENGINE)
 
-from main import app, get_db  # noqa: E402  (import apos criar o schema de teste)
+from main import app, get_db, hash_token_sessao  # noqa: E402  (import apos criar o schema de teste)
 from fastapi.testclient import TestClient  # noqa: E402
 
 
@@ -42,19 +42,21 @@ client = TestClient(app)
 
 
 def _criar_usuario(db, login, papel, nome=None, grupo_id="grupo-admin"):
+    token_puro = str(uuid.uuid4())
     u = Usuario(
         id=str(uuid.uuid4()),
         login=login,
         senha_hash="x",
         nome=nome,
         grupo_id=grupo_id,
-        token=str(uuid.uuid4()),
+        token=hash_token_sessao(token_puro),
         token_criado_em=datetime.now(),
         is_admin=(papel == "admin"),
         papel=papel,
     )
     db.add(u)
     db.commit()
+    u.token_puro = token_puro  # no banco fica so' o hash; o puro e' o que o cliente manda no header
     return u
 
 
@@ -88,7 +90,7 @@ class TestOperadorMovimentaProcesso(unittest.TestCase):
         p = _criar_processo(self.db, grupo_id="grupo-cliente-x")  # grupo diferente do operador
         resp = client.post(
             f"/processos/{p.id}/exigencia/cumprida",
-            headers={"x-token": self.operador.token},
+            headers={"x-token": self.operador.token_puro},
         )
         self.assertEqual(resp.status_code, 200)
 
@@ -107,7 +109,7 @@ class TestOperadorMovimentaProcesso(unittest.TestCase):
         resp = client.patch(
             f"/processos/{p.id}",
             json={"observacoes": "ajuste feito pelo operador"},
-            headers={"x-token": self.operador.token},
+            headers={"x-token": self.operador.token_puro},
         )
         self.assertEqual(resp.status_code, 200)
 
@@ -123,25 +125,25 @@ class TestOperadorMovimentaProcesso(unittest.TestCase):
 
     def test_operador_ve_processo_de_grupo_diferente(self):
         p = _criar_processo(self.db, grupo_id="grupo-cliente-y")
-        resp = client.get(f"/processos/{p.id}", headers={"x-token": self.operador.token})
+        resp = client.get(f"/processos/{p.id}", headers={"x-token": self.operador.token_puro})
         self.assertEqual(resp.status_code, 200)
 
     def test_admin_continua_com_acesso_total(self):
         p = _criar_processo(self.db, grupo_id="grupo-cliente-z")
         resp = client.post(
             f"/processos/{p.id}/exigencia/cumprida",
-            headers={"x-token": self.admin.token},
+            headers={"x-token": self.admin.token_puro},
         )
         self.assertEqual(resp.status_code, 200)
 
-        resp_del = client.delete(f"/processos/{p.id}", headers={"x-token": self.admin.token})
+        resp_del = client.delete(f"/processos/{p.id}", headers={"x-token": self.admin.token_puro})
         self.assertEqual(resp_del.status_code, 200)
 
     def test_cliente_nao_movimenta_processo_de_outro_grupo(self):
         p = _criar_processo(self.db, grupo_id="grupo-cliente-outro")
         resp = client.post(
             f"/processos/{p.id}/exigencia/cumprida",
-            headers={"x-token": self.cliente.token},
+            headers={"x-token": self.cliente.token_puro},
         )
         self.assertEqual(resp.status_code, 403)
 
@@ -156,12 +158,12 @@ class TestOperadorBloqueadoEmConfiguracao(unittest.TestCase):
         self.db.close()
 
     def test_operador_recebe_403_em_aprendizado_regras(self):
-        resp = client.get("/aprendizado/regras", headers={"x-token": self.operador.token})
+        resp = client.get("/aprendizado/regras", headers={"x-token": self.operador.token_puro})
         self.assertEqual(resp.status_code, 403)
 
     def test_operador_recebe_403_ao_excluir_processo(self):
         p = _criar_processo(self.db)
-        resp = client.delete(f"/processos/{p.id}", headers={"x-token": self.operador.token})
+        resp = client.delete(f"/processos/{p.id}", headers={"x-token": self.operador.token_puro})
         self.assertEqual(resp.status_code, 403)
 
     def test_operador_recebe_403_ao_criar_outro_operador(self):
@@ -169,13 +171,13 @@ class TestOperadorBloqueadoEmConfiguracao(unittest.TestCase):
             resp = client.post(
                 "/usuarios/operador",
                 json={"nome": "Novo Operador", "email": "novo@exemplo.com"},
-                headers={"x-token": self.operador.token},
+                headers={"x-token": self.operador.token_puro},
             )
         self.assertEqual(resp.status_code, 403)
         mock_email.assert_not_called()
 
     def test_admin_acessa_aprendizado_regras(self):
-        resp = client.get("/aprendizado/regras", headers={"x-token": self.admin.token})
+        resp = client.get("/aprendizado/regras", headers={"x-token": self.admin.token_puro})
         self.assertEqual(resp.status_code, 200)
 
     def test_admin_cria_operador_com_sucesso(self):
@@ -183,7 +185,7 @@ class TestOperadorBloqueadoEmConfiguracao(unittest.TestCase):
             resp = client.post(
                 "/usuarios/operador",
                 json={"nome": "Novo Operador", "email": "novo_" + uuid.uuid4().hex[:6] + "@exemplo.com"},
-                headers={"x-token": self.admin.token},
+                headers={"x-token": self.admin.token_puro},
             )
         self.assertEqual(resp.status_code, 200)
         corpo = resp.json()

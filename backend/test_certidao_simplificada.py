@@ -29,7 +29,7 @@ TestingSessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=TEST_
 Base.metadata.create_all(bind=TEST_ENGINE)
 
 import main  # noqa: E402  (import apos criar o schema de teste)
-from main import app, get_db  # noqa: E402
+from main import app, get_db, hash_token_sessao  # noqa: E402
 from fastapi.testclient import TestClient  # noqa: E402
 
 
@@ -46,17 +46,19 @@ client = TestClient(app)
 
 
 def _criar_usuario(db, login, is_admin, grupo_id="grupo-teste"):
+    token_puro = str(uuid.uuid4())
     u = Usuario(
         id=str(uuid.uuid4()),
         login=login,
         senha_hash="x",
         grupo_id=grupo_id,
-        token=str(uuid.uuid4()),
+        token=hash_token_sessao(token_puro),
         token_criado_em=datetime.now(),
         is_admin=is_admin,
     )
     db.add(u)
     db.commit()
+    u.token_puro = token_puro  # no banco fica so' o hash; o puro e' o que o cliente manda no header
     return u
 
 
@@ -98,7 +100,7 @@ class TestCertidaoSimplificada(unittest.TestCase):
              patch("main.enviar_email") as mock_email:
             resp = client.post(
                 f"/processos/{p.id}/certidao-simplificada",
-                headers={"x-token": self.admin.token},
+                headers={"x-token": self.admin.token_puro},
             )
 
         self.assertEqual(resp.status_code, 200)
@@ -130,7 +132,7 @@ class TestCertidaoSimplificada(unittest.TestCase):
              patch("main.enviar_email") as mock_email:
             resp = client.post(
                 f"/processos/{p.id}/certidao-simplificada",
-                headers={"x-token": self.admin.token},
+                headers={"x-token": self.admin.token_puro},
             )
 
         self.assertEqual(resp.status_code, 502)
@@ -150,7 +152,7 @@ class TestCertidaoSimplificada(unittest.TestCase):
              patch("main.baixar_certidao_simplificada") as mock_baixar:
             resp = client.post(
                 f"/processos/{p.id}/certidao-simplificada",
-                headers={"x-token": self.admin.token},
+                headers={"x-token": self.admin.token_puro},
             )
 
         self.assertEqual(resp.status_code, 503)
@@ -162,7 +164,7 @@ class TestCertidaoSimplificada(unittest.TestCase):
         with patch("main.baixar_certidao_simplificada") as mock_baixar:
             resp = client.post(
                 f"/processos/{p.id}/certidao-simplificada",
-                headers={"x-token": self.admin.token},
+                headers={"x-token": self.admin.token_puro},
             )
 
         self.assertEqual(resp.status_code, 400)
@@ -171,7 +173,7 @@ class TestCertidaoSimplificada(unittest.TestCase):
     def test_processo_inexistente_retorna_404(self):
         resp = client.post(
             "/processos/id-que-nao-existe/certidao-simplificada",
-            headers={"x-token": self.admin.token},
+            headers={"x-token": self.admin.token_puro},
         )
         self.assertEqual(resp.status_code, 404)
 

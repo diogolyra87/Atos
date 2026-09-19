@@ -24,7 +24,7 @@ TEST_ENGINE = create_engine(
 TestingSessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=TEST_ENGINE)
 Base.metadata.create_all(bind=TEST_ENGINE)
 
-from main import app, get_db  # noqa: E402  (import apos criar o schema de teste)
+from main import app, get_db, hash_token_sessao  # noqa: E402  (import apos criar o schema de teste)
 from fastapi.testclient import TestClient  # noqa: E402
 
 
@@ -41,18 +41,19 @@ client = TestClient(app)
 
 
 def _criar_usuario(db, login, is_admin):
-    token = str(uuid.uuid4())
+    token_puro = str(uuid.uuid4())
     u = Usuario(
         id=str(uuid.uuid4()),
         login=login,
         senha_hash="x",
         grupo_id="grupo-teste",
-        token=token,
+        token=hash_token_sessao(token_puro),
         token_criado_em=datetime.now(),
         is_admin=is_admin,
     )
     db.add(u)
     db.commit()
+    u.token_puro = token_puro  # no banco fica so' o hash; o puro e' o que o cliente manda no header
     return u
 
 
@@ -80,7 +81,7 @@ class TestPermissaoExcluirAnexo(unittest.TestCase):
         admin = _criar_usuario(self.db, "admin_" + uuid.uuid4().hex[:8], is_admin=True)
         anexo = _criar_anexo(self.db, enviado_por="outro_usuario")
 
-        resp = client.delete(f"/anexos/{anexo.id}", headers={"x-token": admin.token})
+        resp = client.delete(f"/anexos/{anexo.id}", headers={"x-token": admin.token_puro})
 
         self.assertEqual(resp.status_code, 200)
         self.assertIsNone(self.db.query(Anexo).filter(Anexo.id == anexo.id).first())
@@ -96,7 +97,7 @@ class TestPermissaoExcluirAnexo(unittest.TestCase):
         cliente = _criar_usuario(self.db, "cliente_" + uuid.uuid4().hex[:8], is_admin=False)
         anexo = _criar_anexo(self.db, enviado_por="outro_usuario")
 
-        resp = client.delete(f"/anexos/{anexo.id}", headers={"x-token": cliente.token})
+        resp = client.delete(f"/anexos/{anexo.id}", headers={"x-token": cliente.token_puro})
 
         self.assertEqual(resp.status_code, 403)
         # o anexo continua existindo
@@ -113,7 +114,7 @@ class TestPermissaoExcluirAnexo(unittest.TestCase):
         cliente = _criar_usuario(self.db, "cliente_" + uuid.uuid4().hex[:8], is_admin=False)
         anexo = _criar_anexo(self.db, enviado_por=cliente.login)
 
-        resp = client.delete(f"/anexos/{anexo.id}", headers={"x-token": cliente.token})
+        resp = client.delete(f"/anexos/{anexo.id}", headers={"x-token": cliente.token_puro})
 
         self.assertEqual(resp.status_code, 200)
         self.assertIsNone(self.db.query(Anexo).filter(Anexo.id == anexo.id).first())

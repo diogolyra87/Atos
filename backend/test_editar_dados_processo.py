@@ -26,7 +26,7 @@ TEST_ENGINE = create_engine(
 TestingSessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=TEST_ENGINE)
 Base.metadata.create_all(bind=TEST_ENGINE)
 
-from main import app, get_db  # noqa: E402
+from main import app, get_db, hash_token_sessao  # noqa: E402
 from fastapi.testclient import TestClient  # noqa: E402
 
 
@@ -43,13 +43,15 @@ client = TestClient(app)
 
 
 def _criar_usuario(db, login, papel, nome=None, grupo_id="grupo-x"):
+    token_puro = str(uuid.uuid4())
     u = Usuario(
         id=str(uuid.uuid4()), login=login, senha_hash="x", nome=nome,
-        grupo_id=grupo_id, token=str(uuid.uuid4()), token_criado_em=datetime.now(),
+        grupo_id=grupo_id, token=hash_token_sessao(token_puro), token_criado_em=datetime.now(),
         is_admin=(papel == "admin"), papel=papel,
     )
     db.add(u)
     db.commit()
+    u.token_puro = token_puro  # no banco fica so' o hash; o puro e' o que o cliente manda no header
     return u
 
 
@@ -81,7 +83,7 @@ class TestEdicaoDadosProcesso(unittest.TestCase):
         p = _criar_processo(self.db, tipo_ato="RCA")
         resp = client.patch(
             f"/processos/{p.id}", json={"tipo_ato": "ARD"},
-            headers={"x-token": self.operador.token},
+            headers={"x-token": self.operador.token_puro},
         )
         self.assertEqual(resp.status_code, 200)
         self.db.refresh(p)
@@ -89,7 +91,7 @@ class TestEdicaoDadosProcesso(unittest.TestCase):
 
         resp2 = client.patch(
             f"/processos/{p.id}", json={"tipo_ato": "RCA"},
-            headers={"x-token": self.operador.token},
+            headers={"x-token": self.operador.token_puro},
         )
         self.assertEqual(resp2.status_code, 200)
         self.db.refresh(p)
@@ -112,7 +114,7 @@ class TestEdicaoDadosProcesso(unittest.TestCase):
         p = _criar_processo(self.db)
         resp = client.patch(
             f"/processos/{p.id}", json={"tipo_ato": "TIPO_INVENTADO"},
-            headers={"x-token": self.operador.token},
+            headers={"x-token": self.operador.token_puro},
         )
         self.assertEqual(resp.status_code, 400)
         self.assertIn("Tipo de ato inválido", resp.json()["detail"])
@@ -124,7 +126,7 @@ class TestEdicaoDadosProcesso(unittest.TestCase):
         resp = client.patch(
             f"/processos/{p.id}",
             json={"identificador_ato": "Ata de Reunião de Sócios de 27/03/2026"},
-            headers={"x-token": self.operador.token},
+            headers={"x-token": self.operador.token_puro},
         )
         self.assertEqual(resp.status_code, 200)
         self.db.refresh(p)
@@ -134,7 +136,7 @@ class TestEdicaoDadosProcesso(unittest.TestCase):
         p = _criar_processo(self.db)
         resp = client.patch(
             f"/processos/{p.id}", json={"grupo_id": "outro-grupo"},
-            headers={"x-token": self.operador.token},
+            headers={"x-token": self.operador.token_puro},
         )
         self.assertEqual(resp.status_code, 400)
         self.assertIn("grupo_id", resp.json()["detail"])
@@ -143,7 +145,7 @@ class TestEdicaoDadosProcesso(unittest.TestCase):
         p = _criar_processo(self.db)
         resp = client.patch(
             f"/processos/{p.id}", json={"empresa": "OUTRA EMPRESA"},
-            headers={"x-token": self.cliente.token},
+            headers={"x-token": self.cliente.token_puro},
         )
         self.assertEqual(resp.status_code, 403)
 
@@ -151,7 +153,7 @@ class TestEdicaoDadosProcesso(unittest.TestCase):
         p = _criar_processo(self.db, numero_protocolo="111.111")
         resp = client.patch(
             f"/processos/{p.id}", json={"numero_protocolo": "222.222"},
-            headers={"x-token": self.operador.token},
+            headers={"x-token": self.operador.token_puro},
         )
         self.assertEqual(resp.status_code, 200)
         log = (
@@ -167,7 +169,7 @@ class TestEdicaoDadosProcesso(unittest.TestCase):
         p = _criar_processo(self.db, numero_protocolo=None)
         resp = client.patch(
             f"/processos/{p.id}", json={"numero_protocolo": "333.333"},
-            headers={"x-token": self.operador.token},
+            headers={"x-token": self.operador.token_puro},
         )
         self.assertEqual(resp.status_code, 200)
         log_sensivel = (
@@ -183,7 +185,7 @@ class TestEdicaoDadosProcesso(unittest.TestCase):
         resp = client.patch(
             f"/processos/{p.id}",
             json={"status": "finalizado", "identificador_ato": "Novo texto"},
-            headers={"x-token": self.operador.token},
+            headers={"x-token": self.operador.token_puro},
         )
         self.assertEqual(resp.status_code, 200)
         mock_notificar.assert_called_once()
@@ -194,7 +196,7 @@ class TestEdicaoDadosProcesso(unittest.TestCase):
         resp = client.patch(
             f"/processos/{p.id}",
             json={"empresa": "NOVA EMPRESA", "uf": "MG", "data_ata": "01/01/2026", "hora_ata": "10:00"},
-            headers={"x-token": self.operador.token},
+            headers={"x-token": self.operador.token_puro},
         )
         self.assertEqual(resp.status_code, 200)
         mock_notificar.assert_not_called()

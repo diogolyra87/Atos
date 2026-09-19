@@ -29,7 +29,7 @@ TEST_ENGINE = create_engine(
 TestingSessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=TEST_ENGINE)
 Base.metadata.create_all(bind=TEST_ENGINE)
 
-from main import app, get_db  # noqa: E402
+from main import app, get_db, hash_token_sessao  # noqa: E402
 from fastapi.testclient import TestClient  # noqa: E402
 
 
@@ -46,13 +46,15 @@ client = TestClient(app)
 
 
 def _criar_usuario(db, login, papel="operador", grupo_id="grupo-x"):
+    token_puro = str(uuid.uuid4())
     u = Usuario(
         id=str(uuid.uuid4()), login=login, senha_hash="x",
-        grupo_id=grupo_id, token=str(uuid.uuid4()), token_criado_em=datetime.now(),
+        grupo_id=grupo_id, token=hash_token_sessao(token_puro), token_criado_em=datetime.now(),
         is_admin=(papel == "admin"), papel=papel,
     )
     db.add(u)
     db.commit()
+    u.token_puro = token_puro  # no banco fica so' o hash; o puro e' o que o cliente manda no header
     return u
 
 
@@ -101,7 +103,7 @@ class TestChecarDuplicidade(unittest.TestCase):
         resp = client.get(
             "/processos/checar-duplicidade",
             params=self._params(pendente),  # sem excluir_processo_id
-            headers={"x-token": self.operador.token},
+            headers={"x-token": self.operador.token_puro},
         )
         self.assertEqual(resp.status_code, 200)
         self.assertTrue(resp.json()["duplicado"])  # falso positivo sistematico confirmado
@@ -115,7 +117,7 @@ class TestChecarDuplicidade(unittest.TestCase):
         resp = client.get(
             "/processos/checar-duplicidade",
             params=self._params(pendente, excluir=pendente.id),
-            headers={"x-token": self.operador.token},
+            headers={"x-token": self.operador.token_puro},
         )
         self.assertEqual(resp.status_code, 200)
         self.assertFalse(resp.json()["duplicado"])
@@ -134,7 +136,7 @@ class TestChecarDuplicidade(unittest.TestCase):
         resp = client.get(
             "/processos/checar-duplicidade",
             params=self._params(novo_pendente, excluir=novo_pendente.id),
-            headers={"x-token": self.operador.token},
+            headers={"x-token": self.operador.token_puro},
         )
         self.assertEqual(resp.status_code, 200)
         body = resp.json()
@@ -149,7 +151,7 @@ class TestChecarDuplicidade(unittest.TestCase):
         resp = client.get(
             "/processos/checar-duplicidade",
             params=self._params(pendente, excluir=pendente.id),
-            headers={"x-token": self.operador.token},
+            headers={"x-token": self.operador.token_puro},
         )
         self.assertEqual(resp.status_code, 200)
         self.assertFalse(resp.json()["duplicado"])

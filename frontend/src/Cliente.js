@@ -41,7 +41,10 @@ export default function Cliente() {
   });
 
   function salvarSessao(d) { try { localStorage.setItem("atos_sessao", JSON.stringify(d)); } catch {} setSessao(d); }
-  function limparSessao() { try { localStorage.removeItem("atos_sessao"); } catch {} setSessao(null); setSenha(""); }
+  function limparSessao() {
+    if (sessao && sessao.token) axios.post(`${API}/logout`, {}, { headers: { "x-token": sessao.token } }).catch(() => {});
+    try { localStorage.removeItem("atos_sessao"); } catch {} setSessao(null); setSenha("");
+  }
 
   async function cadastrar() {
     setErro(""); setAviso("");

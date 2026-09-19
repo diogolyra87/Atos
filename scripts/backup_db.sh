@@ -17,7 +17,12 @@ gzip -f "$ARQ"
 
 # cifra o .gz com AES-256 -> gera .gz.enc e remove o .gz aberto
 if [ -n "$CRYPT_KEY" ]; then
-  openssl enc -aes-256-cbc -pbkdf2 -salt -in "$ARQ.gz" -out "$ARQ.gz.enc" -pass pass:"$CRYPT_KEY" && rm -f "$ARQ.gz"
+  # -pass stdin (e nao "-pass pass:$CRYPT_KEY"): argumento de linha de comando aparece em
+  # `ps aux` pra qualquer usuario local durante a cifragem. A chave entra pelo stdin via printf
+  # (builtin do bash - nao e' um processo externo, entao nao existe argv com a chave em lugar
+  # nenhum). Mesmo formato de saida - backups antigos e a restauracao manual com
+  # "-pass pass:CHAVE" continuam compativeis.
+  printf '%s\n' "$CRYPT_KEY" | openssl enc -aes-256-cbc -pbkdf2 -salt -in "$ARQ.gz" -out "$ARQ.gz.enc" -pass stdin && rm -f "$ARQ.gz"
   FINAL="$ARQ.gz.enc"
 else
   echo "$(date): AVISO - sem chave de cripto, backup nao cifrado" >> /root/atos/backups/rclone.log

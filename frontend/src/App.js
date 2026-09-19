@@ -1,5 +1,6 @@
 ﻿import { useState, useEffect } from "react";
 import axios from "axios";
+import { sessaoExpirou } from "./sessaoExpirada";
 import { Painel as PainelCliente } from "./Cliente";
 import { STATUS_CONFIG, formatarDataExtenso, BotaoIatos, IatosChat, subtituloProcesso, SidebarAtos, IconeProcessos, IconeGrupos, IconeAprendizado, DonutStatusCard, TelaLogin, FONTE_CORPO, FONTE_TITULO, FluxoDoDiaCardEscuro, AtividadeRecenteEscura, useBreakpoint } from "./components/Compartilhados";
 
@@ -1455,6 +1456,30 @@ if (_sa && _sa.token) {
   axios.defaults.headers.common["x-token"] = _sa.token;
 }
 
+// Sessao invalidada no servidor (token expirado, logout em outro lugar, deploy que troca
+// o formato do token): qualquer 401 numa requisicao autenticada com o token da sessao
+// atual volta pro login com aviso. Antes o painel admin ficava vazio/travado ate alguem
+// clicar em Sair (so o portal do cliente tratava 401). O erro continua propagando pros
+// catch de cada chamada.
+// Registrado AQUI (nivel do modulo) e nao num useEffect do App: o React roda os efeitos
+// dos filhos ANTES dos do pai, entao o AppPainel ja dispara as primeiras requisicoes
+// (justamente as que falham ao reabrir o painel com token velho) antes de um efeito do
+// App registrar o interceptor - e o axios monta a cadeia de interceptors no momento da
+// requisicao.
+let _aoSessaoExpirar = null;
+axios.interceptors.response.use(
+  (resp) => resp,
+  (error) => {
+    const atual = getSessaoAdmin();
+    if (sessaoExpirou(error, atual && atual.token)) {
+      localStorage.removeItem("atos_admin");
+      delete axios.defaults.headers.common["x-token"];
+      if (_aoSessaoExpirar) _aoSessaoExpirar();
+    }
+    return Promise.reject(error);
+  }
+);
+
 export default function App() {
   const [sessao, setSessao] = useState(getSessaoAdmin());
   const [login, setLogin] = useState("");
@@ -1463,6 +1488,18 @@ export default function App() {
   const [carregando, setCarregando] = useState(false);
   const [etapa, setEtapa] = useState(1);
   const [codigo, setCodigo] = useState("");
+
+  // Liga o interceptor global (registrado no nivel do modulo, acima) ao estado deste App.
+  useEffect(() => {
+    _aoSessaoExpirar = () => {
+      setSessao(null);
+      setEtapa(1);
+      setCodigo("");
+      setSenha("");
+      setErro("Sua sessao expirou. Entre novamente.");
+    };
+    return () => { _aoSessaoExpirar = null; };
+  }, []);
 
   async function entrar() {
     setErro("");
@@ -1501,6 +1538,7 @@ export default function App() {
     setCarregando(false);
   }
   function sair() {
+    axios.post(`${API}/logout`).catch(() => {});
     localStorage.removeItem("atos_admin");
     delete axios.defaults.headers.common["x-token"];
     setSessao(null);

@@ -8,7 +8,7 @@ from cnpj_utils import normalizar_cnpj, validar_cnpj, formatar_cnpj
 from nomenclatura import aplicar_nomenclatura_junta
 from datetime import datetime, timedelta, date
 from openai import OpenAI
-import json, os, uuid, shutil, bcrypt, secrets
+import json, os, uuid, shutil, bcrypt, secrets, html, hashlib
 import asyncio
 import threading
 
@@ -56,6 +56,29 @@ def _checar_rate_esqueci_senha(ip):
     return _checar_rate(_esqueci_senha_tentativas, ip)
 def _registrar_falha_esqueci_senha(ip):
     _registrar_falha(_esqueci_senha_tentativas, ip)
+
+# Rate limiter por IP dos endpoints publicos de criacao de conta/convite
+# (/cadastro, /solicitar-acesso, /convite/definir-senha): aqui nao ha
+# "sucesso" que deva limpar o contador (diferente do login) - toda chamada
+# conta pro limite, sucesso ou falha, porque o proprio abuso e' criar/tentar
+# muitas contas ou tentar muitos tokens de convite, nao so errar credencial.
+_cadastro_tentativas = {}
+def _checar_rate_cadastro(ip):
+    return _checar_rate(_cadastro_tentativas, ip)
+def _registrar_tentativa_cadastro(ip):
+    _registrar_falha(_cadastro_tentativas, ip)
+
+_solicitar_acesso_tentativas = {}
+def _checar_rate_solicitar_acesso(ip):
+    return _checar_rate(_solicitar_acesso_tentativas, ip)
+def _registrar_tentativa_solicitar_acesso(ip):
+    _registrar_falha(_solicitar_acesso_tentativas, ip)
+
+_definir_senha_convite_tentativas = {}
+def _checar_rate_definir_senha_convite(ip):
+    return _checar_rate(_definir_senha_convite_tentativas, ip)
+def _registrar_tentativa_definir_senha_convite(ip):
+    _registrar_falha(_definir_senha_convite_tentativas, ip)
 
 # Rate limiter do /login/verificar (codigo 2FA): por CONTA (login), nao por
 # IP - o que importa e' limitar quantas tentativas de codigo uma mesma conta
@@ -155,11 +178,23 @@ def enviar_email_anexo(destinatario, assunto, corpo, caminho_anexo=None, nome_an
         print(f"Erro ao enviar email (anexo) para {destinatario}: {e}")
         return False
 
+def hash_token_sessao(token):
+    """SHA-256 (hex, 64 chars) do token de sessao - e' o que fica em usuarios.token.
+    O token em si (secrets.token_urlsafe(32), 256 bits) so' existe no cliente:
+    quem le o banco (backup vazado, SQL injection futura) nao consegue se passar
+    por um usuario logado. SHA-256 e nao bcrypt de proposito: o token e' a UNICA
+    informacao que identifica a sessao, entao a busca tem que ser por igualdade
+    direta (indexada) - bcrypt tem salt aleatorio e nao permite isso. Como o token
+    ja' e' aleatorio de alta entropia, nao ha' o que forcar por tentativa e erro."""
+    return hashlib.sha256(token.encode("utf-8")).hexdigest()
+
 def validar_token(x_token, db):
-    """Busca o usuario pelo token e verifica se nao expirou (30 dias)."""
+    """Busca o usuario pelo hash do token e verifica se nao expirou (30 dias).
+    Tokens gravados em texto puro antes do hash (36 chars, uuid4) nunca casam com
+    o SHA-256 do que o cliente manda, entao sao invalidados sem codigo extra."""
     if not x_token:
         return None
-    u = db.query(Usuario).filter(Usuario.token == x_token).first()
+    u = db.query(Usuario).filter(Usuario.token == hash_token_sessao(x_token)).first()
     if not u:
         return None
     tc = getattr(u, "token_criado_em", None)
@@ -474,6 +509,20 @@ def _email_status_html(status_key, status_label, titulo, empresa_linha, protocol
     tecnica do padrao aprovado ("Opcao 4 - rodape preto") que resolve a
     renderizacao quebrada no Outlook (motor Word).
     nota_tipo: None | "recebido" | "anexo" | "aguardando"."""
+    # Escapa todo valor dinamico antes de concatenar no HTML do e-mail - titulo,
+    # empresa_linha, protocolo e nota_texto podem vir de extracao por IA/OCR ou
+    # edicao manual (ver p.empresa/p.identificador_ato/p.tipo_ato/p.numero_protocolo),
+    # entao HTML/marcacao nesses campos nao pode ir cru pro e-mail que o cliente
+    # real recebe (auditoria de seguranca 18/09/2026, item "HTML injection em
+    # e-mail").
+    status_label = html.escape(status_label or "")
+    titulo = html.escape(titulo or "")
+    empresa_linha = html.escape(empresa_linha or "")
+    protocolo = html.escape(protocolo) if protocolo else protocolo
+    nota_texto = html.escape(nota_texto) if nota_texto else nota_texto
+    if botao:
+        botao = {"label": html.escape(botao.get("label") or ""), "href": html.escape(botao.get("href") or "", quote=True)}
+
     barra_de, barra_ate = _CORES_BARRA_STATUS.get(status_key, _CORES_BARRA_STATUS["deferido"])
     pill_bg, pill_cor = _CORES_PILL_STATUS.get(status_key, _CORES_PILL_STATUS["deferido"])
 
@@ -1104,6 +1153,24 @@ BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 UPLOADS_DIR = os.path.join(BASE_DIR, "uploads")
 os.makedirs(UPLOADS_DIR, exist_ok=True)
 
+# Whitelist/limite de upload de documento (ata/exigencia/analise) - mesmo
+# padrao ja usado em enviar_anexo/upload_arquivo, agora tambem aplicado aos
+# pontos que gravam arquivo em disco (ou leem o arquivo inteiro na memoria)
+# sem nenhuma validacao: criar_processo, registrar_exigencia, analisar,
+# analisar-pasta e analisar-pasta-multi (via _criar_processo_pendente).
+EXT_UPLOAD_DOCUMENTO = {".pdf", ".png", ".jpg", ".jpeg", ".docx", ".xml", ".txt"}
+LIMITE_UPLOAD_DOCUMENTO_BYTES = 20 * 1024 * 1024  # 20 MB
+def _validar_upload_documento(nome_arquivo, conteudo):
+    """Levanta HTTPException 400 se a extensao nao estiver na whitelist, o
+    arquivo passar de 20MB, ou vier vazio."""
+    ext = os.path.splitext(nome_arquivo or "")[1].lower()
+    if ext not in EXT_UPLOAD_DOCUMENTO:
+        raise HTTPException(status_code=400, detail="Tipo de arquivo nao permitido.")
+    if len(conteudo) > LIMITE_UPLOAD_DOCUMENTO_BYTES:
+        raise HTTPException(status_code=400, detail="Arquivo muito grande. Limite de 20 MB.")
+    if len(conteudo) == 0:
+        raise HTTPException(status_code=400, detail="Arquivo vazio.")
+
 # app.mount("/uploads", StaticFiles(directory=UPLOADS_DIR), name="uploads")  # desativado: arquivos agora so via /download protegido
 
 GEMINI_KEY = os.getenv("GEMINI_KEY")
@@ -1459,7 +1526,11 @@ def root():
 
 
 @app.post("/cadastro")
-def cadastro(dados: dict, db: Session = Depends(get_db)):
+def cadastro(dados: dict, request: Request, db: Session = Depends(get_db)):
+    ip = obter_ip(request) or "desconhecido"
+    if not _checar_rate_cadastro(ip):
+        raise HTTPException(status_code=429, detail="Muitas tentativas. Tente novamente em alguns minutos.")
+    _registrar_tentativa_cadastro(ip)
     codigo_grupo = (dados.get("codigo_grupo") or "").strip()
     login = (dados.get("login") or "").strip()
     senha = dados.get("senha") or ""
@@ -1556,8 +1627,8 @@ def login_verificar(dados: dict, request: Request, db: Session = Depends(get_db)
         raise HTTPException(status_code=401, detail="codigo expirado, faca login novamente")
     _limpar_falhas_2fa(login)
     reg.usado = True
-    token = str(uuid.uuid4())
-    usuario.token = token
+    token = secrets.token_urlsafe(32)
+    usuario.token = hash_token_sessao(token)  # so' o hash vai pro banco; o token puro vai so' pro cliente
     usuario.token_criado_em = datetime.now()
     db.commit()
     registrar_auditoria(db, usuario, "login", None, "acesso ao sistema (2FA)", ip)
@@ -1572,6 +1643,25 @@ def login_verificar(dados: dict, request: Request, db: Session = Depends(get_db)
         "is_admin": bool(usuario.is_admin),
         "plano": getattr(usuario, "plano", None),
     }
+
+
+@app.post("/logout")
+def logout(request: Request = None, x_token: str = Header(None), db: Session = Depends(get_db)):
+    """Invalida o token de sessao no backend - antes disso, 'sair' so limpava
+    o localStorage do frontend e o token continuava valido no servidor por
+    ate 30 dias (ver validar_token). Apaga o token em vez de so' desconectar,
+    entao um token capturado antes do logout (ex: dispositivo compartilhado)
+    para de funcionar imediatamente."""
+    if not x_token:
+        raise HTTPException(status_code=401, detail="Token necessario")
+    usuario = validar_token(x_token, db)
+    if not usuario:
+        raise HTTPException(status_code=401, detail="Token invalido ou sessao expirada")
+    usuario.token = None
+    usuario.token_criado_em = None
+    db.commit()
+    registrar_auditoria(db, usuario, "logout", None, "encerrou a sessao", obter_ip(request))
+    return {"mensagem": "Sessao encerrada"}
 
 
 def enviar_redefinicao_senha_email(usuario, email_destino, token):
@@ -2954,6 +3044,7 @@ async def analisar_pasta(arquivos: list[UploadFile] = File(...), x_token: str = 
     itens = []
     for idx, arq in enumerate(arquivos):
         conteudo = await arq.read()
+        _validar_upload_documento(arq.filename, conteudo)
         texto = await asyncio.to_thread(_extrair_texto_bytes, conteudo, arq.filename or "")
         tipo, score = _classificar(arq.filename or "", texto)
         regra = consultar_regras(arq.filename or "", texto, db)
@@ -3142,6 +3233,7 @@ def _criar_processo_pendente(db, usuario_tok, grupo_id, conteudo: bytes, nome_ar
     - garante que o processo nunca fica invisivel, mesmo que o parsing falhe
     por completo ou a conexao caia antes da confirmacao. Commita de imediato
     (nao espera o resto do fluxo), pra que a gravacao ja seja duravel aqui."""
+    _validar_upload_documento(nome_arquivo, conteudo)
     processo_id = "MN-" + datetime.now().strftime("%Y%m%d%H%M%S") + "-" + str(uuid.uuid4())[:4].upper()
     ext = os.path.splitext(nome_arquivo or "")[1] or ".pdf"
     nome_no_disco = processo_id + "_ata" + ext
@@ -3256,6 +3348,11 @@ async def analisar_pasta_multi(arquivos: list[UploadFile] = File(...), codigo_gr
     for idx, arq in enumerate(arquivos):
         conteudo = await arq.read()
         nome_arq = arq.filename or ("arquivo_" + str(idx))
+        # validado aqui (nao so dentro de _criar_processo_pendente) porque
+        # com pre_classificacao=True o loop nunca chega a chamar essa
+        # funcao, e mesmo assim o arquivo ja e lido inteiro na memoria e
+        # passado pra extracao/IA logo abaixo.
+        _validar_upload_documento(nome_arq, conteudo)
         pendente_id = None
         if not pre_classificacao:
             pendente_proc = _criar_processo_pendente(db, usuario, grupo_id, conteudo, nome_arq)
@@ -3506,11 +3603,13 @@ async def criar_processo(
     processo_id = p.id
 
     if arquivo:
+        conteudo_arquivo = await arquivo.read()
+        _validar_upload_documento(arquivo.filename, conteudo_arquivo)
         ext = os.path.splitext(arquivo.filename)[1]
         nome_arquivo = f"{processo_id}_ata{ext}"
         caminho = os.path.join(UPLOADS_DIR, nome_arquivo)
         with open(caminho, "wb") as f:
-            f.write(await arquivo.read())
+            f.write(conteudo_arquivo)
         p.arquivo_ata = nome_arquivo
         p.arquivo_ata_nome_exibicao = aplicar_nomenclatura_junta(arquivo.filename)
 
@@ -3885,11 +3984,13 @@ async def registrar_exigencia(
         raise HTTPException(status_code=404, detail="Processo nao encontrado")
     p.texto_exigencia = texto
     if arquivo is not None:
+        conteudo_arquivo = await arquivo.read()
+        _validar_upload_documento(arquivo.filename, conteudo_arquivo)
         ext = os.path.splitext(arquivo.filename)[1]
         nome_arquivo = f"{processo_id}_exigencia{ext}"
         caminho = os.path.join(UPLOADS_DIR, nome_arquivo)
         with open(caminho, "wb") as f:
-            f.write(await arquivo.read())
+            f.write(conteudo_arquivo)
         p.arquivo_exigencia = nome_arquivo
         p.arquivo_exigencia_nome_exibicao = aplicar_nomenclatura_junta(arquivo.filename or "")
     p.exigencia_ativa = True
@@ -4087,10 +4188,14 @@ def validar_convite(token: str, db: Session = Depends(get_db)):
 
 
 @app.post("/convite/definir-senha")
-def definir_senha_convite(dados: dict, db: Session = Depends(get_db)):
+def definir_senha_convite(dados: dict, request: Request, db: Session = Depends(get_db)):
     """Endpoint publico: define a senha a partir de um token de convite valido
     e invalida o token (uso unico) - mesma tela usada tanto pro primeiro acesso
     quanto pra um convite reenviado."""
+    ip = obter_ip(request) or "desconhecido"
+    if not _checar_rate_definir_senha_convite(ip):
+        raise HTTPException(status_code=429, detail="Muitas tentativas. Tente novamente em alguns minutos.")
+    _registrar_tentativa_definir_senha_convite(ip)
     token = (dados.get("token") or "").strip()
     senha = dados.get("senha") or ""
     if not token or not senha:
@@ -4129,7 +4234,7 @@ def _enviar_email_solicitar_acesso(usuario, token):
 
 
 @app.post("/solicitar-acesso")
-def solicitar_acesso(dados: dict, db: Session = Depends(get_db)):
+def solicitar_acesso(dados: dict, request: Request, db: Session = Depends(get_db)):
     """Auto-cadastro publico (sem token de sessao) de Usuario Individual - novo
     tipo de conta paralela ao Grupo administrado por admin. NAO vinculada a
     nenhum Grupo existente: ganha um Grupo proprio (uso exclusivo dela), o que
@@ -4139,6 +4244,10 @@ def solicitar_acesso(dados: dict, db: Session = Depends(get_db)):
     requer_plano_pago). Liberacao e' imediata (sem aprovacao manual, decidido
     com o Diogo); usuario define a propria senha via o mesmo convite por
     e-mail usado no fluxo de operador."""
+    ip = obter_ip(request) or "desconhecido"
+    if not _checar_rate_solicitar_acesso(ip):
+        raise HTTPException(status_code=429, detail="Muitas tentativas. Tente novamente em alguns minutos.")
+    _registrar_tentativa_solicitar_acesso(ip)
     nome = (dados.get("nome") or "").strip()
     email = (dados.get("email") or "").strip().lower()
 

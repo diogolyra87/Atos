@@ -49,13 +49,19 @@ function montarApp(statusDasRespostas) {
   return { axios, App, root, el, chamadas, act: React.act, createElement: React.createElement };
 }
 
-async function renderizarEEsperar({ App, root, act, createElement }) {
+// Espera ATE a condicao (com limite) em vez de um tempo fixo: com a maquina carregada (suite
+// rodando em paralelo) uma espera fixa de poucos ms estoura.
+async function renderizarEEsperar({ App, root, act, createElement }, condicao) {
   await act(async () => {
     root.render(createElement(App));
   });
-  // deixa as requisicoes do painel falharem e os setState do interceptor rodarem
-  for (let i = 0; i < 5; i++) {
-    await act(async () => { await new Promise((r) => setTimeout(r, 20)); });
+  const fim = Date.now() + 8000;
+  do {
+    await act(async () => { await new Promise((r) => setTimeout(r, 25)); });
+  } while (Date.now() < fim && !(condicao && condicao()));
+  // assenta um pouco mais: setState do interceptor / respostas restantes
+  for (let i = 0; i < 3; i++) {
+    await act(async () => { await new Promise((r) => setTimeout(r, 25)); });
   }
 }
 
@@ -65,7 +71,7 @@ afterEach(() => { erroConsole.mockRestore(); document.body.innerHTML = ""; });
 
 test("401 nas requisicoes do painel admin -> volta pro login com aviso e limpa a sessao", async () => {
   const ctx = montarApp(401);
-  await renderizarEEsperar(ctx);
+  await renderizarEEsperar(ctx, () => ctx.el.textContent.includes("Sua sessao expirou"));
 
   // o painel realmente tentou carregar coisas com o token velho
   expect(ctx.chamadas.length).toBeGreaterThan(0);
@@ -79,7 +85,7 @@ test("401 nas requisicoes do painel admin -> volta pro login com aviso e limpa a
 
 test("erro 500 do servidor NAO desloga: sessao e painel continuam", async () => {
   const ctx = montarApp(500);
-  await renderizarEEsperar(ctx);
+  await renderizarEEsperar(ctx, () => ctx.chamadas.length >= 4);
 
   expect(ctx.chamadas.length).toBeGreaterThan(0);
   expect(ctx.el.textContent).not.toContain("Sua sessao expirou");

@@ -1,6 +1,7 @@
 ﻿import { useState, useEffect } from "react";
 import { useSearchParams } from "react-router-dom";
 import axios from "axios";
+import { analisarDocumento, analisarLote, MENSAGEM_LENDO } from "./analisarComEspera";
 import { STATUS_CONFIG, formatarDataExtenso, FluxoDoDiaCardEscuro, AtividadeRecenteEscura, BotaoIatos, IatosChat, subtituloProcesso, SidebarAtos, IconeProcessos, IconeRelatorios, DonutStatusCard, TelaLogin, TelaCriarAcesso, PainelDownloadStatus, FONTE_CORPO, FONTE_TITULO, useBreakpoint } from "./components/Compartilhados";
 
 const API = "";
@@ -344,6 +345,8 @@ export function Painel({ sessao, onSair }) {
   const [docsAbertos, setDocsAbertos] = useState(null);
   const [subindo, setSubindo] = useState(false);
   const [progresso, setProgresso] = useState({ feitos: 0, total: 0, erros: 0 });
+  const [msgLendo, setMsgLendo] = useState("");
+  const sinalLendo = (on) => setMsgLendo(on ? MENSAGEM_LENDO : "");
   const [tela, setTela] = useState("processos");
   const [fBusca, setFBusca] = useState("");
   const [fUf, setFUf] = useState("");
@@ -383,6 +386,17 @@ export function Painel({ sessao, onSair }) {
   const s = estilos(mobile);
   useEffect(() => { carregar(); }, []);
 
+  // Enquanto houver processo sendo lido (pendente_processamento) a lista se atualiza sozinha:
+  // o servidor conclui a leitura em segundo plano e a linha passa de "Processando" para os
+  // dados reais sem ninguem precisar recarregar a pagina.
+  const temPendenteLendo = processos.some(p => p.status === "pendente_processamento");
+  useEffect(() => {
+    if (!temPendenteLendo) return undefined;
+    const t = setInterval(() => { carregar(true); }, 6000);
+    return () => clearInterval(t);
+    /* eslint-disable-next-line */
+  }, [temPendenteLendo]);
+
   useEffect(() => {
     async function carregarFluxo() {
       try {
@@ -408,8 +422,9 @@ export function Painel({ sessao, onSair }) {
     return () => clearInterval(_t);
     /* eslint-disable-next-line */
   }, []);
-  async function carregar() {
-    setCarregando(true); setErro("");
+  // silencioso=true: atualizacao automatica em segundo plano (nao mostra "Carregando..." nem erro)
+  async function carregar(silencioso) {
+    if (!silencioso) { setCarregando(true); setErro(""); }
     let listaAtualizada = null;
     try {
       const res = await axios.get(`${API}/processos`, { headers: { "x-token": sessao.token } });
@@ -419,9 +434,9 @@ export function Painel({ sessao, onSair }) {
       setMetricas(m.data);
     } catch (e) {
       if (e.response && e.response.status === 401) { onSair(); return; }
-      setErro("Erro ao carregar processos.");
+      if (!silencioso) setErro("Erro ao carregar processos.");
     }
-    setCarregando(false);
+    if (!silencioso) setCarregando(false);
     return listaAtualizada;
   }
   async function baixar(processoId, tipo, nomeBase) {
@@ -465,7 +480,7 @@ export function Painel({ sessao, onSair }) {
     extras = extras || [];
     const fdA = new FormData();
     arquivos.forEach(a => fdA.append("arquivos", a));
-    const res = await axios.post(`${API}/processos/analisar-pasta-multi`, fdA, { headers: { "x-token": sessao.token } });
+    const res = await analisarLote(axios, fdA, { headers: { "x-token": sessao.token } }, { base: API, onEspera: sinalLendo });
     const r = res.data || {};
     const principais = r.principais || [];
     const anexosGrupo = (r.anexos || []).map(ax => arquivos[ax.indice]).concat(extras);
@@ -518,7 +533,7 @@ export function Painel({ sessao, onSair }) {
       try {
         const fdR = new FormData();
         raizArquivos.forEach(a => fdR.append("arquivos", a));
-        const resR = await axios.post(`${API}/processos/analisar-pasta-multi`, fdR, { headers: { "x-token": sessao.token } });
+        const resR = await analisarLote(axios, fdR, { headers: { "x-token": sessao.token } }, { base: API, onEspera: sinalLendo });
         const rR = resR.data || {};
         const principaisRaiz = rR.principais || [];
         const anexosRaiz = rR.anexos || [];
@@ -576,8 +591,15 @@ export function Painel({ sessao, onSair }) {
       try {
         const fd1 = new FormData();
         fd1.append("arquivo", arq);
-        const ana = await axios.post(`${API}/processos/analisar`, fd1, { headers: { "x-token": sessao.token } });
+        const ana = await analisarDocumento(axios, fd1, { headers: { "x-token": sessao.token } }, { base: API, onEspera: sinalLendo });
         const dados = ana.data || {};
+        if (dados.ja_criado) {
+          // leitura demorada: o servidor ja concluiu o processo - nao criar de novo
+          ultimoProcessoId = dados.processo_id;
+          feitos++;
+          setProgresso({ feitos, total: arquivos.length, erros });
+          continue;
+        }
         const segue = await checarDup(dados);
         if (!segue) { continue; }
         const fd2 = new FormData();
@@ -802,6 +824,7 @@ export function Painel({ sessao, onSair }) {
                     ? `Enviando... ${progresso.feitos} de ${progresso.total}${progresso.erros ? ` (${progresso.erros} com erro)` : ""}`
                     : "Arraste um processo aqui ou selecione arquivos e pastas do seu computador"}
                 </div>
+                {subindo && msgLendo && <div style={{ fontSize: 12, color: "#f5c26b", marginBottom: 12 }}>{msgLendo}</div>}
                 <div style={{ display: "inline-flex", gap: 10 }}>
                   <label style={{ display: "inline-block", cursor: subindo ? "not-allowed" : "pointer" }}>
                     <span style={{ background: "linear-gradient(135deg, #4d94ff, #8c5aff)", color: "#fff", borderRadius: 9, padding: "9px 18px", fontSize: 12.5, fontFamily: FONTE_CORPO, opacity: subindo ? 0.6 : 1, boxShadow: "0 4px 16px rgba(77,148,255,0.3)" }}>

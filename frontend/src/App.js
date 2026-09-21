@@ -1,6 +1,7 @@
 ﻿import { useState, useEffect } from "react";
 import axios from "axios";
 import { sessaoExpirou } from "./sessaoExpirada";
+import { analisarDocumento, analisarLote, MENSAGEM_LENDO } from "./analisarComEspera";
 import { Painel as PainelCliente } from "./Cliente";
 import { STATUS_CONFIG, formatarDataExtenso, BotaoIatos, IatosChat, subtituloProcesso, SidebarAtos, IconeProcessos, IconeGrupos, IconeAprendizado, DonutStatusCard, TelaLogin, FONTE_CORPO, FONTE_TITULO, FluxoDoDiaCardEscuro, AtividadeRecenteEscura, useBreakpoint } from "./components/Compartilhados";
 
@@ -241,6 +242,8 @@ function AppPainel({ onSair, sessao }) {
   const [upGrupo, setUpGrupo] = useState("");
   const [upSubindo, setUpSubindo] = useState(false);
   const [upProg, setUpProg] = useState({ feitos: 0, total: 0, erros: 0 });
+  const [msgLendo, setMsgLendo] = useState("");
+  const sinalLendo = (on) => setMsgLendo(on ? MENSAGEM_LENDO : "");
   useEffect(() => { axios.get(`${API}/grupos`).then(r => setGrupos(r.data)).catch(() => {}); }, []);
 
 
@@ -279,6 +282,17 @@ function AppPainel({ onSair, sessao }) {
 
   useEffect(() => { carregar(); }, []);
 
+  // Enquanto houver processo sendo lido (pendente_processamento) a lista se atualiza sozinha:
+  // o servidor conclui a leitura em segundo plano e a linha passa de "Processando" para os
+  // dados reais sem ninguem precisar recarregar a pagina.
+  const temPendenteLendo = processos.some(p => p.status === "pendente_processamento");
+  useEffect(() => {
+    if (!temPendenteLendo) return undefined;
+    const t = setInterval(() => { carregar().catch(() => {}); }, 6000);
+    return () => clearInterval(t);
+    /* eslint-disable-next-line */
+  }, [temPendenteLendo]);
+
   async function carregar() {
     const [p, m] = await Promise.all([
       axios.get(`${API}/processos`),
@@ -294,10 +308,18 @@ function AppPainel({ onSair, sessao }) {
     try {
       const form = new FormData();
       form.append("arquivo", arquivo);
-      const res = await axios.post(`${API}/processos/analisar`, form);
-      setDadosAnalise(res.data);
+      const res = await analisarDocumento(axios, form, undefined, { base: API, onEspera: sinalLendo });
+      if (res.data && res.data.ja_criado) {
+        // leitura demorada: o servidor ja concluiu o processo sozinho
+        setModalNovo(false);
+        setArquivoSelecionado(null);
+        carregar();
+        alert("Documento lido e processo criado automaticamente.");
+      } else {
+        setDadosAnalise(res.data);
+      }
     } catch (e) {
-      alert("Erro ao analisar documento.");
+      alert(e && e.motivo ? e.message : "Erro ao analisar documento.");
     }
     setAnalisando(false);
   }
@@ -356,7 +378,7 @@ function AppPainel({ onSair, sessao }) {
     const fdA = new FormData();
     arquivos.forEach(a => fdA.append("arquivos", a));
     fdA.append("codigo_grupo", upGrupo);
-    const res = await axios.post(`${API}/processos/analisar-pasta-multi`, fdA);
+    const res = await analisarLote(axios, fdA, undefined, { base: API, onEspera: sinalLendo });
     const r = res.data || {};
     const principais = r.principais || [];
     const anexosGrupo = (r.anexos || []).map(ax => arquivos[ax.indice]).concat(extras);
@@ -412,7 +434,7 @@ function AppPainel({ onSair, sessao }) {
         const fdR = new FormData();
         raizArquivos.forEach(a => fdR.append("arquivos", a));
         fdR.append("pre_classificacao", "true");
-        const resR = await axios.post(`${API}/processos/analisar-pasta-multi`, fdR);
+        const resR = await analisarLote(axios, fdR, undefined, { base: API, onEspera: sinalLendo });
         const rR = resR.data || {};
         const principaisRaiz = rR.principais || [];
         const anexosRaiz = rR.anexos || [];
@@ -475,8 +497,14 @@ function AppPainel({ onSair, sessao }) {
         const fd1 = new FormData();
         fd1.append("arquivo", arq);
         fd1.append("codigo_grupo", upGrupo);
-        const ana = await axios.post(`${API}/processos/analisar`, fd1);
+        const ana = await analisarDocumento(axios, fd1, undefined, { base: API, onEspera: sinalLendo });
         const dados = ana.data || {};
+        if (dados.ja_criado) {
+          // leitura demorada: o servidor ja concluiu o processo - nao criar de novo
+          feitos++;
+          setUpProg({ feitos, total: arquivos.length, erros });
+          continue;
+        }
         dados.codigo_grupo = upGrupo;
         const segue = await checarDup(dados);
         if (!segue) { continue; }
@@ -1327,6 +1355,7 @@ async function excluirProcesso() {
                       disabled={upSubindo||!upGrupo} onChange={e => processarPastaAdmin(e.target.files)} />
                   </label>
                   {upSubindo && <span style={{ fontSize: 13, color: "#8ec2ff" }}>Enviando {upProg.feitos} de {upProg.total}{upProg.erros ? ` (${upProg.erros} erro)` : ""}...</span>}
+                  {upSubindo && msgLendo && <span style={{ fontSize: 12, color: "#f5c26b" }}>{msgLendo}</span>}
                 </div>
               </div>
               <div style={{ fontSize: 13, color: "#a8b0d8", marginBottom: 12, fontWeight: 500 }}>Processos recentes</div>
@@ -1391,6 +1420,7 @@ async function excluirProcesso() {
                   <div style={{ fontSize: 13, color: "#8a90b8", marginBottom: 12 }}>
                     {analisando ? "Analisando documento..." : "Arraste ou selecione a ata para análise automática"}
                   </div>
+                  {analisando && msgLendo && <div style={{ fontSize: 12, color: "#f5c26b", marginBottom: 12 }}>{msgLendo}</div>}
                   {!analisando && (
                     <label style={{ cursor: "pointer" }}>
                       <span style={{ background: "linear-gradient(135deg, #4d94ff, #8c5aff)", color: "#fff", padding: "8px 20px", borderRadius: 8, fontSize: 13 }}>

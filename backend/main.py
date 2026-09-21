@@ -2452,22 +2452,12 @@ async def checar_duplicidade(empresa: str = "", tipo_ato: str = "", data_ata: st
     usuario = validar_token(x_token, db)
     if not usuario:
         raise HTTPException(status_code=401, detail="Token invalido ou sessao expirada")
-    q = db.query(Processo)
-    if not _tem_acesso_admin(usuario):
-        q = q.filter(Processo.grupo_id == usuario.grupo_id)
-    if excluir_processo_id:
-        # O proprio processo pendente recem-criado (por /processos/analisar
-        # ou /processos/analisar-pasta-multi) ja esta gravado no banco com
-        # os mesmos dados que estamos checando aqui - sem excluir o id dele,
-        # a busca sempre acha a si mesma e retorna falso positivo pra
-        # QUALQUER insercao (bug real, corrigido 04/09/2026).
-        q = q.filter(Processo.id != excluir_processo_id)
-    alvo = (_norm(empresa), _norm(tipo_ato), _norm(data_ata), _norm(hora_ata), _norm(identificador_ato))
-    for p in q.all():
-        atual = (_norm(p.empresa), _norm(p.tipo_ato), _norm(p.data_ata), _norm(p.hora_ata), _norm(p.identificador_ato))
-        if atual == alvo and any(alvo):
-            return {"duplicado": True, "processo_id": p.id, "empresa": p.empresa, "identificador_ato": p.identificador_ato}
-    return {"duplicado": False}
+    # excluir_processo_id: o proprio processo pendente recem-criado (por
+    # /processos/analisar ou /processos/analisar-pasta-multi) ja esta gravado no
+    # banco com os mesmos dados que estamos checando aqui - sem excluir o id
+    # dele, a busca sempre acha a si mesma e retorna falso positivo pra
+    # QUALQUER insercao (bug real, corrigido 04/09/2026).
+    return _procurar_duplicidade(db, usuario, empresa, tipo_ato, data_ata, hora_ata, identificador_ato, excluir_processo_id)
 
 # IMPORTANTE: as duas rotas acima (pendentes, checar-duplicidade) tem que vir
 # ANTES de /processos/{processo_id} - FastAPI casa rotas por ordem de
@@ -3226,7 +3216,7 @@ def _resolver_grupo_id_upload(db, usuario_tok, codigo_grupo):
     return usuario_tok.grupo_id
 
 
-def _criar_processo_pendente(db, usuario_tok, grupo_id, conteudo: bytes, nome_arquivo: str):
+def _criar_processo_pendente(db, usuario_tok, grupo_id, conteudo: bytes, nome_arquivo: str, origem="unico"):
     """Parte 2.1 da correcao do bug de upload silencioso (24/08/2026): cria o
     registro do processo IMEDIATAMENTE ao receber o arquivo, com status
     'pendente_processamento', ANTES de qualquer tentativa de extracao/OCR/IA
@@ -3256,7 +3246,12 @@ def _criar_processo_pendente(db, usuario_tok, grupo_id, conteudo: bytes, nome_ar
             vincular_fluxo_do_dia(db, p, grupo_id)
         except Exception as e:
             print("Erro ao vincular fluxo do dia (processo pendente, ignorado):", str(e)[:200])
-    registrar_evento(db, p, "ata_recebida", "Arquivo recebido, processando...", usuario_tok)
+    # origem="lote": o arquivo veio de um upload de pasta e pode virar so' um anexo (o pendente
+    # e' podado no fim da analise). O resgate usa essa marca (_pendente_e_de_lote) pra NUNCA
+    # transformar um anexo de pasta em processo se a analise do lote for interrompida.
+    registrar_evento(db, p, "ata_recebida",
+                     "Arquivo recebido em lote, processando..." if origem == "lote" else "Arquivo recebido, processando...",
+                     usuario_tok)
     db.commit()
     return p
 
@@ -3355,23 +3350,56 @@ async def analisar_pasta_multi(arquivos: list[UploadFile] = File(...), codigo_gr
         _validar_upload_documento(nome_arq, conteudo)
         pendente_id = None
         if not pre_classificacao:
-            pendente_proc = _criar_processo_pendente(db, usuario, grupo_id, conteudo, nome_arq)
+            pendente_proc = _criar_processo_pendente(db, usuario, grupo_id, conteudo, nome_arq, origem="lote")
             pendente_id = pendente_proc.id
-        try:
-            texto = await asyncio.to_thread(_extrair_texto_bytes, conteudo, nome_arq)
-        except Exception as e:
-            print("Falha inesperada na extracao de texto (processo", pendente_id, "):", str(e)[:300])
-            texto = ""
-        ja_reg_flag = _ja_registrada(_sa_texto_local(texto[:4000]))
-        itens.append({"indice": idx, "nome": nome_arq, "texto": texto, "ja_reg": ja_reg_flag, "conteudo": conteudo, "processo_pendente_id": pendente_id})
+        itens.append({"indice": idx, "nome": nome_arq, "conteudo": conteudo, "processo_pendente_id": pendente_id})
     if not itens:
         raise HTTPException(status_code=400, detail="Nenhum arquivo recebido.")
+
+    # 21/09/2026: extracao/classificacao/analise do lote rodam numa thread (mesmo motivo de
+    # /processos/analisar: o nginx corta o request aos 180s e um PDF que cai em OCR passa
+    # muito disso). Ate ANALISE_ESPERA_SEG a resposta e' a de sempre; depois devolve
+    # {"processando": True, "job_id": ...} e a tela acompanha por
+    # GET /processos/analise-lote/{job_id}. Os processos pendentes ja existem (insert
+    # garantido) e o resgate periodico cobre o que ficar preso.
+    job_id = "LT-" + uuid.uuid4().hex[:12]
+    _lote_registrar(job_id, usuario.id)
+    threading.Thread(target=_job_analisar_lote, args=(job_id, itens, pre_classificacao), daemon=True).start()
+    limite = _time.time() + ANALISE_ESPERA_SEG
+    while _time.time() < limite:
+        with _ANALISES_LOCK:
+            if _LOTES[job_id]["estado"] != "rodando":
+                break
+        await asyncio.sleep(0.25)
+    with _ANALISES_LOCK:
+        estado_lote = _LOTES[job_id]["estado"]
+        resultado_lote = _LOTES[job_id]["resultado"]
+    if estado_lote == "concluido":
+        return resultado_lote
+    if estado_lote == "falhou":
+        raise HTTPException(status_code=500, detail="Falha ao analisar os documentos do lote.")
+    return {"processando": True, "job_id": job_id,
+            "processo_ids": [i["processo_pendente_id"] for i in itens if i["processo_pendente_id"]]}
+
+
+def _executar_analise_lote(db, itens, pre_classificacao):
+    """Corpo da analise do lote (extraido de analisar_pasta_multi em 21/09/2026 SEM mudar a
+    logica): le o texto de cada arquivo, classifica, analisa os principais, poda os
+    pendentes que viraram anexo e aplica os dados extraidos. Roda numa thread."""
+    for it in itens:
+        try:
+            texto = _extrair_texto_bytes(it["conteudo"], it["nome"])
+        except Exception as e:
+            print("Falha inesperada na extracao de texto (processo", it["processo_pendente_id"], "):", str(e)[:300])
+            texto = ""
+        it["texto"] = texto
+        it["ja_reg"] = _ja_registrada(_sa_texto_local(texto[:4000]))
 
     # CLASSIFICACAO POR IA (uma chamada para o lote inteiro) - substitui o antigo
     # sistema de palavras-chave, que quebrava com qualquer variacao de titulo nao
     # prevista. Documentos ja registrados nunca sao candidatos.
     candidatos_ia = [i for i in itens if not i.get("ja_reg")]
-    classificacao_ia = await asyncio.to_thread(_classificar_lote_ia, candidatos_ia)
+    classificacao_ia = _classificar_lote_ia(candidatos_ia)
 
     principais_itens = []
     pendente = False
@@ -3393,8 +3421,8 @@ async def analisar_pasta_multi(arquivos: list[UploadFile] = File(...), codigo_gr
         # criar_processo sinalizar revisao manual do operador.
         leitura_parcial = len((i["texto"] or "").strip()) < 50
         try:
-            dados = (await asyncio.to_thread(analisar_ata_ia, i["texto"])) if i["texto"].strip() else dict(_CAMPOS_VAZIOS_ATA)
-            numero_prot = await asyncio.to_thread(_tentar_extrair_protocolo, i["conteudo"], i["nome"], i["texto"])
+            dados = analisar_ata_ia(i["texto"]) if i["texto"].strip() else dict(_CAMPOS_VAZIOS_ATA)
+            numero_prot = _tentar_extrair_protocolo(i["conteudo"], i["nome"], i["texto"])
         except Exception as e:
             print("Falha inesperada ao analisar item do lote (processo", i["processo_pendente_id"], "):", str(e)[:300])
             dados = dict(_CAMPOS_VAZIOS_ATA)
@@ -3421,7 +3449,7 @@ async def analisar_pasta_multi(arquivos: list[UploadFile] = File(...), codigo_gr
         for i in itens:
             if i["indice"] in indices_principais_final:
                 continue
-            numero_prot_anexo = await asyncio.to_thread(_tentar_extrair_protocolo, i["conteudo"], i["nome"], i["texto"])
+            numero_prot_anexo = _tentar_extrair_protocolo(i["conteudo"], i["nome"], i["texto"])
             if numero_prot_anexo:
                 principais_out[0]["dados"]["numero_protocolo"] = numero_prot_anexo
                 print("Protocolo extraido de anexo do lote:", numero_prot_anexo, "arquivo:", i["nome"])
@@ -3510,12 +3538,340 @@ def _norm(s):
     s = "".join(c for c in unicodedata.normalize("NFD", s) if unicodedata.category(c) != "Mn")
     return " ".join(s.split())
 
+# ============================================================
+# ANALISE DE UPLOAD EM SEGUNDO PLANO (21/09/2026)
+# ============================================================
+# Incidente 21/09/2026 (ata NDB AGOE, PDF de 17 paginas com fonte sem ToUnicode):
+# a leitura (cid-soup detectado -> OCR Gemini com timeout de 40s -> pytesseract
+# pagina a pagina) levou ~6m40s, mas o nginx corta /processos/analisar aos 180s
+# (504). A tela nunca recebia os dados, o processo ficava preso em
+# 'pendente_processamento' e o usuario o excluiu achando que tinha falhado.
+# Agora a leitura roda numa thread. O request espera so' ANALISE_ESPERA_SEG: se
+# terminar nesse prazo o comportamento e' identico ao de antes; se nao, responde
+# na hora "processando" e o PROPRIO SERVIDOR conclui o processo quando a leitura
+# acabar - sem depender da tela continuar aberta. A tela acompanha por
+# GET /processos/{id}/analise. Um resgate periodico cobre o que sobrar preso
+# (aba fechada, reinicio do servico no meio do OCR).
+ANALISE_ESPERA_SEG = 20          # janela sincrona do request (bem abaixo dos 180s do nginx)
+RESGATE_PENDENTE_MIN = 30        # pendente com dados ha mais que isso, sem ninguem concluindo -> conclui
+RESGATE_INTERVALO_SEG = 120      # de quanto em quanto tempo o resgate varre
+_ANALISES_TTL_SEG = 3600
+_MARCA_REPROCESSADO = "[reprocessado automaticamente]"
+_ANALISES = {}                   # processo_id -> estado da leitura (memoria do processo; 1 worker uvicorn)
+_ANALISES_LOCK = threading.Lock()
+
+
+def _analise_registrar(processo_id, usuario_id, servidor_completa=False):
+    agora = _time.time()
+    with _ANALISES_LOCK:
+        for k in [k for k, v in _ANALISES.items()
+                  if v["estado"] in ("concluido", "falhou", "cancelado") and agora - v["ts"] > _ANALISES_TTL_SEG]:
+            del _ANALISES[k]
+        st = {"estado": "rodando", "dados": None, "servidor_completa": servidor_completa,
+              "usuario_id": usuario_id, "ts": agora}
+        _ANALISES[processo_id] = st
+        return st
+
+
+def _analise_assumida_pelo_servidor(processo_id):
+    """True se a leitura deste processo estourou a janela do request e a conclusao
+    ficou por conta do servidor - a tela NAO deve tambem tentar concluir."""
+    with _ANALISES_LOCK:
+        st = _ANALISES.get(processo_id)
+        return bool(st and st["servidor_completa"])
+
+
+_LOTES = {}                      # job_id -> estado da analise de um lote (pasta); mesma trava de _ANALISES
+
+
+def _lote_registrar(job_id, usuario_id):
+    agora = _time.time()
+    with _ANALISES_LOCK:
+        for k in [k for k, v in _LOTES.items() if v["estado"] != "rodando" and agora - v["ts"] > _ANALISES_TTL_SEG]:
+            del _LOTES[k]
+        _LOTES[job_id] = {"estado": "rodando", "resultado": None, "usuario_id": usuario_id, "ts": agora}
+
+
+def _job_analisar_lote(job_id, itens, pre_classificacao):
+    """Roda _executar_analise_lote numa thread com sessao propria. Se quebrar de forma inesperada,
+    os pendentes que sobraram viram falha_processamento + alerta (nunca ficam invisiveis)."""
+    from database import SessionLocal
+    db = SessionLocal()
+    resultado = None
+    estado = "falhou"
+    try:
+        resultado = _executar_analise_lote(db, itens, pre_classificacao)
+        estado = "concluido"
+    except Exception as e:
+        print("   [analise-lote] erro inesperado no job", job_id, ":", str(e)[:300])
+        try:
+            db.rollback()
+            for it in itens:
+                pid = it.get("processo_pendente_id")
+                pf = db.query(Processo).filter(Processo.id == pid).first() if pid else None
+                if pf is not None and pf.status == "pendente_processamento":
+                    _marcar_falha_processamento(db, pf, str(e))
+        except Exception:
+            pass
+    finally:
+        with _ANALISES_LOCK:
+            st = _LOTES.get(job_id)
+            if st is not None:
+                st["estado"] = estado
+                st["resultado"] = resultado
+                st["ts"] = _time.time()
+        db.close()
+
+
+def _pendente_e_de_lote(db, processo_id):
+    """True se o pendente nasceu de um upload de pasta (ver _criar_processo_pendente, origem)."""
+    ev = db.query(Evento).filter(Evento.processo_id == processo_id, Evento.tipo == "ata_recebida").first()
+    return bool(ev and "em lote" in (ev.descricao or ""))
+
+
+def _procurar_duplicidade(db, usuario, empresa, tipo_ato, data_ata, hora_ata, identificador_ato, excluir_processo_id=""):
+    """Mesma regra de GET /processos/checar-duplicidade (extraida em 21/09/2026 pra
+    a conclusao automatica reutilizar). usuario=None -> procura em todos os grupos."""
+    q = db.query(Processo)
+    if usuario is not None and not _tem_acesso_admin(usuario):
+        q = q.filter(Processo.grupo_id == usuario.grupo_id)
+    if excluir_processo_id:
+        q = q.filter(Processo.id != excluir_processo_id)
+    alvo = (_norm(empresa), _norm(tipo_ato), _norm(data_ata), _norm(hora_ata), _norm(identificador_ato))
+    for p in q.all():
+        atual = (_norm(p.empresa), _norm(p.tipo_ato), _norm(p.data_ata), _norm(p.hora_ata), _norm(p.identificador_ato))
+        if atual == alvo and any(alvo):
+            return {"duplicado": True, "processo_id": p.id, "empresa": p.empresa, "identificador_ato": p.identificador_ato}
+    return {"duplicado": False}
+
+
+def _dados_da_linha(p):
+    """Reconstroi o dict de 'dados' da analise a partir do que ja foi gravado no processo."""
+    def _lista(v):
+        try:
+            r = json.loads(v or "[]")
+            return r if isinstance(r, list) else []
+        except Exception:
+            return []
+    return {
+        "empresa": p.empresa or "", "cnpj": p.cnpj or "", "nire": p.nire or "", "uf": p.uf or "",
+        "uf_destino_transferencia": p.uf_destino_transferencia or "", "tipo_sociedade": p.tipo_sociedade or "",
+        "tipo_ato": p.tipo_ato or "", "identificador_ato": p.identificador_ato or "",
+        "data_ata": p.data_ata or "", "hora_ata": p.hora_ata or "", "email_cliente": p.email_cliente or "",
+        "eventos": _lista(p.eventos), "requer_cpl": bool(p.requer_cpl), "checklist": _lista(p.checklist),
+        "observacoes": p.observacoes or "", "leitura_parcial": bool(p.leitura_parcial),
+        "texto_extraido": p.texto_documento_extraido or "", "processo_id": p.id,
+    }
+
+
+def _marcar_falha_processamento(db, p, motivo):
+    """Marca o processo como falha_processamento + alerta (nunca lanca excecao)."""
+    try:
+        p.status = "falha_processamento"
+        p.observacoes = ((p.observacoes or "") + "\nFalha inesperada no processamento: " + str(motivo)[:500]).strip()
+        db.commit()
+        _alertar_falha_processamento(p, str(motivo))
+    except Exception:
+        db.rollback()
+
+
+def _completar_processo_pelo_servidor(db, processo_id, dados, usuario_id):
+    """Conclui sozinho (sem a tela) um processo cuja leitura ja terminou: faz o que
+    POST /processos faria com esses dados. Sem prompt de duplicidade (nao ha
+    ninguem pra responder): suspeita de duplicata vira confirmacao_pendente +
+    nota nas observacoes, nunca bloqueia a insercao."""
+    p = db.query(Processo).filter(Processo.id == processo_id).first()
+    if p is None or p.status != "pendente_processamento":
+        return  # excluido, ou ja concluido por outro caminho
+    usuario = db.query(Usuario).filter(Usuario.id == usuario_id).first() if usuario_id else None
+    try:
+        dup = _procurar_duplicidade(db, usuario, dados.get("empresa"), dados.get("tipo_ato"), dados.get("data_ata"),
+                                    dados.get("hora_ata"), dados.get("identificador_ato"), processo_id)
+    except Exception as e:
+        print("Checagem de duplicidade na conclusao automatica falhou (ignorada):", str(e)[:200])
+        dup = {"duplicado": False}
+    _completar_processo(db, p, dict(dados), usuario, p.grupo_id)
+    if dados.get("duplicado_envelope") or dup.get("duplicado"):
+        ref = dados.get("processo_id_existente") or dup.get("processo_id") or ""
+        p.confirmacao_pendente = True
+        p.observacoes = ((p.observacoes or "") + "\nPossivel duplicidade com o processo " + ref
+                         + " - conferir (concluido automaticamente apos leitura demorada).").strip()
+        db.commit()
+    print("   [analise-bg] processo", processo_id, "concluido automaticamente pelo servidor")
+
+
+def _job_analisar_upload(processo_id, conteudo, nome, usuario_id):
+    """Corpo da leitura (extracao + IA + gravacao). Roda numa thread com sessao propria.
+    Nunca propaga excecao. Se o request ja desistiu de esperar (servidor_completa),
+    conclui o processo ao terminar."""
+    from database import SessionLocal
+    db = SessionLocal()
+    dados = None
+    estado = "falhou"
+    try:
+        erro_leitura = None
+        try:
+            texto = _extrair_texto_bytes(conteudo, nome)
+            dados = analisar_ata_ia(texto) if texto.strip() else dict(_CAMPOS_VAZIOS_ATA)
+            dados["leitura_parcial"] = len((texto or "").strip()) < 50
+            dados["texto_extraido"] = texto
+        except Exception as e:
+            erro_leitura = str(e)
+            dados = dict(_CAMPOS_VAZIOS_ATA)
+            dados["leitura_parcial"] = True
+            dados["texto_extraido"] = ""
+        dados["processo_id"] = processo_id
+
+        p = db.query(Processo).filter(Processo.id == processo_id).first()
+        if p is None:
+            print("   [analise-bg] processo", processo_id, "excluido durante a leitura - resultado descartado")
+            estado = "cancelado"
+            return
+        if erro_leitura is not None:
+            print("Falha inesperada ao processar upload (processo", processo_id, "):", erro_leitura[:300])
+            _marcar_falha_processamento(db, p, erro_leitura)
+            return
+        try:
+            duplicado_de = _aplicar_dados_extraidos(db, p, dados)
+        except Exception as e:
+            db.rollback()
+            if db.query(Processo).filter(Processo.id == processo_id).first() is None:
+                print("   [analise-bg] processo", processo_id, "excluido durante a gravacao - resultado descartado")
+                estado = "cancelado"
+                return
+            print("Erro ao aplicar dados extraidos (processo", processo_id, "):", str(e)[:300])
+            _marcar_falha_processamento(db, db.query(Processo).filter(Processo.id == processo_id).first(), str(e))
+            return
+        if duplicado_de:
+            dados["duplicado_envelope"] = True
+            dados["processo_id_existente"] = duplicado_de.id
+        estado = "concluido"
+    except Exception as e:
+        print("   [analise-bg] erro inesperado no job do processo", processo_id, ":", str(e)[:300])
+    finally:
+        assumido = False
+        with _ANALISES_LOCK:
+            st = _ANALISES.get(processo_id)
+            if st is not None:
+                st["dados"] = dados
+                st["ts"] = _time.time()
+                assumido = bool(st["servidor_completa"]) and estado == "concluido"
+                st["estado"] = "concluindo" if assumido else estado
+        if assumido:
+            estado_final = "concluido"
+            try:
+                _completar_processo_pelo_servidor(db, processo_id, dados, usuario_id)
+            except Exception as e:
+                estado_final = "falhou"
+                print("   [analise-bg] falha ao concluir o processo", processo_id, ":", str(e)[:300])
+                try:
+                    db.rollback()
+                    pf = db.query(Processo).filter(Processo.id == processo_id).first()
+                    if pf is not None:
+                        _marcar_falha_processamento(db, pf, str(e))
+                except Exception:
+                    pass
+            with _ANALISES_LOCK:
+                if st is not None:
+                    st["estado"] = estado_final
+        db.close()
+
+
+def _iniciar_job_analise(processo_id, conteudo, nome, usuario_id, servidor_completa=False):
+    _analise_registrar(processo_id, usuario_id, servidor_completa=servidor_completa)
+    threading.Thread(target=_job_analisar_upload, args=(processo_id, conteudo, nome, usuario_id), daemon=True).start()
+
+
+def _resgatar_pendentes_esquecidos(idade_min=None, so_vazios=False):
+    """Rede de seguranca: pendente_processamento que ninguem esta concluindo (aba fechada,
+    servico reiniciado no meio da leitura). Com dados -> conclui; vazio -> retoma a
+    leitura a partir do arquivo em uploads/ (uma unica vez); se ja retomou e nao
+    saiu nada -> falha_processamento + alerta. Devolve quantos tratou."""
+    from database import SessionLocal
+    if idade_min is None:
+        idade_min = RESGATE_PENDENTE_MIN
+    db = SessionLocal()
+    tratados = 0
+    try:
+        limite = datetime.now() - timedelta(minutes=idade_min)
+        for p in db.query(Processo).filter(Processo.status == "pendente_processamento", Processo.criado_em < limite).all():
+            pid = p.id
+            with _ANALISES_LOCK:
+                st = _ANALISES.get(pid)
+                ativo = bool(st and st["estado"] in ("rodando", "concluindo"))
+            if ativo:
+                continue
+            tem_dados = bool((p.empresa or "").strip() or (p.tipo_ato or "").strip() or (p.data_ata or "").strip())
+            try:
+                if tem_dados:
+                    if so_vazios:
+                        continue
+                    _completar_processo_pelo_servidor(db, pid, _dados_da_linha(p), None)
+                    tratados += 1
+                    continue
+                if _pendente_e_de_lote(db, pid):
+                    # veio de um upload de pasta e pode ser so' um anexo: retomar isolado
+                    # criaria um processo indevido. Fica visivel como falha, com alerta.
+                    _marcar_falha_processamento(db, p, "analise do lote interrompida (servico reiniciado?) - reenviar o arquivo")
+                    tratados += 1
+                    continue
+                if _MARCA_REPROCESSADO in (p.observacoes or ""):
+                    _marcar_falha_processamento(db, p, "leitura nao produziu dados mesmo apos ser retomada automaticamente")
+                    tratados += 1
+                    continue
+                caminho = os.path.join(UPLOADS_DIR, p.arquivo_ata or "")
+                if not p.arquivo_ata or not os.path.exists(caminho):
+                    _marcar_falha_processamento(db, p, "arquivo do upload nao encontrado para retomar a leitura")
+                    tratados += 1
+                    continue
+                with open(caminho, "rb") as f:
+                    conteudo = f.read()
+                nome = p.arquivo_ata_nome_exibicao or p.arquivo_ata
+                p.observacoes = ((p.observacoes or "") + "\n" + _MARCA_REPROCESSADO).strip()
+                db.commit()
+                _iniciar_job_analise(pid, conteudo, nome, None, servidor_completa=True)
+                print("   [resgate] retomando a leitura do processo", pid)
+                tratados += 1
+            except Exception as e:
+                print("   [resgate] erro ao tratar o processo", pid, ":", str(e)[:300])
+                db.rollback()
+    finally:
+        db.close()
+    return tratados
+
+
+def _loop_resgate():
+    while True:
+        _time.sleep(RESGATE_INTERVALO_SEG)
+        try:
+            _resgatar_pendentes_esquecidos()
+        except Exception as e:
+            print("   [resgate] falha na varredura:", str(e)[:300])
+
+
+@app.on_event("startup")
+def _iniciar_resgate_de_pendentes():
+    # Logo na subida nenhum job esta rodando: pendentes VAZIOS sao leituras que o
+    # reinicio interrompeu, retoma ja (idade 0). Os que ja tem dados esperam a varredura
+    # normal, porque a tela pode estar so' aguardando o usuario confirmar.
+    try:
+        _resgatar_pendentes_esquecidos(idade_min=0, so_vazios=True)
+    except Exception as e:
+        print("   [resgate] falha na varredura inicial:", str(e)[:300])
+    threading.Thread(target=_loop_resgate, daemon=True).start()
+
+
 @app.post("/processos/analisar")
 async def analisar_documento(arquivo: UploadFile = File(...), codigo_grupo: str = Form(None), x_token: str = Header(None), db: Session = Depends(get_db)):
     """Parte 2.1/2.2/3 (24/08/2026): cria o processo pendente ANTES de
     qualquer extracao/IA (insert garantido), e so depois tenta ler o
     documento - qualquer falha inesperada marca o processo como
-    'falha_processamento' em vez de derrubar a resposta com um 500."""
+    'falha_processamento' em vez de derrubar a resposta com um 500.
+
+    21/09/2026: a leitura roda numa thread (ver bloco ANALISE DE UPLOAD EM
+    SEGUNDO PLANO). Ate ANALISE_ESPERA_SEG segundos a resposta e' a mesma de
+    sempre (dados extraidos); depois disso devolve {"processando": True,
+    "processo_id": ...} e o servidor conclui o processo sozinho."""
     if not x_token:
         raise HTTPException(status_code=401, detail="Token necessario")
     usuario = validar_token(x_token, db)
@@ -3526,31 +3882,88 @@ async def analisar_documento(arquivo: UploadFile = File(...), codigo_grupo: str 
     nome = arquivo.filename or ""
     grupo_id = _resolver_grupo_id_upload(db, usuario, codigo_grupo)
     p = _criar_processo_pendente(db, usuario, grupo_id, conteudo, nome)
+    processo_id = p.id
 
-    try:
-        texto = await asyncio.to_thread(_extrair_texto_bytes, conteudo, nome)
-        dados = (await asyncio.to_thread(analisar_ata_ia, texto)) if texto.strip() else dict(_CAMPOS_VAZIOS_ATA)
-        dados["leitura_parcial"] = len((texto or "").strip()) < 50
-        dados["texto_extraido"] = texto
-        duplicado_de = _aplicar_dados_extraidos(db, p, dados)
-        if duplicado_de:
-            dados["duplicado_envelope"] = True
-            dados["processo_id_existente"] = duplicado_de.id
-    except Exception as e:
-        print("Falha inesperada ao processar upload (processo", p.id, "):", str(e)[:300])
-        try:
-            p.status = "falha_processamento"
-            p.observacoes = ((p.observacoes or "") + "\nFalha inesperada no processamento: " + str(e)[:500]).strip()
-            db.commit()
-            _alertar_falha_processamento(p, str(e))
-        except Exception:
-            db.rollback()
-        dados = dict(_CAMPOS_VAZIOS_ATA)
-        dados["leitura_parcial"] = True
-        dados["texto_extraido"] = ""
+    _iniciar_job_analise(processo_id, conteudo, nome, usuario.id)
+    limite = _time.time() + ANALISE_ESPERA_SEG
+    while _time.time() < limite:
+        with _ANALISES_LOCK:
+            if _ANALISES[processo_id]["estado"] != "rodando":
+                break
+        await asyncio.sleep(0.25)
 
-    dados["processo_id"] = p.id
+    with _ANALISES_LOCK:
+        st = _ANALISES[processo_id]
+        if st["estado"] == "rodando":
+            st["servidor_completa"] = True   # a partir daqui o servidor conclui; a tela so' acompanha
+            demorou = True
+            dados = None
+        else:
+            demorou = False
+            dados = dict(st["dados"] or _CAMPOS_VAZIOS_ATA)
+    if demorou:
+        resp = dict(_CAMPOS_VAZIOS_ATA)
+        resp.update({"processando": True, "processo_id": processo_id, "leitura_parcial": False, "texto_extraido": ""})
+        return resp
+    dados["processo_id"] = processo_id
     return dados
+
+
+@app.get("/processos/analise-lote/{job_id}")
+async def status_analise_lote(job_id: str, x_token: str = Header(None), db: Session = Depends(get_db)):
+    """Andamento da analise de um lote (pasta) que passou da janela sincrona.
+    estado: 'lendo' | 'concluido' (resultado = mesma estrutura de analisar-pasta-multi) |
+    'falhou' | 'desconhecido' (servico reiniciou: os pendentes ficam na lista e o resgate cuida)."""
+    if not x_token:
+        raise HTTPException(status_code=401, detail="Token necessario")
+    usuario = validar_token(x_token, db)
+    if not usuario:
+        raise HTTPException(status_code=401, detail="Token invalido ou sessao expirada")
+    with _ANALISES_LOCK:
+        st = _LOTES.get(job_id)
+        snap = dict(st) if st else None
+    if snap is None:
+        return {"estado": "desconhecido"}
+    if snap["usuario_id"] != usuario.id and not _tem_acesso_admin(usuario):
+        raise HTTPException(status_code=403, detail="Sem permissao para este lote")
+    if snap["estado"] == "rodando":
+        return {"estado": "lendo"}
+    if snap["estado"] == "concluido":
+        return {"estado": "concluido", "resultado": snap["resultado"]}
+    return {"estado": "falhou"}
+
+
+@app.get("/processos/{processo_id}/analise")
+async def status_analise_upload(processo_id: str, x_token: str = Header(None), db: Session = Depends(get_db)):
+    """Andamento da leitura de um upload que passou da janela sincrona.
+    estado: 'lendo' | 'concluido' (ja_criado=True: o servidor concluiu o processo) |
+    'falhou' (processo marcado falha_processamento, operador ja foi alertado) |
+    'cancelado' (processo excluido durante a leitura)."""
+    if not x_token:
+        raise HTTPException(status_code=401, detail="Token necessario")
+    usuario = validar_token(x_token, db)
+    if not usuario:
+        raise HTTPException(status_code=401, detail="Token invalido ou sessao expirada")
+    p = db.query(Processo).filter(Processo.id == processo_id).first()
+    if p is None:
+        return {"estado": "cancelado"}
+    if not _tem_acesso_admin(usuario) and p.grupo_id != usuario.grupo_id:
+        raise HTTPException(status_code=403, detail="Sem permissao para este processo")
+    with _ANALISES_LOCK:
+        st = _ANALISES.get(processo_id)
+        snap = dict(st) if st else None
+    if snap is not None:
+        if snap["estado"] in ("rodando", "concluindo"):
+            return {"estado": "lendo"}
+        if snap["estado"] == "concluido":
+            return {"estado": "concluido", "ja_criado": bool(snap["servidor_completa"]), "dados": snap["dados"] or _dados_da_linha(p)}
+        return {"estado": snap["estado"]}
+    # sem registro (servico reiniciou): decide pelo que esta gravado
+    if p.status == "pendente_processamento":
+        return {"estado": "lendo"}
+    if p.status == "falha_processamento":
+        return {"estado": "falhou"}
+    return {"estado": "concluido", "ja_criado": True, "dados": _dados_da_linha(p)}
 
 @app.post("/processos")
 async def criar_processo(
@@ -3567,20 +3980,6 @@ async def criar_processo(
     if not usuario_tok:
         raise HTTPException(status_code=401, detail="Token invalido ou sessao expirada")
 
-    obrigatorios = {
-        "empresa": (info.get("empresa") or "").strip(),
-        "tipo_ato": (info.get("tipo_ato") or "").strip(),
-        "data_ata": (info.get("data_ata") or "").strip(),
-    }
-    faltando = [campo for campo, valor in obrigatorios.items() if not valor]
-    # URGENTE - NUNCA bloquear a insercao do processo por falta de campo extraido.
-    # Sempre insere o processo, marca para revisao manual, e avisa o administrador.
-
-    cnpj_norm = normalizar_cnpj(info.get("cnpj") or "")
-    if cnpj_norm and not validar_cnpj(cnpj_norm):
-        faltando.append("cnpj (digito verificador invalido)")
-    cnpj_final = formatar_cnpj(cnpj_norm) if cnpj_norm else ""
-
     grupo_id = _resolver_grupo_id_upload(db, usuario_tok, info.get("codigo_grupo"))
 
     # Parte 2.1 (24/08/2026): se ja existe um processo pendente (criado no
@@ -3596,6 +3995,12 @@ async def criar_processo(
     p = db.query(Processo).filter(Processo.id == processo_id_pendente).first() if processo_id_pendente else None
     if p and not _tem_acesso_admin(usuario_tok) and p.grupo_id != usuario_tok.grupo_id:
         raise HTTPException(status_code=403, detail="Sem permissao para este processo")
+    if p and _analise_assumida_pelo_servidor(p.id):
+        # 21/09/2026: a leitura passou da janela do request e o SERVIDOR conclui este
+        # processo sozinho (ver _job_analisar_upload). Uma tela antiga (aba aberta
+        # de antes do deploy) que nao entende "processando" e tenta concluir aqui
+        # sobrescreveria com campos vazios e duplicaria e-mails/alertas.
+        return {"id": p.id, "mensagem": "Processo em leitura - sera concluido automaticamente", "processando": True}
     if not p:
         processo_id = f"MN-{datetime.now().strftime('%Y%m%d%H%M%S')}-{str(uuid.uuid4())[:4].upper()}"
         p = Processo(id=processo_id, empresa="", cnpj="", tipo_ato="")
@@ -3612,6 +4017,32 @@ async def criar_processo(
             f.write(conteudo_arquivo)
         p.arquivo_ata = nome_arquivo
         p.arquivo_ata_nome_exibicao = aplicar_nomenclatura_junta(arquivo.filename)
+
+    _completar_processo(db, p, info, usuario_tok, grupo_id)
+    return {"id": processo_id, "mensagem": "Processo criado com sucesso"}
+
+
+def _completar_processo(db, p, info, usuario_tok, grupo_id):
+    """Aplica os dados (info) num processo - novo ou o pendente ja criado no
+    upload -, marca como 'aberto' e dispara o enriquecimento pos-criacao em
+    background. Extraido de criar_processo em 21/09/2026 SEM mudar
+    comportamento, pra o servidor poder concluir sozinho um processo cuja
+    leitura demorou demais pra tela esperar (ver _job_analisar_upload).
+    usuario_tok pode ser None (conclusao automatica sem usuario logado).
+    Devolve a lista de campos obrigatorios que ficaram faltando."""
+    obrigatorios = {
+        "empresa": (info.get("empresa") or "").strip(),
+        "tipo_ato": (info.get("tipo_ato") or "").strip(),
+        "data_ata": (info.get("data_ata") or "").strip(),
+    }
+    faltando = [campo for campo, valor in obrigatorios.items() if not valor]
+    # URGENTE - NUNCA bloquear a insercao do processo por falta de campo extraido.
+    # Sempre insere o processo, marca para revisao manual, e avisa o administrador.
+
+    cnpj_norm = normalizar_cnpj(info.get("cnpj") or "")
+    if cnpj_norm and not validar_cnpj(cnpj_norm):
+        faltando.append("cnpj (digito verificador invalido)")
+    cnpj_final = formatar_cnpj(cnpj_norm) if cnpj_norm else ""
 
     p.empresa = (info.get("empresa", "") or "").upper()
     p.cnpj = cnpj_final
@@ -3663,11 +4094,11 @@ async def criar_processo(
     # mas ainda dava join() e por isso bloqueava do mesmo jeito).
     threading.Thread(
         target=_pos_criacao_processo_thread,
-        args=(processo_id, faltando, bool(p.leitura_parcial), usuario_tok.id),
+        args=(p.id, faltando, bool(p.leitura_parcial), usuario_tok.id if usuario_tok else None),
         daemon=True,
     ).start()
 
-    return {"id": processo_id, "mensagem": "Processo criado com sucesso"}
+    return faltando
 
 
 def _pos_criacao_processo_thread(processo_id, faltando, leitura_parcial, usuario_id):

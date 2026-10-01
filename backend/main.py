@@ -4459,8 +4459,8 @@ def excluir_processo(processo_id: str, request: Request = None, x_token: str = H
     if not x_token:
         raise HTTPException(status_code=401, detail="Token necessario")
     usuario = validar_token(x_token, db)
-    if not usuario or not usuario.is_admin:
-        raise HTTPException(status_code=403, detail="Apenas administrador pode excluir processos")
+    # 01/10/2026: operadores (David, Joao) tambem podem excluir processo - pedido do Diogo.
+    requer_acesso_admin(usuario)
     p = db.query(Processo).filter(Processo.id == processo_id).first()
     if not p:
         raise HTTPException(status_code=404, detail="Processo nao encontrado")

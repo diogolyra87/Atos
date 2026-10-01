@@ -139,6 +139,27 @@ class TestOperadorMovimentaProcesso(unittest.TestCase):
         resp_del = client.delete(f"/processos/{p.id}", headers={"x-token": self.admin.token_puro})
         self.assertEqual(resp_del.status_code, 200)
 
+    def test_operador_exclui_processo_e_fica_em_audit_log(self):
+        # 01/10/2026: exclusao liberada pra operador (antes era so' admin)
+        p = _criar_processo(self.db, grupo_id="grupo-cliente-del")
+        pid = p.id
+        resp = client.delete(f"/processos/{pid}", headers={"x-token": self.operador.token_puro})
+        self.assertEqual(resp.status_code, 200)
+
+        log = (
+            self.db.query(AuditLog)
+            .filter(AuditLog.processo_id == pid, AuditLog.acao == "excluir")
+            .first()
+        )
+        self.assertIsNotNone(log)
+        self.assertEqual(log.usuario_nome, "David Rangel")
+        self.assertEqual(log.usuario_papel, "operador")
+
+    def test_cliente_recebe_403_ao_excluir_processo(self):
+        p = _criar_processo(self.db, grupo_id=self.cliente.grupo_id)
+        resp = client.delete(f"/processos/{p.id}", headers={"x-token": self.cliente.token_puro})
+        self.assertEqual(resp.status_code, 403)
+
     def test_cliente_nao_movimenta_processo_de_outro_grupo(self):
         p = _criar_processo(self.db, grupo_id="grupo-cliente-outro")
         resp = client.post(
@@ -159,11 +180,6 @@ class TestOperadorBloqueadoEmConfiguracao(unittest.TestCase):
 
     def test_operador_recebe_403_em_aprendizado_regras(self):
         resp = client.get("/aprendizado/regras", headers={"x-token": self.operador.token_puro})
-        self.assertEqual(resp.status_code, 403)
-
-    def test_operador_recebe_403_ao_excluir_processo(self):
-        p = _criar_processo(self.db)
-        resp = client.delete(f"/processos/{p.id}", headers={"x-token": self.operador.token_puro})
         self.assertEqual(resp.status_code, 403)
 
     def test_operador_recebe_403_ao_criar_outro_operador(self):

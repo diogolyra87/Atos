@@ -264,6 +264,10 @@ def _tem_acesso_admin(usuario):
     return bool(usuario and (usuario.is_admin or getattr(usuario, "papel", None) == "operador"))
 
 
+# Operadores (por login) que tambem podem excluir processo (01/10/2026).
+OPERADORES_PODEM_EXCLUIR = {"david", "joao"}
+
+
 def requer_acesso_admin(usuario):
     """Levanta 403 se o usuario nao for admin nem operador."""
     if not _tem_acesso_admin(usuario):
@@ -4459,8 +4463,9 @@ def excluir_processo(processo_id: str, request: Request = None, x_token: str = H
     if not x_token:
         raise HTTPException(status_code=401, detail="Token necessario")
     usuario = validar_token(x_token, db)
-    # 01/10/2026: operadores (David, Joao) tambem podem excluir processo - pedido do Diogo.
-    requer_acesso_admin(usuario)
+    # 01/10/2026: alem do admin, so' os operadores David e Joao podem excluir processo - pedido do Diogo.
+    if not usuario or not (usuario.is_admin or (getattr(usuario, "papel", None) == "operador" and usuario.login in OPERADORES_PODEM_EXCLUIR)):
+        raise HTTPException(status_code=403, detail="Sem permissao para excluir processos")
     p = db.query(Processo).filter(Processo.id == processo_id).first()
     if not p:
         raise HTTPException(status_code=404, detail="Processo nao encontrado")

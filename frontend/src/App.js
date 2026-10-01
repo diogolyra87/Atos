@@ -1016,8 +1016,9 @@ async function excluirProcesso() {
               CNPJ {p.cnpj} · NIRE {p.nire} · {p.id}
             </div>
           </div>
-          <button style={s.btnSecondary} onClick={() => setProcessoSelecionado(null)}>← Voltar</button>{" "}
-          <button style={{ background: "rgba(255,77,77,0.15)", color: "#ff9494", border: "1px solid rgba(255,77,77,0.3)", borderRadius: 8, padding: "8px 16px", fontSize: 13, cursor: "pointer", marginLeft: 8, fontFamily: FONTE_CORPO }} onClick={excluirProcesso}>Excluir Processo</button>
+          <button style={s.btnSecondary} onClick={() => setProcessoSelecionado(null)}>← Voltar</button> {(!ehOperador || ["david", "joao"].includes(sessao.login)) && (
+            <button style={{ background: "rgba(255,77,77,0.15)", color: "#ff9494", border: "1px solid rgba(255,77,77,0.3)", borderRadius: 8, padding: "8px 16px", fontSize: 13, cursor: "pointer", marginLeft: 8, fontFamily: FONTE_CORPO }} onClick={excluirProcesso}>Excluir Processo</button>
+          )}
         </div>
 
         {p.requer_cpl && (

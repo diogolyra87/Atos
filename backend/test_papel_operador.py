@@ -139,11 +139,17 @@ class TestOperadorMovimentaProcesso(unittest.TestCase):
         resp_del = client.delete(f"/processos/{p.id}", headers={"x-token": self.admin.token_puro})
         self.assertEqual(resp_del.status_code, 200)
 
-    def test_operador_exclui_processo_e_fica_em_audit_log(self):
-        # 01/10/2026: exclusao liberada pra operador (antes era so' admin)
+    def test_operadores_david_e_joao_excluem_processo_e_fica_em_audit_log(self):
+        # 01/10/2026: exclusao liberada so' pros operadores David e Joao (alem do admin)
+        david = _criar_usuario(self.db, "david", "operador", nome="David Rangel")
+        joao = _criar_usuario(self.db, "joao", "operador", nome="Joao Victor")
+        p_joao = _criar_processo(self.db, grupo_id="grupo-cliente-del")
+        resp = client.delete(f"/processos/{p_joao.id}", headers={"x-token": joao.token_puro})
+        self.assertEqual(resp.status_code, 200)
+
         p = _criar_processo(self.db, grupo_id="grupo-cliente-del")
         pid = p.id
-        resp = client.delete(f"/processos/{pid}", headers={"x-token": self.operador.token_puro})
+        resp = client.delete(f"/processos/{pid}", headers={"x-token": david.token_puro})
         self.assertEqual(resp.status_code, 200)
 
         log = (
@@ -154,6 +160,11 @@ class TestOperadorMovimentaProcesso(unittest.TestCase):
         self.assertIsNotNone(log)
         self.assertEqual(log.usuario_nome, "David Rangel")
         self.assertEqual(log.usuario_papel, "operador")
+
+    def test_outro_operador_recebe_403_ao_excluir_processo(self):
+        p = _criar_processo(self.db)
+        resp = client.delete(f"/processos/{p.id}", headers={"x-token": self.operador.token_puro})
+        self.assertEqual(resp.status_code, 403)
 
     def test_cliente_recebe_403_ao_excluir_processo(self):
         p = _criar_processo(self.db, grupo_id=self.cliente.grupo_id)

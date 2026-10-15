@@ -141,6 +141,7 @@ def emitir_guia_bancaria(processo, usuario, senha, destino_path, headless=True, 
         navegador = p.chromium.launch(headless=headless)
         ctx = navegador.new_context(accept_downloads=True)
         pagina = ctx.new_page()
+        guia_gerada_flag = False
         try:
             _login(pagina, usuario, senha)
             print("   [GB] checkpoint: logado")
@@ -207,6 +208,20 @@ def emitir_guia_bancaria(processo, usuario, senha, destino_path, headless=True, 
             print("   [GB] checkpoint: CNPJ pesquisado")
             _shot(pagina, "cnpj_pesquisado")
 
+            # ADICIONADO 27/08/2026: ate aqui o codigo nunca checava se a
+            # busca de fato encontrou a empresa - clicava em "Confirmar"
+            # mesmo com o formulario incompleto, e o erro real ("Empresa
+            # nao encontrada") so aparecia disfarcado, varias etapas
+            # depois, como "Botao 'Gerar Boleto' nao encontrado" (a pagina
+            # nunca saia da tela de busca). Falha rapido e com motivo
+            # correto assim que a busca falha.
+            if pagina.query_selector("text=Empresa n\u00e3o encontrada"):
+                _shot(pagina, "FALHA_empresa_nao_encontrada")
+                if debug_dir:
+                    with open(os.path.join(debug_dir, "pagina_empresa_nao_encontrada.html"), "w", encoding="utf-8") as f:
+                        f.write(pagina.content())
+                return {"sucesso": False, "caminho_pdf": None, "motivo_falha": "JUCERJA nao encontrou a empresa para o CNPJ informado (" + (processo.cnpj or "") + ")"}
+
             # Tipo de Protocolo = Requerimento Exclusivamente Digital (decisao
             # de Diogo, 18/08/2026) - selector ainda nao confirmado.
             radio_digital = pagina.query_selector("text=Requerimento Exclusivamente Digital")
@@ -228,7 +243,10 @@ def emitir_guia_bancaria(processo, usuario, senha, destino_path, headless=True, 
                 _shot(pagina, "FALHA_botao_confirmar_nao_encontrado")
                 return {"sucesso": False, "caminho_pdf": None, "motivo_falha": "Botao 'Confirmar' nao encontrado (selector nao confirmado)"}
             botao_gerar.click()
-            pagina.wait_for_timeout(3000)
+            try:
+                pagina.wait_for_load_state("networkidle", timeout=20000)
+            except Exception:
+                pass
             print("   [GB] checkpoint: Confirmar clicado, url:", pagina.url)
             _shot(pagina, "confirmar_clicado")
 
@@ -238,12 +256,28 @@ def emitir_guia_bancaria(processo, usuario, senha, destino_path, headless=True, 
             # rodape - esse clique estava faltando, por isso a busca por
             # "Imprimir Guia Bancaria" sempre falhava (pagina nunca saia da
             # tela de confirmacao).
-            botao_gerar_boleto_confirmacao = pagina.query_selector("button:has-text('Gerar Boleto')")
+            # CORRIGIDO 27/08/2026: query_selector imediato apos wait fixo de
+            # 3s falhava em headless (mesma classe do bug do checkbox,
+            # corrigido em 25/08 mas nao aplicado aqui) - troca por
+            # wait_for_selector com timeout real, e wait_for_load_state apos
+            # o clique em "Confirmar" em vez de espera fixa.
+            try:
+                botao_gerar_boleto_confirmacao = pagina.wait_for_selector("button:has-text('Gerar Boleto')", timeout=15000)
+            except Exception:
+                botao_gerar_boleto_confirmacao = None
             if not botao_gerar_boleto_confirmacao:
                 _shot(pagina, "FALHA_botao_gerar_boleto_confirmacao_nao_encontrado")
+                print("   [GB] DEBUG url na falha:", pagina.url)
+                if debug_dir:
+                    with open(os.path.join(debug_dir, "pagina_sem_botao_gerar_boleto_confirmacao.html"), "w", encoding="utf-8") as f:
+                        f.write(pagina.content())
                 return {"sucesso": False, "caminho_pdf": None, "motivo_falha": "Botao 'Gerar Boleto' (tela de confirmacao) nao encontrado"}
             botao_gerar_boleto_confirmacao.click()
-            pagina.wait_for_timeout(3000)
+            guia_gerada_flag = True
+            try:
+                pagina.wait_for_load_state("networkidle", timeout=20000)
+            except Exception:
+                pass
             print("   [GB] checkpoint: Gerar Boleto (confirmacao) clicado, url:", pagina.url)
             _shot(pagina, "gerar_boleto_confirmacao_clicado")
 
@@ -253,13 +287,16 @@ def emitir_guia_bancaria(processo, usuario, senha, destino_path, headless=True, 
             # antes do botao "Imprimir Guia Bancaria" ficar habilitado -
             # sem isso o botao fica visivel mas nao reage ao clique
             # (por isso o clique anterior sempre estourava timeout).
-            checkbox_input = pagina.query_selector("input[type=checkbox]")
+            try:
+                checkbox_input = pagina.wait_for_selector("input[name='aceite']", timeout=15000)
+            except Exception:
+                checkbox_input = None
             if not checkbox_input:
                 _shot(pagina, "FALHA_checkbox_ciente_nao_encontrado")
                 if debug_dir:
                     with open(os.path.join(debug_dir, "pagina_sem_checkbox.html"), "w", encoding="utf-8") as f:
                         f.write(pagina.content())
-                return {"sucesso": False, "caminho_pdf": None, "motivo_falha": "Checkbox 'Estou ciente das orientacoes de pagamento' nao encontrado"}
+                return {"sucesso": False, "caminho_pdf": None, "guia_gerada": guia_gerada_flag, "motivo_falha": "Checkbox 'Estou ciente das orientacoes de pagamento' nao encontrado"}
             # DESCOBERTO 24/08/2026 (execucao real): o <input type=checkbox>
             # real fica fora do viewport (checkbox custom-estilizado, input
             # nativo escondido) - clique fisico (mesmo com force=True) falha
@@ -285,13 +322,15 @@ def emitir_guia_bancaria(processo, usuario, senha, destino_path, headless=True, 
                 with open(os.path.join(debug_dir, "pagina_checkbox_nao_marcado.html"), "w", encoding="utf-8") as f:
                     f.write(pagina.content())
 
-            botao_imprimir = pagina.query_selector("button:has-text('Imprimir Guia Bancária'), a:has-text('Imprimir Guia Bancária')")
+            # CORRIGIDO 08/10/2026: JUCERJA renomeou o botao para "Imprimir Boleto
+            # Bancario" (id/href inalterados) - busca pelo id primeiro.
+            botao_imprimir = pagina.query_selector("#imprimirGuiaHref, a:has-text('Imprimir Boleto'), a:has-text('Imprimir Guia'), button:has-text('Imprimir Boleto'), button:has-text('Imprimir Guia')")
             if not botao_imprimir:
                 _shot(pagina, "FALHA_botao_imprimir_nao_encontrado")
                 if debug_dir:
                     with open(os.path.join(debug_dir, "pagina_sem_botao_imprimir.html"), "w", encoding="utf-8") as f:
                         f.write(pagina.content())
-                return {"sucesso": False, "caminho_pdf": None, "motivo_falha": "Botao 'Imprimir Guia Bancária' nao encontrado apos gerar (selector nao confirmado, ou geracao falhou)"}
+                return {"sucesso": False, "caminho_pdf": None, "guia_gerada": True, "motivo_falha": "Botao 'Imprimir Boleto/Guia Bancaria' nao encontrado apos gerar (guia JA FOI GERADA na JUCERJA - baixar manualmente)"}
             if debug_dir:
                 try:
                     outer_html = botao_imprimir.evaluate("el => el.outerHTML")
@@ -314,17 +353,24 @@ def emitir_guia_bancaria(processo, usuario, senha, destino_path, headless=True, 
             href = botao_imprimir.get_attribute("href")
             if href:
                 url_completa = href if href.startswith("http") else ("https://www.jucerja.rj.gov.br" + href)
+                # CORRIGIDO 08/10/2026: a JUCERJA passou a devolver o PDF da
+                # guia como download direto nessa URL (goto levanta "Download
+                # is starting") - captura o download em vez de renderizar a
+                # pagina com pagina.pdf().
                 try:
-                    pagina.goto(url_completa, wait_until="networkidle", timeout=20000)
-                    pagina.wait_for_timeout(1000)
-                    _shot(pagina, "pagina_impressao_carregada")
-                    pagina.pdf(path=destino_path, format="A4", print_background=True)
+                    with pagina.expect_download(timeout=30000) as dl_info:
+                        try:
+                            pagina.goto(url_completa, timeout=30000)
+                        except Exception as e_goto:
+                            if "Download is starting" not in str(e_goto):
+                                raise
+                    dl_info.value.save_as(destino_path)
                 except Exception as e:
                     _shot(pagina, "FALHA_download_guia")
                     if debug_dir:
                         with open(os.path.join(debug_dir, "pagina_falha_download.html"), "w", encoding="utf-8") as f:
                             f.write(pagina.content())
-                    return {"sucesso": False, "caminho_pdf": None, "motivo_falha": "Erro ao gerar PDF da guia via pagina.pdf() (" + url_completa + "): " + str(e)[:200]}
+                    return {"sucesso": False, "caminho_pdf": None, "guia_gerada": guia_gerada_flag, "motivo_falha": "Erro ao baixar PDF da guia (" + url_completa + "): " + str(e)[:200]}
             else:
                 paginas_antes = len(ctx.pages)
                 try:
@@ -340,11 +386,11 @@ def emitir_guia_bancaria(processo, usuario, senha, destino_path, headless=True, 
                     if len(ctx.pages) > paginas_antes:
                         nova_pagina = ctx.pages[-1]
                         _shot(nova_pagina, "nova_aba_apos_imprimir")
-                        return {"sucesso": False, "caminho_pdf": None, "motivo_falha": "Clique em 'Imprimir Guia Bancaria' abriu nova aba (url: " + nova_pagina.url[:150] + ") em vez de baixar na mesma pagina - ajuste necessario"}
-                    return {"sucesso": False, "caminho_pdf": None, "motivo_falha": "Erro ao baixar PDF da guia: " + str(e)[:200]}
+                        return {"sucesso": False, "caminho_pdf": None, "guia_gerada": guia_gerada_flag, "motivo_falha": "Clique em 'Imprimir Guia Bancaria' abriu nova aba (url: " + nova_pagina.url[:150] + ") em vez de baixar na mesma pagina - ajuste necessario"}
+                    return {"sucesso": False, "caminho_pdf": None, "guia_gerada": guia_gerada_flag, "motivo_falha": "Erro ao baixar PDF da guia: " + str(e)[:200]}
 
             if not os.path.exists(destino_path) or os.path.getsize(destino_path) == 0:
-                return {"sucesso": False, "caminho_pdf": None, "motivo_falha": "Download da guia falhou ou arquivo vazio"}
+                return {"sucesso": False, "caminho_pdf": None, "guia_gerada": guia_gerada_flag, "motivo_falha": "Download da guia falhou ou arquivo vazio"}
 
             # GUARDA DE SEGURANCA 24/08/2026: ja aconteceu de o arquivo salvo
             # ser HTML (pagina de erro/impressao) em vez de PDF de verdade,
@@ -358,6 +404,7 @@ def emitir_guia_bancaria(processo, usuario, senha, destino_path, headless=True, 
                 return {
                     "sucesso": False,
                     "caminho_pdf": None,
+                    "guia_gerada": guia_gerada_flag,
                     "motivo_falha": "Arquivo gerado nao e' um PDF valido (" + motivo_invalido + "). Primeiros bytes: " + trecho[:200] + ". Preservado em: " + str(caminho_quarentena),
                 }
 
@@ -373,6 +420,6 @@ def emitir_guia_bancaria(processo, usuario, senha, destino_path, headless=True, 
 
         except Exception as e:
             _shot(pagina, "FALHA_excecao_inesperada")
-            return {"sucesso": False, "caminho_pdf": None, "motivo_falha": str(e)[:300]}
+            return {"sucesso": False, "caminho_pdf": None, "guia_gerada": guia_gerada_flag, "motivo_falha": str(e)[:300]}
         finally:
             navegador.close()

@@ -1256,6 +1256,8 @@ def processar_guia_bancaria_jucerja(db, processo_id, headless=True, debug_dir=No
                     db, None, "guia_bancaria_tentativa_falhou", processo_id,
                     f"tentativa={tentativa}/{max_tentativas} motivo=" + str(resultado.get("motivo_falha")),
                 )
+                if resultado.get("guia_gerada"):
+                    break
                 if tentativa < max_tentativas:
                     print(f"   [GB] tentativa {tentativa}/{max_tentativas} falhou, tentando de novo:", resultado.get("motivo_falha"))
 

@@ -990,6 +990,21 @@ async function excluirProcesso() {
         setSalvandoProt(false);
       }
     }
+    async function removerRegistro() {
+      if (!window.confirm("Remover o registro anexado deste processo? O processo voltara automaticamente para o status que tinha antes do registro.")) return;
+      try {
+        const resp = await axios.delete(`${API}/processos/${p.id}/registro`);
+        setAnexados(a => ({ ...a, registro: false }));
+        const nomes = { aberto: "Aberto", tramitacao: "Tramitação", exigencia: "Exigência", deferido: "Deferido" };
+        const st = resp.data && resp.data.status;
+        alert("Registro removido. O processo voltou para " + (nomes[st] || st) + ".");
+        setProcessoSelecionado(null);
+        carregar();
+      } catch (e) {
+        alert((e.response && e.response.data && e.response.data.detail) || "Erro ao remover o registro.");
+      }
+    }
+
     async function excluirProtocolo() {
       if (!window.confirm("Tem certeza que deseja excluir o protocolo deste processo? O processo voltara para o status Aberto.")) return;
       setSalvandoProt(true);
@@ -1181,6 +1196,10 @@ async function excluirProcesso() {
                         <span style={{ ...s.uploadPend, fontSize: 11 }}>Trocar</span>
                         <input type="file" style={{ display: "none" }} onChange={e => uploadProtocoloLocal(tipo, e.target.files[0])} />
                       </label>
+                    )}
+                    { tipo === "registro" && (
+                      <button onClick={removerRegistro}
+                        style={{ background: "transparent", border: "1px solid rgba(255,77,77,0.4)", color: "#ff9494", borderRadius: 6, padding: "3px 10px", fontSize: 11, cursor: "pointer", fontFamily: FONTE_CORPO }}>Remover</button>
                     )}
                   </span>
                 : <label style={{ cursor: "pointer" }}>

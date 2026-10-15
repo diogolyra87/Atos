@@ -4351,7 +4351,11 @@ async def upload_arquivo(
     with open(caminho, "wb") as f:
         f.write(conteudo)
     _ip = obter_ip(request)
-    registrar_auditoria(db, usuario, "upload", processo_id, "tipo=" + str(tipo) + " arquivo=" + str(nome_arquivo), _ip)
+    _det_upload = "tipo=" + str(tipo) + " arquivo=" + str(nome_arquivo)
+    if tipo == "registro":
+        # Guarda o status de antes do registro pra que "Remover registro" consiga voltar pra ele
+        _det_upload += " status_anterior=" + str((p.status or "").lower())
+    registrar_auditoria(db, usuario, "upload", processo_id, _det_upload, _ip)
 
     campo_map = {
         "protocolo": "arquivo_protocolo",
@@ -4457,6 +4461,73 @@ def exigencia_cumprida(processo_id: str, x_token: str = Header(None), db: Sessio
     db.commit()
     notificar_operadores(db, "exigencia_cumprida", processo_id, {"empresa": p.empresa}, usuario)
     return {"mensagem": "Exigencia marcada como cumprida", "status": p.status}
+
+def _status_antes_do_registro(db, p):
+    """Status do processo antes do registro ser anexado. Usa o status_anterior
+    gravado na auditoria do upload manual (15/10/2026+); para registros antigos
+    ou anexados pela automacao, deduz pelos dados do processo."""
+    log = (db.query(AuditLog)
+           .filter(AuditLog.processo_id == p.id, AuditLog.acao == "upload",
+                   AuditLog.detalhe.like("tipo=registro %status_anterior=%"))
+           .order_by(AuditLog.data_hora.desc()).first())
+    if log and log.detalhe:
+        anterior = log.detalhe.split("status_anterior=", 1)[1].strip().split(" ")[0]
+        if anterior and anterior != "finalizado":
+            return anterior
+    if getattr(p, "exigencia_ativa", False):
+        return "exigencia"
+    if p.deferido_em:
+        return "deferido"
+    if p.numero_protocolo or p.arquivo_protocolo:
+        return "tramitacao"
+    return "aberto"
+
+
+@app.delete("/processos/{processo_id}/registro")
+def remover_registro(processo_id: str, request: Request = None, x_token: str = Header(None), db: Session = Depends(get_db)):
+    """Remove o registro anexado por engano e volta o processo pro status de antes."""
+    if not x_token:
+        raise HTTPException(status_code=401, detail="Token necessario")
+    usuario = validar_token(x_token, db)
+    if not usuario:
+        raise HTTPException(status_code=401, detail="Token invalido ou sessao expirada")
+    requer_acesso_admin(usuario)
+    p = db.query(Processo).filter(Processo.id == processo_id).first()
+    if not p:
+        raise HTTPException(status_code=404, detail="Processo nao encontrado")
+    if not p.arquivo_registro:
+        raise HTTPException(status_code=400, detail="Este processo nao tem registro anexado")
+    status_anterior = _status_antes_do_registro(db, p)
+    arquivo_antigo = p.arquivo_registro
+    nome_antigo = p.arquivo_registro_nome_exibicao or arquivo_antigo
+    # Nao apaga o arquivo: move pra quarentena (evidencia, caso precise conferir depois)
+    try:
+        origem = os.path.join(UPLOADS_DIR, arquivo_antigo)
+        if os.path.exists(origem):
+            pasta_q = os.path.join(UPLOADS_DIR, "_quarentena")
+            os.makedirs(pasta_q, exist_ok=True)
+            base, ext = os.path.splitext(arquivo_antigo)
+            os.replace(origem, os.path.join(pasta_q, base + "_removido_" + datetime.now().strftime("%Y%m%d_%H%M%S") + ext))
+    except Exception as e:
+        print("Erro ao mover registro removido pra quarentena:", e)
+    p.arquivo_registro = None
+    p.arquivo_registro_nome_exibicao = None
+    p.exigencia_ativa = status_anterior == "exigencia"
+    p.status = status_anterior
+    p.atualizado_em = datetime.now()
+    # Tira o "Ata registrada" da timeline - era informacao errada
+    ev = (db.query(Evento)
+          .filter(Evento.processo_id == p.id, Evento.tipo == "registro_finalizado")
+          .order_by(Evento.criado_em.desc()).first())
+    if ev:
+        db.delete(ev)
+    db.commit()
+    registrar_auditoria(db, usuario, "remover_registro", processo_id,
+                        "arquivo=" + str(nome_antigo) + " status: 'finalizado' -> '" + status_anterior + "'", obter_ip(request))
+    notificar_operadores(db, "processo_editado", processo_id,
+                         {"empresa": p.empresa, "info": "Registro removido (" + str(nome_antigo) + "); status voltou para " + status_anterior}, usuario)
+    return {"mensagem": "Registro removido", "status": p.status}
+
 
 @app.delete("/processos/{processo_id}")
 def excluir_processo(processo_id: str, request: Request = None, x_token: str = Header(None), db: Session = Depends(get_db)):

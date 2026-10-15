@@ -203,10 +203,53 @@ class TestProcessarGuiaBancariaJucerja(unittest.TestCase):
         self.assertFalse(resultado["sucesso"])
         self.db.refresh(p)
         self.assertIsNone(p.arquivo_guia_bancaria)
+        # Falha em todas as tentativas: tenta 3 vezes, cada tentativa so' vai
+        # pro audit log, e so' a falha definitiva gera alerta (uma vez).
+        self.assertEqual(mock_emitir.call_count, 3)
         mock_notificar.assert_called_once()
         self.assertFalse(mock_notificar.call_args.kwargs.get("sucesso"))
-        log = self.db.query(AuditLog).filter(AuditLog.processo_id == p.id).first()
-        self.assertEqual(log.acao, "guia_bancaria_falhou")
+        acoes = [l.acao for l in self.db.query(AuditLog).filter(AuditLog.processo_id == p.id).order_by(AuditLog.data_hora).all()]
+        self.assertEqual(acoes, ["guia_bancaria_tentativa_falhou"] * 3 + ["guia_bancaria_falhou"])
+
+    @patch("main.notificar_taxa_jucerja", return_value=True)
+    @patch("main.emitir_guia_bancaria")
+    def test_guia_ja_gerada_nao_tenta_de_novo(self, mock_emitir, mock_notificar):
+        # Caso: a guia foi gerada na JUCERJA mas o download falhou depois
+        # (guia_gerada=True). Tentar de novo geraria uma SEGUNDA guia/cobranca
+        # - tem que parar na primeira tentativa e so' alertar.
+        mock_emitir.return_value = {"sucesso": False, "guia_gerada": True, "caminho_pdf": None,
+                                    "motivo_falha": "Botao 'Imprimir Boleto/Guia Bancaria' nao encontrado apos gerar"}
+        p = _criar_processo(self.db)
+
+        with patch("main.JUCERJA_USUARIO", "user"), patch("main.JUCERJA_SENHA", "pass"):
+            resultado = processar_guia_bancaria_jucerja(self.db, p.id, headless=True)
+
+        self.assertFalse(resultado["sucesso"])
+        mock_emitir.assert_called_once()
+        self.db.refresh(p)
+        self.assertIsNone(p.arquivo_guia_bancaria)
+        mock_notificar.assert_called_once()
+        self.assertFalse(mock_notificar.call_args.kwargs.get("sucesso"))
+        acoes = [l.acao for l in self.db.query(AuditLog).filter(AuditLog.processo_id == p.id).order_by(AuditLog.data_hora).all()]
+        self.assertEqual(acoes, ["guia_bancaria_tentativa_falhou", "guia_bancaria_falhou"])
+
+    @patch("main.notificar_taxa_jucerja", return_value=True)
+    @patch("main.emitir_guia_bancaria")
+    def test_guia_gerada_false_continua_tentando(self, mock_emitir, mock_notificar):
+        # Falha ANTES de gerar (guia_gerada=False explicito): pode tentar de novo.
+        mock_emitir.side_effect = [
+            {"sucesso": False, "guia_gerada": False, "caminho_pdf": None, "motivo_falha": "Checkbox nao encontrado"},
+            {"sucesso": True, "caminho_pdf": "/tmp/x_guia_bancaria.pdf", "motivo_falha": None},
+        ]
+        p = _criar_processo(self.db)
+
+        with patch("main.JUCERJA_USUARIO", "user"), patch("main.JUCERJA_SENHA", "pass"):
+            resultado = processar_guia_bancaria_jucerja(self.db, p.id, headless=True)
+
+        self.assertTrue(resultado["sucesso"])
+        self.assertEqual(mock_emitir.call_count, 2)
+        self.db.refresh(p)
+        self.assertEqual(p.arquivo_guia_bancaria, "x_guia_bancaria.pdf")
 
     @patch("main.emitir_guia_bancaria")
     def test_idempotencia_nao_reemite_se_ja_tem_guia(self, mock_emitir):

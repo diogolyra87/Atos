@@ -37,6 +37,7 @@ SINONIMOS_TIPO_ATO = {
     "ESCRITURA_PUBLICA_CONSTITUICAO": "_CONSTITUTIVO",
     "ESCRITURA_PUBLICA": "_CONSTITUTIVO",
     "Contrato Social": "_CONSTITUTIVO",
+    "Aditamento": "Aditamento de Escritura de Emissão de Debêntures",
 }
 
 # (tipo_ato canonico, tipo_sociedade LTDA/SA) -> (ato_valor, ato_label, evento_valor, evento_label)
@@ -50,6 +51,8 @@ MAPEAMENTO_ATO_EVENTO = {
     ("RCA", "SA"): ("17", "017 - Ata de Reunião do Conselho de Administração", "284", "999 - Ata de Reunião do Conselho de Administração"),
     ("ARD", "SA"): ("16", "016 - Ata de Reunião da Diretoria", "284", "999 - Ata de Reunião da Diretoria"),
     ("ARS", "LTDA"): ("21", "021 - Ata de Reunião / Assembleia de Sócios", "284", "999 - Ata de Reunião / Assembleia de Sócios"),
+    # Valores confirmados no formulario real em 15/10/2026 (Ato 981 / Evento 999, informados pelo Diogo).
+    ("Aditamento de Escritura de Emissão de Debêntures", "SA"): ("163", "981 - Aditamento de Escritura de Emissão de Debêntures", "284", "999 - Aditamento de Escritura de Emissão de Debêntures"),
     # "Alteração Contratual" e generico (36 eventos possiveis pro Ato 002) -
     # 021 usado como default aprovado (aproximacao, ver relatorio Fase 1).
     ("Alteração Contratual", "LTDA"): ("2", "002 - Alteração", "141", "021 - Alteração de Dados (Exceto Nome Empresarial)"),

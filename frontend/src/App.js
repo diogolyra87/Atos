@@ -8,7 +8,7 @@ import { STATUS_CONFIG, formatarDataExtenso, BotaoIatos, IatosChat, subtituloPro
 const API = "";
 
 // Mantido em sincronia manual com TIPOS_ATO_VALIDOS em backend/main.py
-const TIPOS_ATO_OPCOES = ["AGO", "AGE", "AGOE", "RCA", "ARD", "ARS", "Alteração Contratual"];
+const TIPOS_ATO_OPCOES = ["AGO", "AGE", "AGOE", "RCA", "ARD", "ARS", "Alteração Contratual", "Aditamento de Escritura de Emissão de Debêntures"];
 
 function abreviarAto(texto, data, hora) {
   const t = (texto || "").toUpperCase();
@@ -677,7 +677,7 @@ function AppPainel({ onSair, sessao }) {
       "Contrato Social","Alteracao Contratual","Ata de Reuniao/Assembleia de Socios",
       "Distrato/Dissolucao/Liquidacao","Estatuto Social","Ata de Assembleia Geral de Constituicao",
       "Ata de AGO","Ata de AGE","Ata de Reuniao do Conselho de Administracao",
-      "Ata de Reuniao de Diretoria","Escritura de Emissao de Debentures",
+      "Ata de Reuniao de Diretoria","Aditamento de Escritura de Emissão de Debêntures","Escritura de Emissao de Debentures",
       "Boletim/Lista/Carta de Subscricao","Ata de Assembleia Geral",
     ];
     async function carregarPend() {

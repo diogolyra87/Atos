@@ -1451,7 +1451,7 @@ Retorne APENAS um JSON válido com esta estrutura exata:
   "uf": "sigla de 2 letras do estado da sede, ex RJ ou SP",
   "uf_destino_transferencia": "APENAS se a ata tratar de TRANSFERENCIA DE SEDE para outro Estado (mudanca de endereco da sede social de um Estado para outro, nao mudanca de endereco dentro do mesmo Estado): informe a sigla de 2 letras do Estado de DESTINO. Caso contrario deixe vazio.",
   "tipo_sociedade": "SA ou LTDA",
-  "tipo_ato": "AGO, AGE, AGOE, RCA (Conselho de Administração), ARD (Reunião de Diretoria), ARS (Reunião/Assembleia de Sócios ou Resolução de Sócia), ALTERACAO_CONTRATUAL etc",
+  "tipo_ato": "AGO, AGE, AGOE, RCA (Conselho de Administração), ARD (Reunião de Diretoria), ARS (Reunião/Assembleia de Sócios ou Resolução de Sócia), ALTERACAO_CONTRATUAL, Aditamento de Escritura de Emissão de Debêntures (use exatamente este texto para aditamento a escritura de emissão de debêntures - NUNCA classificar aditamento como ALTERACAO_CONTRATUAL) etc",
   "identificador_ato": "ex: RCA 25/05/2026, ARD 26/08/2026, ARS 11/09/2026, 39ª Alteração Contratual, AGE 10/05/2026",
   "data_ata": "DD/MM/AAAA",
   "hora_ata": "HH:MM ou vazio",
@@ -2569,6 +2569,7 @@ TIPOS_PRINCIPAIS = {
     "Ata de AGE": ["assembleia geral extraordinaria", "assembleia geral extraordinária"],
     "Ata de Reuniao do Conselho de Administracao": ["reuniao do conselho", "conselho de administra", "reunião do conselho"],
     "Ata de Reuniao de Diretoria": ["reuniao de diretoria", "reunião de diretoria"],
+    "Aditamento de Escritura de Emissão de Debêntures": ["aditamento"],
     "Escritura de Emissao de Debentures": ["escritura de emissao de debentures", "emissao de debentures", "escritura de emissão de debêntures", "emissão de debêntures"],
     "Boletim/Lista/Carta de Subscricao": ["boletim de subscricao", "lista de subscricao", "carta de subscricao", "boletim de subscrição", "lista de subscrição", "carta de subscrição"],
     "Ata de Assembleia Geral": ["ata de assembleia geral", "ata da assembleia geral"],
@@ -4248,7 +4249,7 @@ def recalcular_status(p):
 # ARD (Ata de Reuniao de Diretoria) e ARS (Ata de Reuniao de Socios) sao tipos
 # distintos - o prompt de classificacao da IA (analisar_ata_ia, acima) so lista
 # ARS, o que e a provavel causa raiz de classificacoes erradas de ARD como RCA.
-TIPOS_ATO_VALIDOS = ["AGO", "AGE", "AGOE", "RCA", "ARD", "ARS", "Alteração Contratual"]
+TIPOS_ATO_VALIDOS = ["AGO", "AGE", "AGOE", "RCA", "ARD", "ARS", "Alteração Contratual", "Aditamento de Escritura de Emissão de Debêntures"]
 
 # Campos que o PATCH /processos/{id} aceita. Inclui os usados hoje pelo
 # frontend (status, numero_protocolo, arquivo_protocolo) e os novos campos de
